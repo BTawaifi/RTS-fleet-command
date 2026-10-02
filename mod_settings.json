@@ -1,0 +1,19 @@
+{
+  "custom_dependencies": [
+    {
+      "id": "FSO",
+      "version": "26.0.1",
+      "packages": null
+    }
+  ],
+  "custom_mod_flags": [
+    "RTS-fleet-command"
+  ],
+  "custom_build_id": null,
+  "custom_build_version": null,
+  "custom_build_exec": null,
+  "custom_cmdline": null,
+  "is_compressed": false,
+  "ignore_global_cmd": false,
+  "no_ingame_options": false
+}

@@ -1,0 +1,37 @@
+#Armor Type
+; Scale capital beam damage against RTS bases.
+;
+; Measured across 8 headless matches: a Shivan station turret beam (BFRed) lands
+; about 1,100 hits on a 132,600 HP command station per 2,500 s match, because a
+; base turret is static and nothing can shoot it down. At the previous 0.15 that
+; was ~62 hull damage per hit, i.e. ~68,000 hull per match on its own, and it
+; accounted for 67-100% of the damage that destroyed Blue's station in every
+; match. 15% of raw output is therefore still enough for one uninterceptable
+; beam stream to delete a base by itself, which is the outcome this cap exists
+; to prevent.
+;
+; This value is bracketed by two measured points, 8 headless matches each at
+; 3,000 simulated seconds, both with a full 132,600 HP command station:
+;
+;   0.15 -> 5 of 8 matches reached a natural mission_exit. Too strong: a single
+;           uninterceptable BFRed stream delivered ~62 hull/hit and was 67-100%
+;           of the damage that destroyed the station in every match.
+;   0.06 -> 0 of 8 matches resolved. Over-corrected: at ~25 hull/hit the same
+;           stream is still ~33,000 hull per match, and nothing else in the
+;           match does enough to finish a base either. Beams plus fighters could
+;           not close out a station, so every match ran to the simulation cap.
+;
+; 0.10 lands between them at a measured ~41 hull/hit for BFRed. A station then
+; needs roughly 3,200 beam hits to destroy, against the ~1,100 a match
+; delivers, so no single weapon finishes a base and the outcome depends on the
+; fleets committing together rather than on one turret. These are only two
+; sampled points, not a curve: re-measure with tools/analyze_batch.py and
+; report the "natural terminal / hit simulation cap" split after any change.
+;
+; This is symmetric: all three command stations use this armor type, so no
+; faction gains or loses a defensive advantage from the change.
+$Name: RTS Base Hull
+$Damage Type: RTS Capital Beam
++Calculation: multiplicative
++Value: 0.10
+#End

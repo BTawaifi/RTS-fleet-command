@@ -1,0 +1,18 @@
+#IFFs
+
+; RTS three-way free-for-all relationships.  Each active faction must regard
+; both other factions as valid enemies; otherwise FSO AI goal validation and
+; turret targeting can reject Red-vs-Gold or Blue-vs-Gold engagements.
+$IFF Name: Friendly
++nocreate
+$Attacks: ( "Hostile" "Neutral" "Traitor" )
+
+$IFF Name: Hostile
++nocreate
+$Attacks: ( "Friendly" "Neutral" "Traitor" )
+
+$IFF Name: Neutral
++nocreate
+$Attacks: ( "Friendly" "Hostile" "Traitor" )
+
+#End

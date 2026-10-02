@@ -1,0 +1,12 @@
+#Conditional Hooks
+$Application: FS2_Open
+$On Game Init:
+[
+    require "acceptance_driver"
+]
+$State: GS_STATE_BRIEFING
+$On Frame:
+[
+    ba.postGameEvent(ba.GameEvents["GS_EVENT_ENTER_GAME"])
+]
+#End
