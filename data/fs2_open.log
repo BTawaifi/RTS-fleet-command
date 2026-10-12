@@ -1,0 +1,96 @@
+Opened log '.\data\fs2_open.log', Tue Oct 06 16:33:50 2026 ...
+Legacy config mode is DISABLED.
+Reason: Legacy mode disabled since the new config location was used more recently than the old location.
+Platform: Windows
+CPU: x86, 8 logical cores
+Memory: 40743 MiB
+Build: fs2_open_26_1_0_x64_AVX2.exe, 64-bit, little-endian
+Setting local mod settings ini file to 'data/probe_settings.ini'
+  Initializing SDL 3.4.14 (compiled with 3.4.14)...
+SDL [INF][SYSTEM]: App name: FreeSpace Open
+SDL [INF][SYSTEM]: App version: 26.1.0
+SDL [INF][SYSTEM]: App ID: us.indiegames.scp.FreeSpaceOpen
+SDL [INF][SYSTEM]: SDL revision: SDL-release-3.4.14-0-g147a8ee32 (libsdl.org)
+Building file index...
+Searching root 'D:\Games\FreespaceOpen\FS2\RTS-fleet-command-1.4.1\probe\' ... 0 files
+Searching root 'D:\Games\FreespaceOpen\FS2\RTS-fleet-command-1.4.1\rts\' ... 0 files
+Searching root 'D:\Games\FreespaceOpen\FS2\RTS-fleet-command-1.4.1\' ... 0 files
+Searching memory root ... 81 files
+Found 4 roots and 81 files.
+Game Settings Table: Using Standard Loops For SEXP Arguments
+Game Settings Table: Using standard event chaining behavior
+Game Settings Table: External shaders are DISABLED
+Game Settings Table: Using retail turret collisions (shooting a turret barrel will register if it is within the radius of the base)
+Game Settings Table: Damage Impacted Subsystem First set to FALSE (weapons will damage the closest subsystem before any others)
+Requested file game_settings.tbl found at: data\tables\game_settings.tbl
+Game Settings Table: Using Standard Loops For SEXP Arguments
+Game Settings Table: Using standard event chaining behavior
+Game Settings Table: External shaders are DISABLED
+Game Settings Table: Using retail turret collisions (shooting a turret barrel will register if it is within the radius of the base)
+Game Settings Table: Damage Impacted Subsystem First set to FALSE (weapons will damage the closest subsystem before any others)
+os_config_read_string(): section = "Game", name = "SkillLevel", default value: "NULL"
+SDL [DBG][SYSTEM]: SDL chose video backend 'windows'
+ Joystick 0 removed
+ Joystick 1 removed
+ Joystick 2 removed
+ Joystick 3 removed
+Wokka!  Error opening file (strings.tbl)!
+WMCGUI: Unable to parse 'strings.tbl'!  Error message = Failed to open file.
+Setting language to RETAIL HYBRID
+Wokka!  Error opening file (strings.tbl)!
+TABLES: Unable to parse 'controlconfigdefaults.tbl'!  Error message = Failed to open file.
+Wokka!  Error opening file (tstrings.tbl)!
+TABLES: Unable to parse 'controlconfigdefaults.tbl'!  Error message = Failed to open file.
+Failed to init speech
+  Initializing SDL video...
+Initializing OpenGL graphics device at 1280x720 with 32-bit color...
+  Requested SDL Pixel values = R: 8, G: 8, B: 8, depth: 24, stencil: 8, double-buffer: 1, FSAA: 0
+  Requested SDL Pixel values = R: 8, G: 8, B: 8, depth: 24, stencil: 8, double-buffer: 1, FSAA: 0
+  Actual SDL Video values    = R: 8, G: 8, B: 8, depth: 24, stencil: 8, double-buffer: 1, FSAA: 0
+  OpenGL Vendor    : NVIDIA Corporation
+  OpenGL Renderer  : NVIDIA GeForce MX450/PCIe/SSE2
+  OpenGL Version   : 4.5.0 NVIDIA 616.92
+  GLSL Version	  : 4.50 NVIDIA
+
+Extensions: 
+  Geo shader support : YES
+  Layered viewport support : YES
+  S3TC texture support : YES
+  BPTC texture support : YES
+
+Trying to create 1024x1024 24-bit shadow framebuffer
+Shadow framebuffer created successfully.
+Compiling new shader:
+WARNING: Failed to find uniform 'clipEnabled'.
+Metadata file does not exist.
+  Max texture units: 2 (32)
+  Max client texture states: 2 (1)
+  Max elements vertices: 1048576
+  Max elements indices: 1048576
+  Max texture size: 32768x32768
+  Max render buffer size: 32768x32768
+  Post-processing enabled: YES
+  Using trilinear texture filter.
+  Max uniform block size: 65536
+  Max uniform buffer bindings: 84
+  Uniform buffer byte offset alignment: 256
+... OpenGL init is complete!
+Loading app_icon_sse.png for the first time.
+Loading app_icon_sse.png (256x256x32)
+Initializing path renderer...
+Checking graphics capabilities:
+  Persistent buffer mapping: Enabled
+Checking mod required rendering features...
+  All required features are supported.
+Failed to load cursor bitmap cursorweb!
+
+Error: 
+Web cursor bitmap not found.  This is most likely due to one of three reasons:
+    1) You're running FreeSpace Open from somewhere other than your FreeSpace 2 folder;
+    2) You've somehow corrupted your FreeSpace 2 installation, e.g. by modifying or removing the retail VP files;
+    3) You haven't installed FreeSpace 2 at all.  (Note that installing FreeSpace Open does NOT remove the need for a FreeSpace 2 installation.)
+Number 1 can be fixed by simply moving the FreeSpace Open executable file to the FreeSpace 2 folder.  Numbers 2 and 3 can be fixed by installing or reinstalling FreeSpace 2.
+
+File: 2d.cpp
+Line: 2338
+

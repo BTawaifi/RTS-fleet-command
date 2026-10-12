@@ -106,6 +106,37 @@ require 'fs2rts_strategy'
 
 
 class OperationTests(unittest.TestCase):
+    def test_quiet_counterattack_requires_continuous_quiet_and_fires_once(self):
+        self.check('''
+          R.Config.AI.Operations.CounterattackQuietSeconds=5
+          R.Config.AI.Operations.AssembleSeconds=999
+          local home=makeHome(); local target=makeTarget(21,'RED',10000,0)
+          local g=makeGroup(1,target,'bomber',0,0,100)
+          R:BuildAIOperations('BLUE',{g},home,0,100)
+          R:BuildAIOperations('BLUE',{g},home,1,0)
+          R:BuildAIOperations('BLUE',{g},home,5,0)
+          local op=R.AIOperations.BLUE[21]; assert(op.phase=='ASSEMBLE')
+          R:BuildAIOperations('BLUE',{g},home,6,0)
+          assert(op.phase=='APPROACH','stable quiet reset its counterattack clock')
+          op.phase='ASSEMBLE'; op.phaseAt=7
+          R:BuildAIOperations('BLUE',{g},home,7,0)
+          assert(op.phase=='ASSEMBLE','counterattack window was reused forever')
+        ''')
+
+    def test_force_gap_and_home_emergency_do_not_pause_the_same_time_twice(self):
+        self.check('''
+          local home=makeHome(); local target=makeTarget(21,'RED',10000,0)
+          local defender=makeShip(22,'RED',10000,200)
+          R.StrategicThreatSnapshot={{ship=defender,profile={value=10}}}
+          local g=makeGroup(1,target,'bomber',10000,0,100)
+          local op={kind='BLUE',front=21,serial=1,phase='ENGAGE',phaseAt=0,engagedAt=0,
+            lastUpdate=10,target=target,initialValue=100,initialStrikes=1,initialDefense=10}
+          R.AIOperations.BLUE={[21]=op}
+          R:BuildAIOperations('BLUE',{},home,10,0,false)
+          R:BuildAIOperations('BLUE',{g},home,100,0,true)
+          assert(op.engagedAt==90,'recovery and emergency counted the gap twice: '..op.engagedAt)
+        ''')
+
     def setUp(self):
         self.lua = LuaRuntime(unpack_returned_tuples=True)
         self.lua.globals().scripts_path = SCRIPTS.resolve().as_posix()
@@ -299,6 +330,31 @@ class OperationTests(unittest.TestCase):
           sentry.Position=ba.createVector(100,0,0)
           assert(R:ChooseAIOperationTarget(op,striker,{})==sentry,
             'nearby fixed defense was not selected when the striker could engage it')
+        """)
+
+    def test_bomber_commits_to_base_instead_of_chasing_mobile_capital_escort(self):
+        self.check("""
+          local station=makeTarget(41,'RED',18000,0); station.station=true
+          local escort=makeTarget(42,'RED',10000,0,'escort'); escort.Name='Mobile Capital Escort'
+          local bomber=makeGroup(43,station,'bomber',0,0,1000)
+          local op={phase='ENGAGE',target=station,defenders={escort},groups={bomber}}
+          assert(R:ChooseAIOperationTarget(op,bomber,{})==station,
+            'bomber diverted from its base objective to a mobile capital escort')
+          local heavy=makeGroup(46,station,'juggernaut',0,0,1000)
+          assert(R:ChooseAIOperationTarget(op,heavy,{})==escort,
+            'non-bomber capital strike lost its defender targeting behavior')
+
+          local nearbySentry=makeShip(44,'RED',100,0,'fighter'); nearbySentry.static=true
+          op.defenders={nearbySentry}
+          assert(R:ChooseAIOperationTarget(op,bomber,{})==nearbySentry,
+            'bomber no longer clears a nearby fixed defense before striking')
+
+          local localAttacker=makeShip(45,'RED',100,0,'fighter')
+          bomber.hardLocalThreat=true; bomber.localThreat=localAttacker
+          op.defenders={escort}
+          local selected,mission=R:ApplyAIOperationOrder(bomber,localAttacker,'INTERCEPT',{},makeHome(),1,{})
+          assert(selected==localAttacker and mission=='INTERCEPT',
+            'local emergency interception was overridden by the base objective')
         """)
 
     def test_capital_siege_targets_station_turrets_instead_of_ramming_hull(self):

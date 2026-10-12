@@ -1,165 +1,123 @@
-# FreeSpace RTS: Fleet Command 1.4.1
+# FreeSpace RTS: Fleet Command
 
-FreeSpace RTS: Fleet Command is a single-player real-time strategy and fighter-pilot hybrid for FreeSpace Open. Command Blue's fleet against Red, with an optional third faction, from a tactical camera and minimap. Build strike craft and capital ships, manage command points and reinforcements, and switch into a fighter or bomber to fly it with FreeSpace Open's native HUD and controls.
+Single-player fleet command with optional direct ship control. Retail FS2 assets are required; MediaVPs are optional. The October 8 rendered probes use upstream FSO 26.1.0 at HEAD `242eb19ef5516f704febf4fdb5867b4ed5ed3ef7`; gameplay does not require a modified engine.
 
 ## Launch
 
-Select **FreeSpace RTS: Fleet Command** in Knossos and launch it. The mod's launch settings start the included **FS2 RTS - Escalation** campaign. It requires retail FreeSpace 2 assets and FreeSpace Open 26.0.1. MediaVPs are optional. Asteroid fields and free starting sentries are disabled by default; purchased sentries are available from the STATION tab.
+Select **FreeSpace RTS: Fleet Command** in Knossos. The included campaign/mission is **FS2 RTS - Escalation**. Setup lets you choose 2–12 total teams (including yours), each independently choosing GTA, GTVA, PVN, Vasudan Empire, NTF, loyal GTI, rogue GTI, Hammer of Light, Shivans or **RANDOM**, plus difficulty, economy, station spacing and layout. Mirror factions remain separate hostile teams. The default Circle layout puts six stations on a hexagon and other counts on a regular polygon. Twelve is the practical ceiling based on early-fleet experiments; sustained late-game performance at that count is not established. Click **START ESCALATION** when ready. Fully exit and relaunch after installing script or mission updates.
 
-The tactical map uses ship-class icons when available and role markers as a fallback.
+**START LAYOUT** cycles Circle, Star and Multiple Circles. Circle keeps the existing ring; Star alternates outer and inner stations; Multiple Circles creates two clusters, or three with nine or more teams. Small faction counts produce small clusters or pairs. **BASE DISTANCE** is the minimum separation for every layout; the map expands to fit. Layouts apply when you start, never during combat. Star and clustered starts offer different tactical positions; equal faction win rates on these layouts are not established.
+
+Team colors are randomized without duplicates. Click a team's color swatch to choose another; choosing an occupied color swaps the two teams' colors. **RANDOMIZE ALL COLORS** reshuffles them. Color identifies a team independently of its political faction.
+
+Each faction has a curated roster and paid command ability: GTA orbital strike, GTVA joint mobilization, PVN mobile reserves, Vasudan Empire reinforcement jump, NTF raider screen, loyal GTI precision strike, rogue GTI prototype overdrive, Hammer of Light zealous advance and Shivan swarm surge. Identical hulls share prices and build rules across player/AI factions. Reinforcements require room for the whole wave and cannot undercut ordinary purchase prices. FSPort's FS1 models for the Apollo, Valkyrie, Athena, Anubis and Shaitan are bundled under its attributed non-commercial reuse permission with retail-only weapons; FSPort is not a runtime dependency. Matchup win-rate balance remains under evaluation.
+
+Classic destroyers cost 9,200 CP for Orion and 7,800 CP for Typhon. Auto production commits completed savings to the needed role even when that faction has no latest-tier hull. Paid AI abilities respect the bounded fleet-saving window; emergency production can release it for defense.
+
+Setup, station and pilot panels show faction insignias. Six PCX badges are attributed FSPort squad insignias; the custom Shivan badge is three red dots in a triangle, inspired by markings on some Shivan hulls. It is not a canon insignia. A static 24/30/32-pixel preview was reviewed after applying the PCX green key; this is not an in-engine screenshot or full contrast audit. Asset attribution and provenance are in `data/maps/README-insignias.txt` and `data/FSPORT-ASSET-CREDITS.txt`.
+
+The battle starts with command stations only. Production creates combat units after starting. Losing your station records player defeat while stations remain; other factions continue their normal economies if you resume. The strategic result is recorded when at most one command station remains (or none, for a draw). There are no match-duration presets or timed outcomes. One fixed escalation schedule unlocks later ships; income grows with escalation.
+
+The result screen distinguishes **YOUR STATION WAS LOST // THE GLOBAL BATTLE CONTINUES** from the first station result. With surviving ships, the paused report offers **WITHDRAW FLEET**. After global station resolution, **CONTINUE** opens combat-only aftermath: construction, queued builds, upgrades, income, abilities, refits and pending strikes stop for all factions. The first station result remains in the report history, but destroying the last enemy station can earn a draw during continued combat. Eliminating every hostile asset while your mobile fleet survives earns final victory. The final report has no Continue action. **BATTLE REPORT** reopens a paused report; Restart restores normal play.
+
+When an AI station falls, a healthy armed cover wing or ship stays to retaliate against the credited killer while the other mobile units route to extraction. Those withdrawals attempt FSO `warpOut()` on arrival; only the native departure callback records an escape. A living station never triggers this automatic extraction. AI survivors receive no production or station service. You may select your own surviving ships and choose **WITHDRAW SELECTED** after your station falls, or choose **WITHDRAW FLEET** from the result report. Explicit withdrawals use marked corridors and can still be intercepted. The result report records present, lost, escaped, stranded, service-recovery and pilot-time facts for this match only.
 
 ## Controls
 
-- Left-click selects a ship; left-drag box-selects. Shift modifies the selection.
-- Alt-click focuses the camera on a ship or point; Alt-drag selects and focuses a friendly group.
-- Right-click empty space issues a formation move; right-click a hostile to attack or a friendly to guard.
-- **Right-press and drag from empty space** (with a selection) sets a move destination *and* the facing: the press point is the destination, the drag direction is the heading the ships turn to on arrival. The live preview shows the destination cross, the facing arrow and a **FACE** label while you drag.
-- Attacking a member of a multi-ship wing keeps the order on that wing and retargets its surviving members.
-- Middle-drag pans the camera; right-drag over a ship, or with nothing selected, orbits; the mouse wheel zooms.
-- WASD or arrow keys pan the camera. Shift slows camera movement.
-- The minimap supports selection and box-selection; right-click moves the camera focus.
-- **F1..F4** recall wings 1-4; **Ctrl+F1..F4** assign the current selection to one. (Legacy **Ctrl+1..4** assign still works.)
-- **1** / **2** / **3** / **4** drive the time ladder: slower, pause/resume, faster, and reset to 1x. **+** and **-** also step the speed.
-- **B** enters chase mode on the ship under the cursor (or the primary selection) and releases it again; **Alt+double-click** still works.
-- Press **P** with one friendly fighter, bomber, or capital ship selected to pilot it. Press **P** again to return to RTS command.
-- Possessing a **capital** exposes its turret groups: **[** and **]** select a group, **\\** puts every group live at once, **O** toggles the locked-in target subsystem, and **<** / **>** step through the target's subsystems. Pulling the primary trigger fires the active turret group, because a capital's guns live in turret subsystems that the normal ship fire calls cannot reach. The pilot HUD names the group, the target subsystem and when manual fire is live.
-- **L** selects all; **R** orders selected ships to hold position; **T** orders them to engage nearby hostiles; **G** releases them.
-- **J** / **Z** / **X** / **V** set the default policy to **HOLD**, **RETREAT**, **STANDOFF**, **ENGAGE**. **HOLD** is the default and issues no standing order at all, so with Auto Mode off an uncommanded fleet only does what you told it to.
-- **N** mutes the mission music without touching weapon or UI audio.
-- The **FORMATION** button in the tactical options strip cycles the group shape used by the next move: LINE, COLUMN, TIGHT, WEDGE, ECHELON, SCREEN. The AI picks its own shape per role.
-- **SERVICE** sends selected ships back for paid station repair and rearm. A green **+** on the tactical map marks recovery; ship labels show RETURNING, QUEUED, UNDER FIRE, WAIT CP or REPAIR REARM.
+| Input | Action |
+| --- | --- |
+| LMB / drag | Select a ship / box-select friendly ships |
+| Shift + selection | Add/remove selection |
+| Double LMB | Select the ship's wing |
+| Ctrl + LMB | Select the same class |
+| RMB on hostile / friendly / empty space | Attack / guard / formation move |
+| MMB drag | Pan camera |
+| RMB drag | Set move facing with selected ships; orbit with empty selection |
+| WASD / arrows; Shift | Pan; slow pan |
+| Wheel; Q / E | Zoom; far / near zoom |
+| F / Ctrl+Space; H | Focus selection; focus your station |
+| B; Alt + double LMB | Toggle chase; chase the clicked ship |
+| 1..4; Shift+1..4 | Recall; assign control groups (also while paused) |
+| Alt+1 / 2 / 3 / 4 / 0 | Set 1x / 2x / 4x / 8x / 16x and resume; RTS or pilot |
+| + / - | Step speed; while paused, change the resume speed; RTS or pilot |
+| Pause | Toggle pause in RTS or pilot mode |
+| Space | Pause/resume in RTS mode only; retains native pilot firing behavior |
+| Esc | Open Resume/Restart/Quit in RTS; while piloting, resume first if paused and exit to RTS |
+| EXIT button (top bar) | Open the same Resume/Restart/Quit menu |
+| L / R / T / G | Select all / hold / engage / release orders |
+| J / Z / X / V | Default HOLD / RETREAT / STANDOFF / ENGAGE policy |
+| M / K | Arm move / attack command |
+| C; Shift+C | Battle director; hide/show UI |
+| N | Toggle mission music |
+| P | Pilot the primary selected friendly movable ship; return to RTS |
+| F10 | Toggle control hints on both RTS and pilot screens; off by default |
 
-Hovering any ship draws its effective weapon range as a ring on the command plane, its current action and projected course, and — while it has a move order — the destination and the facing it will arrive on. Target reticles keep the same shape and colour language as the tactical-map icons at every zoom level, and contacts outside the view are pinned to the screen edge as hollow markers. The battle director favors recent hits, active target locks and ships under fire over idle capital shots. Selecting a ship shows its weapon loadout (primary, secondary and, for a capital, every turret bank), current AI mission, target, distance and reason. If the piloted craft is destroyed, the pilot view remains for five seconds before returning to RTS command.
+The minimap supports ship selection, double-click wing selection and box selection. RMB on it focuses the camera. Production, station upgrades, fleet service, sentry placement and speed controls are clickable. Focus, base focus and chase remain available while paused. Arm a sentry from the station panel, then click its position in the 3D view or minimap; the station boundary ring and valid/invalid hover readout show placement limits and clearance.
 
-Tier 5 unlocks juggernauts late in a match: 23 minutes in the 30-minute profile and 46 minutes in the 60-minute profile. They have no hard count cap. Colossus and Sathanas cost roughly 12,000–14,000 CP; the Lucifer now costs about 15,450 CP, a 25% premium over its prior price. Four juggernauts consume most of a faction's measured lifetime CP in a long match; players and AI can exceed four if they earn the points, at the expense of the rest of their fleet. The AI can save for one for up to ten minutes, then resumes affordable production if it cannot buy one.
+The **SCENE** picker is available in setup and from the top bar. Choose a loop from 21 retail FS2 combat cues or **RANDOM**, and one of 36 retail `neb##`/`dneb##` sky backdrops or **RANDOM**. Backdrops are 2D sky art only: they do not enable full-nebula fog, volumetric rendering, reduced visibility, or sensor effects. For the 14 selected tracks with a MediaVP OGG replacement, the VFS chooses it when that asset is installed; otherwise the retail WAV is used. The native probe checked stock WAVs, all backdrop assets and staged optional OGG lookup, not audible output.
 
-Wingmate HUD visibility and normal-style commands while piloting are not included yet. Placeholder: this capability remains future work. The experimental native wing-membership extension is disabled and is not a mod dependency.
+Choose a formation in the options strip. A ground RMB drag places that formation perpendicular to the requested heading: a line runs across the ships' bows. Ships travel to their slots, then turn to parallel headings and hold them. Attack approaches loosely retain the selected formation, then release steering for close combat. Hull clearance is local to each pair; one capital does not spread the entire fighter screen. Oversized formations use packed ranks or ask for a smaller selection when they cannot fit safely.
 
-## Auto Mode, cinematic and the after-action report
+Enemy inspection shows identity, ship class/role, hull, shields and speed. Orders, tactical rationale, target links, weapon-range overlays, service state and predicted courses are private to your team.
 
-**AUTO MODE** hands your faction to the AI: it spends your CP, builds ships and issues strategic orders. Switching it **off** refunds any queued build and drops the Blue production state entirely, so nothing can spend your CP on your behalf. The default policy becomes **HOLD**, which issues no standing order at all, so an uncommanded fleet sits where you left it. The other three policies (RETREAT, STANDOFF, ENGAGE) are opt-in stances. Red and Gold are never affected by the switch.
+Map and reticle icons use the same basic geometric shapes. Type icons stay inside each reticle's upper-left corner at every tactical zoom. Friendly hover ranges distinguish primary (cyan), secondary (amber) and beam (violet) reach, with matching numbers. These are maximum loaded firing envelopes; native arcs and target restrictions still apply.
 
-The intro cinematic runs six establishing shots with per-shot hold beats and FOV interpolation. **Left** / **Right** step between shots and **5** replays the current one, each with a shot counter and progress bar in the letterbox; any other key or click skips the whole intro. After the last shot the camera drifts for a beat rather than freezing on the cut.
+## Fleet control
 
-When the battle ends, the report shows the outcome and why, then Blue's battle length, escalation tier, ships lost, capital losses, enemy kills, CP spent, CP remaining and fleet cap, plus a surviving-or-eliminated row per faction. Defeat distinguishes a destroyed Blue station from mutual destruction.
+Auto Mode spends your real CP and commands ships without manual orders. Switching it off refunds its queued build and removes your production director; opposing directors continue. HOLD is the default. Manual orders and possession take priority. A completed manual move holds at its destination; use **G** to release it.
 
-## Station upgrades and sentries
+With Auto Mode on, click the small **AI** button beside a production row to ask the player-side AI to save for that ship. It handles one request at a time, shows the request status below the build list and provides **CANCEL REQUEST**. It waits for fleet-cap space; urgent station defense can take a production turn before the request resumes.
 
-Open **STATION** in the right panel. It uses the sidebar space normally occupied by production, control groups and fleet policy; return to **PRODUCTION** for those controls. Hover an upgrade for costs and effects; hover the hull readout for the rotating station preview.
+Pilot mode uses native FSO flight/targeting/bank controls through an invulnerable, collisionless observer proxy; the real ship takes damage and fires its weapons. Craft destruction shows a short death view before returning to command. Pausing prevents direct simulation commands too. Speed hotkeys work while piloting and while paused.
 
-Each track has three cumulative levels, unlocked at escalation tiers 1, 2 and 3. Pay CP when starting; only one upgrade runs at once, while ship production continues. Upgrade duration follows the match duration setting.
+Capitals start with all eligible turret groups selected: **[ / ]** selects a group and **\\** toggles all groups. Native weapon-cycle controls also select groups. Primary and secondary triggers drive loaded turret banks; the HUD reports their availability. Turrets fire under your control. **O / < / >** and native subsystem targeting direct subsystem aim; weapon patterns and firing arcs still apply. Capital hull silhouettes appear in the native shield gauge.
 
-| Track | Level 1 | Level 2 | Level 3 |
-| --- | --- | --- | --- |
-| Armor | +20% maximum hull | +40% maximum hull and slow repair after 30 seconds without damage | +60% maximum hull |
-| Defenses | +2 sentry capacity | +50% hull on existing and future sentries | Station and sentry turrets fire 25% faster |
-| Logistics | +15% CP income | Ship builds take 20% less time | +30% CP income and a second simultaneous ship-build lane |
-| Command | +8 fleet capacity | +2 km sentry placement radius and +2 sentry capacity | Faction ability |
+The pilot panel separates battery, weapon-cycle and targeting status. It shows bank counts and maximum reach for the selected groups. **WEAPON CYCLES (EST.)** shows ready mounts and remaining time based on successful manual shots and the turret fire-rate multiplier; native per-bank cooldowns, random delays and burst timing are not exposed upstream, so these are estimates. The longest cycles appear first; select a battery group to inspect other weapons. Projectile guns use an intercept vector rather than their resting barrel direction. Deferred swarm/corkscrew launches are corrected at launch without changing native homing or salvo timing. Batteries prefer your selected hostile; mounts outside its arc/reach acquire local hostiles. Beams require a hostile target and barrel alignment. Native weapon-bank cycle bindings select turret groups without the proxy's empty-bank messages. Empty batteries are marked EMPTY. The held-input indicator reports input, not hits.
 
-Armor preserves the current hull percentage rather than healing damage instantly. Defenses L3 improves existing station turrets and current/future platforms; it no longer awards unequal free ships. Blue's Logistics L3 opens a second concurrent build lane; autonomous factions keep one production job at a time.
+Control hints have their own panel below ship status. Flak keeps a suitable selected fighter/bomber target; otherwise it tracks nearby hostile fighters in its own reach and arc. It leads their motion, using the actual shell launch point and predicted burst distance. Your primary/secondary triggers still control firing; local flak aiming does not replace your selected ship target.
 
-Station repairs recover at most 60% of observed hull damage; the other 40% leaves permanent scars. **BASE LIMIT** shows the remaining repair ceiling. Armor upgrades preserve scars as a fraction of maximum hull. Winning a raid therefore leaves damage that the next attack can exploit.
+Control hints are hidden initially; a visible **F10 SHOW/HIDE CONTROL HINTS** notice identifies the toggle. The preference carries between pilot/RTS views and mission restarts. During possession, FreeSpace's native directives panel shows the tactical task, target, movement point, distance, left/right and up/down steering angles, phase/posture and AI rationale. A yellow diamond marks the movement point or target when it is in view. Steering angles remain available when it is behind you. **AI WING ORDER** follows your wing's current assignment; **LAST AI ORDER** is the assignment captured when you took control. A prior manual command is labeled **YOUR ORDER**. Without an assignment, **SUGGESTED TASK** uses your selected hostile or an available hostile contact. These directives do not steer, fire or change your selected weapon target.
 
-Fleet service is available at each surviving faction's station. Ships gather beyond the station hull on the side away from nearby threats. Two ships can receive service at once; a capital, heavy or juggernaut uses both slots. Travel and queue time provide no recovery. Damage or a nearby armed threat pauses work for at least eight quiet seconds.
+The native pilot **C** menu opens the command list directly, bypassing the empty native **Wings** category. Its **All Fighters** broadcast is filtered to your logical wing, or your control group when the possessed hull is grouped. A command to an eligible member applies to that whole wing/group, including grouped capitals. If the hull belongs to multiple groups, the lowest-numbered group is used. The pilot panel names the command scope. Your own hull, stations, proxy and unrelated ships are protected. **Depart is disabled for broadcast recipients**; direct withdrawal from the RTS extraction controls is supported. Bases and the proxy cannot join control/logical groups. RTS and AI control regain ownership when possession ends. This uses upstream hooks and does not require dynamic native-wing extensions or engine changes.
 
-Service repairs 0.4% maximum hull per second to 90%, repairs subsystems at 1% per second to 90%, and restores 4% of each ammunition bank per second to full. Actual work consumes faction CP: repairing a full hull costs 35% of the ship's current purchase estimate, all subsystems 15%, and a full payload 12%. Partial work costs proportionally. No CP means waiting; losing the station prevents further service. Ready ships return to their previous manual orders or normal fleet control.
+In Auto Mode, each build-row **AI** button asks the player-side director to save for and build that specific ship. One request can be active at a time; the request label/status appears below the build list, and **CANCEL REQUEST** cancels it. A full fleet cap delays the request, and urgent station defense may temporarily take production priority.
 
-Autonomous ships return below 40% hull, below 15% in any finite ammunition bank, or with badly damaged systems. A ship under pressure at 22% hull or less breaks contact even while defending. More than four times the local opposing combat strength triggers immediate avoidance, and more than twice triggers withdrawal after six seconds, when an enemy is targeting the ship or it has taken a recent hostile hit. Mere proximity to a stronger force does not trigger service. A healthy siege unit does not retreat merely because its intended capital target has a large hull. Recovery has a minimum duration and a retry cooldown. New RTS orders can cancel service; critical self-preservation can trigger again. Player-piloted ships retain direct control.
+Faustus transports are excluded from production. Purchase floors are **60,000 CP** for Sathanas, **40,000 CP** for Colossus and Hades, and **35,000 CP** for Lucifer. A Sathanas has **1,500 base simulation seconds** of construction before build/logistics/difficulty modifiers. Tier premiums are shallower; Ravana and Hatshepsut no longer have special 70% discounts.
 
-Kill rewards belong to the faction that dealt the fatal attack. AI-versus-AI deaths do not subsidize Blue; friendly fire, self-kills, unknown killers and repeated death callbacks pay no bounty.
+## Station and economy
 
-Choose a sentry, then left-click in the world or minimap. Construction takes 20 seconds; its footprint is reserved and shown on the map. If enemy ships reach the build site before completion, construction cancels and refunds its CP. Invalid placement stays armed; Shift keeps placing after a successful order; right-click cancels. Placement range starts 4 km beyond the station model radius, with collision-sized clearance around the station and 600 m minimum spacing. Sentries have their own cap of 6 (up to 10 with upgrades) and do not consume fleet slots. Select your sentries and press **SELL** for half the CP actually paid; free platforms refund nothing.
+CP buys units, upgrades, sentries, service and abilities. Fatal hostile attacks credit kill rewards to the actual faction; friendly fire, self-kills, unknown killers and duplicate callbacks do not pay.
 
-Sentries have fixed prices and hull profiles, independent of mobile-ship pricing. Their roles differ:
+Fighter weapons cause 5% normal damage against command-station hulls and armored turrets: harassment creates pressure, while bombers, escorts and capitals perform serious siege. Fighter rams and unsupported non-strike direct weapons remain blocked. The supported pool covers 44 retail/FSPort fighter weapon variants, including cluster children; third-party weapons require explicit coverage. The optional MediaVP package patches these variants to retain MediaVP weapon ranges and effects. Ordinary fleet targets retain their normal damage in the tested armor cases. Station chip damage interrupts the existing quiet-repair delay and contributes proportionally to the existing damage scars, so clearing attackers restores recovery. Typed wreckage impacts are capped at 250 damage per hit. Each station has two 6 km interceptor mounts. AI defense ranks siege-capable attackers ahead of fighter harassment; fighters remain screens rather than a committed AI siege force. Explicit player fighter attack orders are allowed. Recovery considers nearby weapons that can participate within its danger window. Movement and refit paths keep clearance around their own station and reuse detour waypoints; native contacts remain possible, particularly at high time compression.
 
-| Platform | Faction | Tier | CP | Hull before upgrades | Weapon / role |
-| --- | --- | --- | --- | --- | --- |
-| Watchdog | Blue | 1 | 375 | 600 | Basic Terran laser screen |
-| Cerberus | Blue | 2 | 875 | 900 | Flak against strike craft |
-| Alastor | Blue | 3 | 1500 | 1200 | Harpoon missiles |
-| Mjolnir | Blue | 4 | 3000 | 3000 | Capital beam, aimed horizontally away from the base |
-| Ankh | Gold | 1 | 375 | 600 | Basic Terran laser screen |
-| Edjo | Gold | 2 | 875 | 1000 | Harpoon missiles |
-| Cerberus | Gold | 3 | 1500 | 1200 | Flak against strike craft (Terran hull; see below) |
-| Mjolnir | Gold | 4 | 3000 | 3000 | Capital beam (Terran hull; see below) |
-| Trident | Red | 1 | 375 | 700 | Basic Shivan laser screen |
-| Belial | Red | 2 | 825 | 1100 | Four-turret Shivan laser battery |
-| Rahu | Red | 3 | 2000 | 4000 | Three-turret flak battery |
+| Upgrade track | Main effects |
+| --- | --- |
+| Armor | Up to +60% maximum hull; all stations recover 2.5% of max hull per 100 seconds after 30 damage-free seconds; level 2 doubles repair rate |
+| Defenses | Extra sentry slots, +50% sentry hull, +25% turret fire rate |
+| Logistics | Income/build improvements; the player gets a second build lane at level 3 |
+| Command | Fleet cap, placement radius/sentry capacity, faction ability |
 
-Prices are authoritative in `fs2rts_config.lua` (`AI` -> `Defenses` -> `Classes`). Gold reaches tier 4 like Blue; it previously stopped at tier 2, which left its base materially softer at identical CP spend because `UpdateStationAI` filters on `option.tier<=tier`.
+Passive station hull repair recovers at most 60% of observed damage, leaving permanent scars; station turret subsystems also self-repair at the fleet-service subsystem rate. Both pause for 30 seconds after any hull or turret damage, so bases recover while quiet rather than under active fire. Repairs are disabled after the match ends, including during survivor-only Resume.
 
-Gold's tiers 3 and 4 reuse Blue's `GTSG Cerberus` and `GTSG Mjolnir` hulls. They were previously listed as `GVSG Sotar` and `GVSG Sekhem`, which name no class in retail `ships.tbl` or in any mod table — retail ships exactly two Vasudan sentries, `GVSG Ankh` and `GVSG Edjo` — so those slots could never build anything, and the entry meant to close the tier gap silently reopened it. An unknown class is an invalid handle rather than `nil`, which is why it never threw. `core/tools/test_table_references.py` now fails the build on any unresolvable `class`/`weapon` reference. Modelling real Vasudan emplacements means defining ship classes in a mod `*-shp.tbm`; that is outstanding work, not a tuning change.
+Player move commands remain owned after arrival: ships hold there until retasked or released with **G**. Native hit reactions and automatic critical-hull recovery cannot take away an explicit command. Moving/refitting ships do not engage during transit. Automatic isolated fighters regroup with mobile support before attacking a station, heavy hull or multiple close enemies alone; emergency defense, intentional feints and supported attacks remain available. Guard/escort goals have bounded native pursuit ranges.
 
-Laser travel is 1,375 m for Terran turrets and 950 m for Shivan turrets; Harpoon travel is 1,250 m. Flak works at roughly 1 km and the Mjolnir beam reaches 4 km; its turret is locked against targets outside that distance and tracks in-range targets along its placement lane. These are weapon travel limits, not guaranteed hits against moving ships. Turret arcs matter: cover multiple approaches, and place Mjolnir on the lane it should defend. It is a capital specialist, not a bomber screen.
+Fleet service withdraws immediately and repairs hull/subsystems and ammunition for CP at a surviving station. There are four service slots; a capital uses two. Visitors reserve distinct pads with hull clearance. Arrival is physical; travel and queues never bank repair time. Explicit Service aims for full hull/subsystems and ammo, starts on the next work tick at a quiet pad, and pauses after actual damage. A nearby contact alone does not indefinitely block manual work. Automatic recovery retains its conservative threat checks and 90% readiness threshold. Prior orders resume when ready; a fresh command cancels service and possession takes ownership. A critical-hull notice on a player-commanded or piloted ship offers focus or service. Stations use dedicated beam variants with **6 km acquisition range and active ray length**; fleet capital beam ranges are unchanged.
 
-Command L3 unlocks a 150-second-cooldown ability: Blue targets a strike within 12 km of its station, Gold jumps in a Sobek if a fleet slot is free, and Red boosts nearby fighter/bomber maximum speed by 50% for 20 seconds, preserving engine-recharge speed changes. Blue's strike arrives after 5 seconds, deals 1,200 native blast damage inside 250 m and falls off to zero by 900 m in three dimensions. Shields and armor apply, and **friendly fire is enabled**. An out-of-range click keeps targeting armed and spends no cooldown.
+Sentry hulls are Watchdog (Terran), Ankh (Vasudan) and Trident (Shivan), following the faction's species. Each of their two turrets has a dedicated **RTS Sentry Interceptor** laser for small targets out to **6 km**, plus a Vasudan Flux Cannon for large targets out to **11 km**. The interceptor uses faster shots at a lower fire rate than the retail close-defense laser; regular fighters' Subach guns are unchanged. Fixed platforms slew toward nearby attackers. Their gun durability scales with the purchased hull instead of retaining the retail 4 HP. Tiers buy durability, not different weapons:
 
-AI factions can buy upgrades and sentries; Blue does so only with auto mode enabled. AI preserves the cost of a mobile production package, builds at least eight mobile combatants before discretionary defenses, and normally buys only two sentries without nearby threats. Threats influence platform choice and additional defensive investment. Sentries never count as mobile fighter composition.
+| Tier | CP | Hull before upgrades |
+| --- | --- | --- |
+| 1 | 250 | 600 |
+| 2 | 375 | 900 |
+| 3 | 500 | 1200 |
+| 4 | 1250 | 3000 |
 
-**Known defect, live in the shipped default.** The save window is restarted by *every* purchase, including the cheap hull the producer deliberately fields alongside an unmet goal. The window therefore never ages out, the bank never accumulates toward its target, and `SAVING_FOR_DESIRED_ROLE` becomes a permanent no-op. Measured headless, 4/4 matches: **zero capital, heavy and juggernaut hulls built**, per-faction bank peaking near 2,300 CP against a target of 12,675-31,275 CP, fighter builds up 5x and losses up 228%. The target is economically unreachable, not merely unsaved for. See `docs/contracts/03-ai-production.md` and `docs/contracts/04-station-economy.md` for the recorded violations.
+The cannon has 11 km native range with slow, unguided shells and retail capital-target flags; this range does not apply to the close-defense laser. Stations apply the existing 0.10 armor multiplier to cannon impact and blast damage. Sentries still need mobile screening against massed attackers. Place within the station's control radius; build sites reserve space and cancel/refund if contested. RMB cancels placement, Shift continues placing, and SELL refunds half the actual price paid. Free sentries refund nothing.
 
-In a three-faction battle, the commander allocates new groups toward a 70% preferred-front / 30% secondary-front split by assigned combat value. This keeps a main assault concentrated while covering both enemies. Surviving groups keep their fronts; a destroyed, disabled or realigned target releases the assignment. There is no fleet-wide turn every 180 seconds and no hull-weakness pile-on. With one enemy faction remaining, groups converge on that survivor. Capital strike groups stay on the station objective until a fixed defense is within weapon reach, preventing a distant sentry from stalling the siege. Manual Blue orders and piloting retain priority over automatic control.
+Command level 3 grants the chosen political faction's ability. The modern Vasudan Empire's Sobek jump costs at least **6,000 CP** with a **300-second cooldown**; failed creations refund their share of the purchase. Strikes can damage friendly ships. Surge abilities consume CP and affect only their stated roles; no eligible nearby hulls means no charge or cooldown.
 
-The commander assesses each front separately, counting that enemy's defenders rather than treating a third faction attacking it as friendly defensive strength. Close self-defense, interception, escorts and feints still operate below the campaign assignment. Group retention cannot restore an obsolete base objective after an explicit front reassignment. Ordinary base emergencies target at most 70% defensive allocation; critical hull may authorize a full recall. Allocation uses whole groups, so percentages are budgets rather than exact ship-count limits.
+## Configuration and verification
 
-Combat strength uses remaining hull/shields and nominal output of available weapons. Locked/destroyed turrets and empty ammo banks contribute no output; purchase price remains an economic/replacement-cost measure. This proxy does not simulate accuracy, armor interactions or missile submunitions. Higher difficulty lowers the required overmatch for an assault (Easy 0.76, Normal 0.65, Hard 0.59, Brutal 0.53); self-preservation and retreat thresholds remain active. Native hostile missile targeting is recognized as point defense and never passed through ship-only field access.
+Gameplay settings are in `data/scripts/fs2rts_config.lua`; weapon and station definitions are in `data/tables`. [Development notes](../docs/DEVELOPMENT.md) explain module ownership and verification. [Headless instructions](../../RTS-fleet-command-artifacts/README.md) provide the supported launcher, probes, result paths and verdict rules.
 
-Production combines composition deficits with counter-role demand reported by the commander for nearby home threats. During an active base emergency, the AI cancels long capital saving and buys the fastest affordable counter: bombers for capital threats, otherwise fighters, then escorts. Once the emergency clears, ordinary saving resumes. Station upgrades and sentries respect the factory's current CP reservation. The AI's savings window does not restart when its composition need changes: it saves for at most two minutes for ordinary purchases, ten minutes for tier-3 capitals, fifteen minutes for tier-4 heavy ships, and ten minutes for tier-5 juggernauts before buying another affordable role. Under critical station pressure, attack operations hold their offensive commitment instead of withdrawing on a routine timer, and focused attackers stay in the fight unless their hull reaches the critical retreat threshold. AI fighters keep a station strike until their ammunition is nearly empty; fighters rearm at 5%, other roles at 15%, and committed base-strike groups at 2%. Escalation is not a free-spawn schedule: Ravana is a tier 3 capital, while Sathanas, Lucifer and Colossus are tier 5 juggernauts funded through the normal economy. Faustus is an armed light escort with a science-hull model; it supplies no CP-income bonus or research ability. No CP storage cap has been added.
-
-Out-of-combat armor repair resets its delay on every observed hull loss, including fractional damage below 0.5 HP. Repeated light hits must suppress repair just like large hits.
-
-## Development checks
-
-`tools/kill_reward_natural_fire_probe.lua` and its matching `tools/kill-reward-natural-fire-sct.tbm` run an isolated native reward check. Place the script and hook in a leading probe mod, using the same portable headless runner as the station checks. Require final `PASS` plus normal engine exit: an armed Hercules must kill a fighter with projectiles and a Hecate must kill a Fenris with beams. The probe checks the native killer handle, its owning ship, exact bounty, and zero payments to other factions. Low-hull stationary targets isolate attribution, not combat balance. Do not inspect ship-only properties on weapon/beam handles, even inside Lua `pcall`: unattended engine property errors can throw a native exception.
-
-`python core/tools/test_station.py` runs the actual Lua scripts under Lua 5.1 using Python's `lupa` package. From inside `core`, use `python tools/test_station.py`. An optional scripts-directory argument allows comparison with a backup. These checks cover purchase rejection, completion boundaries, repair timing, reset, placement/refunds, capacity, abilities, income/build speed, AI spending and panel bounds; engine objects are test doubles.
-
-`python core/tools/parse_check.py` compiles every module in `data/scripts` and reports the first file that fails to load. Run it after any edit: Lua only reports a syntax error when the mission actually loads, so a typo ships silently otherwise.
-
-## Headless match verification
-
-`python core/tools/prepare_headless_batch.py --tag <label> --matches 8` stages a headless workspace from the *current* mod tree — hardlinked retail VPs, this mod as `rts`, and `core/tools/acceptance_driver.lua` as a leading `probe` mod that starts the scenario, emits one `BATTLE_END` record and asks the engine to quit so a match ends naturally instead of being killed at the wall clock. It writes a plan for `src/fs2open/tools/rts_ai_experiments/run_batch.py`, one match per worker. Point `--core` at a pre-change snapshot for a paired control on identical seeds.
-
-`python core/tools/analyze_batch.py <results>` turns a finished batch into per-feature verdicts: crash and error counts, natural versus timed-out terminals, capital spawn placement against both the own-base and enemy-base limits, measured beam-versus-projectile damage per hit on a station, order compliance, and the outcome cause.
-
-Three further tools turn a batch into evidence rather than a number:
-
-- `python core/tools/ai_timeline.py <results>` streams per-faction time series, derived phase transitions and ASCII sparklines, and explains anomalies in the terms that caused them (for example a production blackout, naming the build reason, the bank movement and the bank target that were in play).
-- `python core/tools/compare_batches.py <baseline> <candidate>` normalises 64 metrics, applies each metric's declared polarity, and separates real change from noise using the spread of per-match values. It refuses to compare totals when the two batches ran different amounts of simulated time.
-- `python core/tools/ai_invariants.py <results>` asserts algebraic invariants - CP spend reconciles to build costs, `FACTION.losses` reconciles to LOSS events, capital-class production actually happens, `bankTarget` is reachable against the observed bank peak. This is the check that finds *absences*, which a baseline diff cannot.
-- `python core/tools/regression_gate.py <candidate>` grades a candidate against a baseline on a fixed metric set and exits non-zero on a regression. It refuses to gate a metric that has no declared polarity, rather than passing it silently.
-
-Contracts for each subsystem, including recorded violations and unverified invariants, are in `docs/contracts/`.
-
-Three records exist only to make a result explainable rather than merely reportable:
-
-- `DECISION` carries the group's centroid, radius, target and station position, and the arena extent, so where each group was can be reconstructed.
-- `COHESION` (every 2 s per faction) holds every group's geometry and the pairs that shared a target or whose discs overlapped, which is the only record of a faction coordinating with itself. It is rate limited because sampling on every planner tick roughly tripled a headless run's frame cost.
-- `CONTEST` (every 10 s per faction) and `OUTCOME_CAUSE` (once, the instant a command station dies) answer "why did this side lose": how the groups were allocated between the enemy base and enemy groups, how long any assigned group went without closing on its objective, and which faction killed which base with which weapons from what state. The CONTEST stall metric is the live signature of a capital that accepted an attack order and then parked, which is what the engine does when `ai_chase` refuses a fighter target.
-
-Two limits worth knowing. The command arena is a *movement* clamp, not the playfield: the Red and Gold stations sit outside it, so groups near their own base are expected to be outside it. And capital hulls carry a `$Collision Physics` block with zero rotation factors, so a collision cannot spin them; the visible rolling during rearm is a goal-reissue loop, not collision response.
-
-`python core/tools/undefined_global_check.py` flags any bare global function call that is neither a module local nor a name this FSO build actually registers. It exists because an undefined scripting global does not raise a catchable Lua error in the engine: the process aborts with an uncatchable C++ exception, leaving no Lua stack, no log line and an empty stdout. That exact failure shipped once during this work (a `shipValid` call where the module's helper is the local `valid`) and cost several failed headless batches to find. Run it before every headless batch; it takes under a second.
-
-`python core/tools/test_feature_request.py` covers the interaction layer specifically: that every bound key is also swallowed by `ShouldOverrideKey` (a key bound but not swallowed leaks to FSO and double-fires), that no two actions share a key, that number keys drive time rather than wing recall, that Auto Mode off leaves Blue unable to spend CP while Red and Gold keep producing, that each formation shape produces distinct slot geometry, that reticle pixel size stays inside its clamp across the whole zoom range, that cinematic shot switching wraps without error, and that the after-action report carries real numbers. It also guards two bugs that shipped during this work: an infinite recursion in the move-facing frame updater, and a shot switch that advanced the status line without advancing the shot. Its spatial and outcome telemetry suites pin the group-centroid, cohesion, contest and outcome fields the analysis tools depend on, including the stall metric and the per-faction sample cadence.
-
-`core/tools/station_headless_probe.lua` is an opt-in native combat probe, never loaded in normal play. In an isolated portable copy with retail VPs, add a leading `probe` mod with this file under `data/scripts` and a conditional `$On Game Init` hook requiring `station_headless_probe`. Add a briefing `$On Frame` hook posting `GS_EVENT_ENTER_GAME`. Run `FS2_RTS_Escalation` with `-headless -fixed-dt 0.03333333333333333 -noninteractive -max-sim-time 160`, at normal time scale. The local experimental FSO build must support these flags and dispatch Lua frame callbacks in headless mode. The probe writes and flushes `probe/data/station-fixes.txt`; require its final `PASS`, not just a successful engine exit. It tests every upgrade level/faction, all nine platforms against a cruiser/fighter/bomber at 650 m across four directions, Mjolnir's actual placement orientation, repair delay, Surge persistence/expiry, Gold reinforcement and native strike controls. Ten-second gaps allow old projectiles to expire between combat trials. Targets are immobilized and hull-normalized; this is mechanism verification, not a moving-target balance test.
-
-`core/tools/coordination_contract_probe.lua` uses the same isolated setup, requiring `coordination_contract_probe` instead and a 45-second cap. Require the final `PASS` in `probe/data/coordination-contracts.jsonl`. It disables the operation layer to isolate native missile targeting, persistent two-front assignments, disabled-weapon valuation, ordinary/critical recall budgets, counter-role demand, capital savings and fractional-damage repair. Its emergency contact is injected into the hit cache with real native ships; it does not prove a physical beam hit. The station probe above covers native weapons separately.
-
-`core/tools/convoy_headless_probe.lua` uses the same setup with a 210-second cap. Require its final `PASS` in `probe/data/convoy-headless.jsonl`. It repeatedly evaluates operations and installs native goals for one bomber and three fighter groups, checking physical approach progress, escort separation, reserve release and operation continuity. The objective is immobilized and disarmed. This isolates movement mechanics; it does not measure combat effectiveness or prove coordinated attacks win more battles.
-
-Full-match experiments need `AI.TraceFileEnabled=true` in the isolated test copy; enable `ExperimentalDamageTelemetry` only with the matching local hook build. Require a `BATTLE_END` event and natural engine `mission_exit` for terminal results. Compare multiple seeds; seed control does not produce identical tactical replays. Test MediaVPs separately from retail models; the headless checks use retail assets.
-
-For full acceptance batches use the maintained runner rather than the ad-hoc probes above: `work/readable-rts-acceptance/prepare_suite.py` stages a run and `src/fs2open/tools/rts_ai_experiments/run_batch.py` executes it, with the verdict rules in that directory's `README.md`.
-
-## Engine-facing traps
-
-Both of these fail silently in a way that costs a full debug cycle, and neither is caught by reading the mod code.
-
-- **Never put `#` comments inside `#Conditional Hooks`.** The SCT parser reads `optional_string("#Conditional Hooks")`, which skips whitespace only, so any prose before the marker makes it skip the entire block. Inside the block a `#` line is consumed as a *condition*, rejected, and the following hook is disabled: `Condition '#' is not valid for hook 'On Game Init'. The hook will not evaluate!` For `On Game Init` that means the mod never loads; for `On Ship Death`, that death bookkeeping silently stops. `data/tables/fs2rts-sct.tbm` must stay comment-free — put the rationale in the Lua beside the code it explains (see `fs2rts_lifecycle.lua`, `TRANSIENT_GAME_STATES`).
-- **Check every engine flag name against the engine tables.** `ship:getFlag("weapons-locked")` is a real flag — `Parse_object_flags[]` in `code/mission/missionparse.cpp` and `Object_base_fixes[]` in `code/ship/ship.cpp` both carry it, alongside `primaries-locked`, `secondaries-locked`, `lock-all-turrets` and `afterburners-locked`. An earlier version of this file claimed the opposite and would have discouraged a perfectly valid flag; verify against the engine tree rather than against prose like this. A bad name still logs `Ship/object/ai flag '…' not found!` on every call and always returns false, which turns the guard into dead code rather than an error.
-
-## Debugging a load or activation problem
-
-Run a **debug** build and read `[FS2RTS]` lines in `fs2_open.log`; the mod logs activation, shutdown, and invalid runtime ship classes. Two log-reading caveats: the log is only written on a graceful exit, so do not force-kill a run you intend to inspect, and the debug build's asserts and modal dialogs discard the log entirely — prefer the release engine for unattended batch runs and the debug build only for interactive diagnosis.
+[The acceptance contract](../docs/AI_ACCEPTANCE_AND_INVARIANTS.md) defines what tests and metrics can establish. From the mod root, `python -m pytest --suite lua -q` runs Lua-backed checks; `--suite static`, `tools`, or `all` select the other evidence groups. These checks do not establish gameplay balance. Accounting alarms and tuning diagnostics are reported separately; comparisons have no implicit quality goals or historical baseline.

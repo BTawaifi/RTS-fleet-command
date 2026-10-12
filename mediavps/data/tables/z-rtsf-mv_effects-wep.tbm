@@ -1,0 +1,1198 @@
+; Generated optional MediaVP alias patches; load only with MediaVP assets.
+
+#Primary Weapons
+
+$Name: RTSF Subach HL-7
++nocreate
+@Laser Bitmap:		subachbolt
+@Laser Glow:		subachboltglow
+@Laser Color:		255, 0, 0
+@Laser Color2:		60, 60, 255
+@Laser Length:		10.0
+@Laser Head Radius:	0.5
+@Laser Tail Radius:	0.5
+$Collision Radius Override: 0.90
+
+$Flags: ( "detonate on expiration" ) 
+$Impact Effect:		SubachImpact
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			0.9
+$Piercing Impact Velocity:			10
+$Piercing Impact Splash Velocity:	-2.5
+$Piercing Impact Variance:			0.01
+$Piercing Impact Particles:			5
+$Muzzleflash:		subachmuzzle
+
+$Name: RTSF Subach HL-D
++nocreate
+@Laser Bitmap:		subachbolt
+@Laser Glow:		subachboltglow
+@Laser Color:		255, 0, 0
+@Laser Color2:		60, 60, 255
+@Laser Length:		10.0
+@Laser Head Radius:	0.5
+@Laser Tail Radius:	0.5
+$Collision Radius Override: 0.90
+
+$Flags: ( "detonate on expiration" ) 
+$Impact Effect:		SubachImpact
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			0.9
+$Piercing Impact Velocity:			10
+$Piercing Impact Splash Velocity:	-2.5
+$Piercing Impact Variance:			0.01
+$Piercing Impact Particles:			5
+$Muzzleflash:		subachmuzzle
+
+$Name: RTSF Mekhu HL-7
++nocreate
+@Laser Bitmap:		mekhubolt
+@Laser Glow:		subachboltglow
+@Laser Color:		40, 200, 255
+@Laser Color2:		125, 0, 255
+@Laser Length:		12.0
+@Laser Head Radius:	0.5
+@Laser Tail Radius:	0.5
+$Collision Radius Override: 0.85
+
+$Flags: ( "detonate on expiration" ) 
+$Impact Effect:		MekhuImpact
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			0.85
+$Piercing Impact Velocity:			10
+$Piercing Impact Splash Velocity:	-2.5
+$Piercing Impact Variance:			0.01
+$Piercing Impact Particles:			5
+$Muzzleflash:		mekhumuzzle
+
+$Name: RTSF Mekhu HL-7D
++nocreate
+@Laser Bitmap:		mekhubolt
+@Laser Glow:		subachboltglow
+@Laser Color:		40, 200, 255
+@Laser Color2:		125, 0, 255
+@Laser Length:		12.0
+@Laser Head Radius:	0.5
+@Laser Tail Radius:	0.5
+$Collision Radius Override: 0.85
+
+$Flags: ( "detonate on expiration" ) 
+$Impact Effect:		MekhuImpact
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			0.85
+$Piercing Impact Velocity:			10
+$Piercing Impact Splash Velocity:	-2.5
+$Piercing Impact Variance:			0.01
+$Piercing Impact Particles:			5
+$Muzzleflash:		mekhumuzzle
+
+$Name: RTSF Akheton SDG
++nocreate
+@Laser Bitmap:		akhetonbolt
+@Laser Glow:		akhetonboltglow
+@Laser Color:		150, 150, 255
+@Laser Color2:		0, 0, 0
+@Laser Length:		28.0
+@Laser Head Radius:	0.5
+@Laser Tail Radius: 0.5
+$Collision Radius Override: 0.90
+
+$Flags:				( "particle spew" "detonate on expiration" )
+$Impact Effect:		AkhetonPact
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			0.9
+$Piercing Impact Velocity:			10
+$Piercing Impact Splash Velocity:	-2.5
+$Piercing Impact Variance:			0.01
+$Piercing Impact Particles:			5
+$Muzzleflash:		akhetonmuzzle
+$Pspew:
+	+Index: 0
+	+Count:		1
+	+Time:		25
+	+Vel:		0.0
+	+Radius:	0.2
+	+Scale:		0.1
+	+Bitmap:	akhetonring
+$Pspew:
+	+Index: 1
+	+Count: 0
+$Pspew:
+	+Index: 2
+	+Count: 0
+$Pspew:
+	+Index: 3
+	+Count: 0
+
+$Name: RTSF Morning Star
++nocreate
+@Laser Bitmap:		morningstarorb
+@Laser Glow:		morningstarorbglow
+@Laser Color:		255, 255, 100
+@Laser Color2:		255, 200, 100
+@Laser Length:		0.1
+@Laser Head Radius:	1.8
+@Laser Tail Radius:	1.8
+$Collision Radius Override: 1.0
+
+$Flags:				( "particle spew" "detonate on expiration" )
+$Impact Effect:		MorningstarImpact
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			1.3
+$Piercing Impact Velocity:			10
+$Piercing Impact Splash Velocity:	-2.5
+$Piercing Impact Variance:			0.01
+$Piercing Impact Particles:			5
+$Muzzleflash:		morningstarmuzzle
+$Pspew:
+	+Index:		0
+	+Count:		0
+$Pspew:
+	+Index:		1
+	+Count:		0
+$Pspew:
+	+Index:		2
+	+Count:		0
+$Pspew:
+	+Index:		3
+	+Count:		0
+
+$Name: RTSF MorningStar D
++nocreate
+@Laser Bitmap:		morningstarorb
+@Laser Glow:		morningstarorbglow
+@Laser Color:		255, 255, 100
+@Laser Color2:		255, 200, 100
+@Laser Length:		0.1
+@Laser Head Radius:	1.8
+@Laser Tail Radius:	1.8
+$Collision Radius Override: 1.0
+
+$Flags:				( "particle spew" "detonate on expiration" )
+$Impact Effect:		MorningstarImpact
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			1.3
+$Piercing Impact Velocity:			10
+$Piercing Impact Splash Velocity:	-2.5
+$Piercing Impact Variance:			0.01
+$Piercing Impact Particles:			5
+$Muzzleflash:		morningstarmuzzle
+$Pspew:
+	+Index:		0
+	+Count:		0
+$Pspew:
+	+Index:		1
+	+Count:		0
+$Pspew:
+	+Index:		2
+	+Count:		0
+$Pspew:
+	+Index:		3
+	+Count:		0
+
+$Name: RTSF Prometheus R
++nocreate
+@Laser Bitmap:		promrbolt
+@Laser Glow:		promrboltglow
+@Laser Color:		40, 255, 40
+@Laser Color2:		40, 255, 40
+@Laser Length:		13.0
+@Laser Head Radius:	0.6
+@Laser Tail Radius:	0.6
+$Collision Radius Override: 1.0
+
+$Flags: ( "detonate on expiration" ) 
+$Impact Effect:		PromRImpact
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			1.2
+$Piercing Impact Velocity:			10
+$Piercing Impact Splash Velocity:	-2.5
+$Piercing Impact Variance:			0.01
+$Piercing Impact Particles:			5
+$Muzzleflash:		promrmuzzle
+
+$Name: RTSF Prometheus S
++nocreate
+@Laser Bitmap:						BoltPromS1Grn
+@Laser Head-on Bitmap: 				BoltPromS2Grn
+@Laser Glow:						BoltPromS1Glow
+@Laser Glow Head-on Bitmap: 		BoltPromS2Glow
+@Laser Head-on Transition Angle: 	15
+@Laser Head-on Transition Rate: 	5
+@Laser Color:						10, 180, 20
+@Laser Color2:						10, 180, 20
+@Laser Length:						11.0
+@Laser Head Radius:					1.5
+@Laser Tail Radius:					1.5
+$Collision Radius Override: 		1.0
+
+$Flags: ( "detonate on expiration" ) 
+$Impact Effect:						FlashHitPromS1Grn
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			1.0
+$Piercing Impact Velocity:			10
+$Piercing Impact Splash Velocity:	-2.5
+$Piercing Impact Variance:			0.01
+$Piercing Impact Particles:			5
+$Muzzleflash:						MuzPromS1Grn
+
+$Name: RTSF Prometheus D
++nocreate
+@Laser Bitmap:						BoltPromS1Grn
+@Laser Head-on Bitmap: 				BoltPromS2Grn
+@Laser Glow:						BoltPromS1Glow
+@Laser Glow Head-on Bitmap: 		BoltPromS2Glow
+@Laser Head-on Transition Angle: 	15
+@Laser Head-on Transition Rate: 	5
+@Laser Color:						10, 180, 20
+@Laser Color2:						10, 180, 20
+@Laser Length:						11.0
+@Laser Head Radius:					1.5
+@Laser Tail Radius:					1.5
+$Collision Radius Override: 		1.0
+
+$Flags: ( "detonate on expiration" ) 
+$Impact Effect:						FlashHitPromS1Grn
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			1.0
+$Piercing Impact Velocity:			10
+$Piercing Impact Splash Velocity:	-2.5
+$Piercing Impact Variance:			0.01
+$Piercing Impact Particles:			5
+$Muzzleflash:						MuzPromS1Grn
+
+$Name: RTSF Maxim
++nocreate
+$Model File:		none
+@Laser Bitmap:		BoltMaxim1Blu
+@Laser Glow:		BoltMaxim1Glow
+@Laser Color:		100, 100, 255
+@Laser Color2:		100, 100, 255
+@Laser Length:		20.0
+@Laser Head Radius:	4.0
+@Laser Tail Radius:	4.0
+$Collision Radius Override: 1.5
+
+$Flags: ( "detonate on expiration" ) 
+$Trail:
+	+Start Width:	3.0
+	+End Width:		3.0
+	+Start Alpha:	1.0
+	+End Alpha:		0.0
+	+Alpha Decay Exponent: 3.0
+	+Max Life:		0.05
+	+Bitmap:		TrailMaxim1Blu
+	+Bitmap Stretch: 5.0
+$Impact Effect:						FlashHitMaxim1Blu
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			5.0
+$Piercing Impact Velocity:			10
+$Piercing Impact Splash Velocity:	-2.5
+$Piercing Impact Variance:			0.01
+$Piercing Impact Particles:			5
+$Inflight Effect:					TrailMaxim1Blu
+$Muzzleflash:		MuzMaxim1Blu
+
+$Name: RTSF Maxim D
++nocreate
+$Model File:		none
+@Laser Bitmap:		BoltMaxim1Blu
+@Laser Glow:		BoltMaxim1Glow
+@Laser Color:		100, 100, 255
+@Laser Color2:		100, 100, 255
+@Laser Length:		20.0
+@Laser Head Radius:	4.0
+@Laser Tail Radius:	4.0
+$Collision Radius Override: 1.5
+
+$Flags: ( "detonate on expiration" ) 
+$Trail:
+	+Start Width:	3.0
+	+End Width:		3.0
+	+Start Alpha:	1.0
+	+End Alpha:		0.0
+	+Alpha Decay Exponent: 3.0
+	+Max Life:		0.05
+	+Bitmap:		TrailMaxim1Blu
+	+Bitmap Stretch: 5.0
+$Impact Effect:						FlashHitMaxim1Blu
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			5.0
+$Piercing Impact Velocity:			10
+$Piercing Impact Splash Velocity:	-2.5
+$Piercing Impact Variance:			0.01
+$Piercing Impact Particles:			5
+$Inflight Effect:					TrailMaxim1Blu
+$Muzzleflash:		MuzMaxim1Blu
+
+$Name: RTSF UD-8 Kayser
++nocreate
+@Laser Bitmap:		nothing
+@Laser Glow:		nothing
+@Laser Color:		255, 255, 255
+@Laser Color2:		255, 255, 255
+@Laser Length:		12.0
+@Laser Head Radius:	2.0
+@Laser Tail Radius:	2.0
+$Collision Radius Override: 0.75
+
+$Flags:				( "particle spew" "detonate on expiration" )
+$Impact Effect:				FlashHitKayser1Vlt
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			0.9
+$Piercing Impact Velocity:			10
+$Piercing Impact Splash Velocity:	-2.5
+$Piercing Impact Variance:			0.01
+$Piercing Impact Particles:			5
+$Inflight Effect:			TrailKayser1Vlt
+$Muzzleflash:				MuzKayser1Vlt
+$Pspew:
+	+Index:		0
+	+Count:		0
+$Pspew:
+	+Index:		1
+	+Count:		0
+$Pspew:
+	+Index:		2
+	+Count:		0
+$Pspew:
+	+Index:		3
+	+Count:		0
+
+$Name: RTSF UD-D Kayser
++nocreate
+@Laser Bitmap:		nothing
+@Laser Glow:		nothing
+@Laser Color:		255, 255, 255
+@Laser Color2:		255, 255, 255
+@Laser Length:		12.0
+@Laser Head Radius:	2.0
+@Laser Tail Radius:	2.0
+$Collision Radius Override: 0.75
+
+$Flags:				( "particle spew" "detonate on expiration" )
+$Impact Effect:				FlashHitKayser1Vlt
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			0.9
+$Piercing Impact Velocity:			10
+$Piercing Impact Splash Velocity:	-2.5
+$Piercing Impact Variance:			0.01
+$Piercing Impact Particles:			5
+$Inflight Effect:			TrailKayser1Vlt
+$Muzzleflash:				MuzKayser1Vlt
+$Pspew:
+	+Index:		0
+	+Count:		0
+$Pspew:
+	+Index:		1
+	+Count:		0
+$Pspew:
+	+Index:		2
+	+Count:		0
+$Pspew:
+	+Index:		3
+	+Count:		0
+
+$Name: RTSF Circe
++nocreate
+@Laser Bitmap:						BoltCirce1Vlt
+@Laser Head-on Bitmap: 				BoltCirce2Vlt
+@Laser Glow:						BoltCirce1Glow
+@Laser Glow Head-on Bitmap: 		BoltCirce2Glow
+@Laser Head-on Transition Angle: 	15
+@Laser Head-on Transition Rate: 	10
+@Laser Color:		255, 200, 150
+@Laser Color2:		200, 150, 255
+@Laser Length:		30.0
+@Laser Head Radius:	2.0
+@Laser Tail Radius: 2.0
+$Collision Radius Override: 1.0
+
+$Flags: ( "detonate on expiration" ) 
+$Impact Effect:				FlashHitCirce1Vlt
+$Inflight Effect:			TrailCirce1Vlt
+$Muzzleflash:		MuzCirce1Vlt
+
+$Name: RTSF Lamprey
++nocreate
+@Laser Bitmap:		nothing
+@Laser Glow:		nothing
+@Laser Head Radius:	3.0
+@Laser Tail Radius:	3.0
+$Collision Radius Override: 1.0
+
+$Flags: ( "detonate on expiration" ) 
+$Impact Effect:		FlashHitLamprey1Orn
+$Inflight Effect:	TrailLamprey1Orn
+$Muzzleflash:		MuzLamprey1Orn
+$Pspew:
+	+Index: 	0
+	+Count:		0
+$Pspew:
+	+Index: 	1
+	+Count:		0
+$Pspew:
+	+Index: 	2
+	+Count:		0
+$Pspew:
+	+Index: 	3
+	+Count:		0
+
+$Name: RTSF Training
++nocreate
+@Laser Glow:		Subach_Glow
+$Collision Radius Override: 0.5
+
+$Impact Explosion Radius:	1.0
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			0.5
+$Piercing Impact Velocity:			10
+$Piercing Impact Splash Velocity:	-2.5
+$Piercing Impact Variance:			0.01
+$Piercing Impact Particles:			5
+
+$Name: RTSF Vasudan Light Laser
++nocreate
+$Model File: none 
+@Laser Bitmap: vllbitmap
+@Laser Glow: vllglow
+@Laser Color: 200, 30, 30 
+@Laser Length: 3.0 
+@Laser Head Radius: 0.7 
+@Laser Tail Radius: 0.7
+$Collision Radius Override: 0.90
+$Flags: ( "player allowed" "particle spew" "detonate on expiration" ) 
+$Impact Effect: vll_impact
+$Muzzleflash: VLLMuzzle
+$Pspew:
++Type: Default
++Count: 1
++Time: 16
++Vel: 0.6
++Radius: 0.3
++Scale: 0.0
++Bitmap: vasudanring
+
+$Name: RTSF Targeting Laser
++nocreate
+$Collision Radius Override: 0.90
+$BeamInfo:
+	+Muzzleglow:		S_Beamglow
+	$Section:
+		+Index:			0
+		+Texture:		beam-white2
+;end
+
+$Name: RTSF Shivan Heavy Laser
++nocreate
+@Laser Bitmap:		shivlaser
+@Laser Glow:		shivlaserglow
+@Laser Color:		255, 0, 0
+@Laser Color2:		255, 0, 0
+@Laser Length:		20.0
+@Laser Head Radius:	1.4
+@Laser Tail Radius:	1.4
+$Collision Radius Override: 0.90
+
+$Flags:				( "particle spew" "detonate on expiration" )
+$Trail:
+	+Start Width:	0.0
+	+End Width:		0.0
+	+Start Alpha:	1.0
+	+End Alpha:		0.0
+	+Max Life:		0.1
+	+Bitmap:		shivlasertrail
+$Impact Effect: shivlaserimpact
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			3.2
+$Piercing Impact Velocity:			10
+$Piercing Impact Splash Velocity:	-2.5
+$Piercing Impact Variance:			0.01
+$Piercing Impact Particles:			5
+$Inflight Effect: shivringeffect2
+$Muzzleflash:		shivanmuzzle
+$Pspew:
++Index: 0
++Count: 0
+$Pspew:
++Index: 1
++Count: 0
+$Pspew:
++Index: 2
++Count: 0
+$Pspew:
++Index: 3
++Count: 0
+
+$Name: RTSF Shivan Mega Laser
++nocreate
+@Laser Bitmap:		shivlaser
+@Laser Glow:		shivlaserglow
+@Laser Color:		255, 0, 0
+@Laser Color2:		255, 0, 0
+@Laser Length:		15.0
+@Laser Head Radius:	1.8
+@Laser Tail Radius:	1.8
+$Collision Radius Override: 0.90
+
+$Flags:				( "particle spew" "detonate on expiration" )
+$Trail:
+	+Start Width:	0.0
+	+End Width:		0.0
+	+Start Alpha:	1.0
+	+End Alpha:		0.0
+	+Max Life:		0.12
+	+Bitmap:		shivlasertrail
+$Impact Effect: shivlaserimpact
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			3.2
+$Piercing Impact Velocity:			10
+$Piercing Impact Splash Velocity:	-2.5
+$Piercing Impact Variance:			0.01
+$Piercing Impact Particles:			5
+$Inflight Effect: shivringeffect3
+$Muzzleflash:		shivanmuzzle
+$Pspew:
++Index: 0
++Count: 0
+$Pspew:
++Index: 1
++Count: 0
+$Pspew:
++Index: 2
++Count: 0
+$Pspew:
++Index: 3
++Count: 0
+
+;--------------------------------------FS1 Weapon Effects------------------------------
+
+#End
+
+
+
+#Secondary Weapons
+
+$Name: RTSF Rockeye
++nocreate
+
+$ImpactSnd:		MV_Missile
+$Trail:
+	+Start Width:			3.0
+	+End Width:				6.0
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.3
+	+Max Life:				0.2
+	+Spread:				0.2
+	+Bitmap:			TrailRockeye1Orn
+	+Bitmap Stretch:		50
+$Impact Effect:						FlashHitRockeye1Yel
+$Dinky Impact Effect:				FlashHitRockeye1Yel
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			7.63
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Freeflight Effect:			TrailRockeye1Yel
+$Homed Flight Effect:		TrailRockeye1Yel
+$Unhomed Flight Effect:		TrailRockeye1Yel
+$Muzzleflash:				MuzMissile1Cyn
+$Thruster Flame Effect:		missilethruster05
+$Thruster Glow Effect:		FlareRockeye1Yel
+$Thruster Glow Radius Factor:	5.0
+
+$Name: RTSF Rockeye D
++nocreate
+
+$ImpactSnd:		MV_Missile
+$Trail:
+	+Start Width:			3.0
+	+End Width:				6.0
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.3
+	+Max Life:				0.2
+	+Spread:				0.2
+	+Bitmap:			TrailRockeye1Orn
+	+Bitmap Stretch:		50
+$Impact Effect:						FlashHitRockeye1Yel
+$Dinky Impact Effect:				FlashHitRockeye1Yel
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			7.63
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Freeflight Effect:			TrailRockeye1Yel
+$Homed Flight Effect:		TrailRockeye1Yel
+$Unhomed Flight Effect:		TrailRockeye1Yel
+$Muzzleflash:				MuzMissile1Cyn
+$Thruster Flame Effect:		missilethruster05
+$Thruster Glow Effect:		FlareRockeye1Yel
+$Thruster Glow Radius Factor:	5.0
+
+$Name: RTSF Tempest
++nocreate
+
+$ImpactSnd:		MV_Missile
+$Trail:
+	+Start Width:			0.6
+	+End Width:				0.6
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.15
+	+Max Life:				3.0
+	+Spread:				0.5
+	+Bitmap:			TrailTempest1Grn
+	+Bitmap Stretch:		10
+$Impact Effect:				FlashHitTempest1Grn
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			3.375
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Unhomed Flight Effect:				TrailTempest1Grn
+$Muzzleflash:					MuzMissile2Cyn
+$Thruster Flame Effect:			missilethruster04
+$Thruster Glow Effect:			FlareTempest1Grn
+$Thruster Glow Radius Factor:	7.5
+
+$Name: RTSF Tempest D
++nocreate
+
+$ImpactSnd:		MV_Missile
+$Trail:
+	+Start Width:			0.6
+	+End Width:				0.6
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.15
+	+Max Life:				3.0
+	+Spread:				0.5
+	+Bitmap:			TrailTempest1Grn
+	+Bitmap Stretch:		10
+$Impact Effect:				FlashHitTempest1Grn
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			3.375
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Unhomed Flight Effect:				TrailTempest1Grn
+$Muzzleflash:					MuzMissile2Cyn
+$Thruster Flame Effect:			missilethruster04
+$Thruster Glow Effect:			FlareTempest1Grn
+$Thruster Glow Radius Factor:	7.5
+
+$Name: RTSF Hornet
++nocreate
+
+$ImpactSnd:		MV_Missile
+$Trail:
+	+Start Width:			2.25
+	+End Width:				9.0
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.15
+	+Max Life:				6.0
+	+Spread:				0.2
+	+Bitmap:			TrailHornet1Yel
+	+Bitmap Stretch:		75
+$Impact Effect:						FlashHitHornet1Yel
+$Dinky Impact Effect:				FlashHitHornet1Yel
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			3.44
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Freeflight Effect:				TrailHornet1Yel
+$Homed Flight Effect:			TrailHornet1Yel
+$Unhomed Flight Effect:			TrailHornet1Yel
+$Muzzleflash:					MuzMissile2Cyn
+$Thruster Flame Effect:		missilethruster05
+$Thruster Glow Effect:		FlareHornet1Yel
+$Thruster Glow Radius Factor:	4.0
+
+$Name: RTSF Hornet D
++nocreate
+
+$ImpactSnd:		MV_Missile
+$Trail:
+	+Start Width:			2.25
+	+End Width:				9.0
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.15
+	+Max Life:				6.0
+	+Spread:				0.2
+	+Bitmap:			TrailHornet1Yel
+	+Bitmap Stretch:		75
+$Impact Effect:						FlashHitHornet1Yel
+$Dinky Impact Effect:				FlashHitHornet1Yel
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			3.44
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Freeflight Effect:				TrailHornet1Yel
+$Homed Flight Effect:			TrailHornet1Yel
+$Unhomed Flight Effect:			TrailHornet1Yel
+$Muzzleflash:					MuzMissile2Cyn
+$Thruster Flame Effect:		missilethruster05
+$Thruster Glow Effect:		FlareHornet1Yel
+$Thruster Glow Radius Factor:	4.0
+
+$Name: RTSF Hornet#Weak
++nocreate
+
+$ImpactSnd:		MV_Missile
+$Trail:
+	+Start Width:			2.25
+	+End Width:				9.0
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.15
+	+Max Life:				6.0
+	+Spread:				0.2
+	+Bitmap:			TrailHornet1Yel
+	+Bitmap Stretch:		75
+$Impact Effect:						FlashHitHornet1Yel
+$Dinky Impact Effect:				FlashHitHornet1Yel
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			3.44
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Freeflight Effect:				TrailHornet1Yel
+$Homed Flight Effect:			TrailHornet1Yel
+$Unhomed Flight Effect:			TrailHornet1Yel
+$Muzzleflash:					MuzMissile2Cyn
+$Thruster Flame Effect:		missilethruster05
+$Thruster Glow Effect:		FlareHornet1Yel
+$Thruster Glow Radius Factor:	4.0
+
+$Name: RTSF Tornado
++nocreate
+
+$ImpactSnd:		MV_Missile
+$Trail:
+	+Start Width:			1.5
+	+End Width:				6.0
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.15
+	+Max Life:				4.0
+	+Spread:				0.2
+	+Bitmap:			TrailMissile1Tel
+	+Bitmap Stretch:		50
+$Impact Effect:						FlashHitTornado1Tel
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			3.35
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Freeflight Effect:				TrailTornado1Tel
+$Homed Flight Effect:			TrailTornado1Tel
+$Unhomed Flight Effect:			TrailTornado1Tel
+$Muzzleflash:					MuzMissile2Cyn
+$Thruster Flame Effect:		missilethruster05
+$Thruster Glow Effect:		FlareMissile1Tel
+$Thruster Glow Radius Factor:	6.0
+
+$Name: RTSF Tornado D
++nocreate
+
+$ImpactSnd:		MV_Missile
+$Trail:
+	+Start Width:			1.5
+	+End Width:				6.0
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.15
+	+Max Life:				4.0
+	+Spread:				0.2
+	+Bitmap:			TrailMissile1Tel
+	+Bitmap Stretch:		50
+$Impact Effect:						FlashHitTornado1Tel
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			3.35
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Freeflight Effect:				TrailTornado1Tel
+$Homed Flight Effect:			TrailTornado1Tel
+$Unhomed Flight Effect:			TrailTornado1Tel
+$Muzzleflash:					MuzMissile2Cyn
+$Thruster Flame Effect:		missilethruster05
+$Thruster Glow Effect:		FlareMissile1Tel
+$Thruster Glow Radius Factor:	6.0
+
+$Name: RTSF Harpoon
++nocreate
+
+$ImpactSnd:		MV_Missile
+$Trail:
+	+Start Width:			2.5
+	+End Width:				25
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.15
+	+Max Life:				1.5
+	+Spread:				0.01
+	+Bitmap:			TrailHarpoon1Vrm
+	+Bitmap Stretch:		100
+$Impact Effect:				FlashHitHarpoon1Orn
+$Dinky Impact Effect:		FlashHitHarpoon1Orn
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			4.96
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Freeflight Effect:				TrailHarpoon1Vrm
+$Homed Flight Effect:			TrailHarpoon1Vrm
+$Unhomed Flight Effect:			TrailHarpoon1Vrm
+$Muzzleflash:					MuzMissile1Cyn
+$Thruster Flame Effect:		missilethruster06
+$Thruster Glow Effect:		FlareHarpoon1Orn
+$Thruster Glow Radius Factor:	6.0
+
+$Name: RTSF Harpoon D
++nocreate
+
+$ImpactSnd:		MV_Missile
+$Trail:
+	+Start Width:			2.5
+	+End Width:				25
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.15
+	+Max Life:				1.5
+	+Spread:				0.01
+	+Bitmap:			TrailHarpoon1Vrm
+	+Bitmap Stretch:		100
+$Impact Effect:				FlashHitHarpoon1Orn
+$Dinky Impact Effect:		FlashHitHarpoon1Orn
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			4.96
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Freeflight Effect:				TrailHarpoon1Vrm
+$Homed Flight Effect:			TrailHarpoon1Vrm
+$Unhomed Flight Effect:			TrailHarpoon1Vrm
+$Muzzleflash:					MuzMissile1Cyn
+$Thruster Flame Effect:		missilethruster06
+$Thruster Glow Effect:		FlareHarpoon1Orn
+$Thruster Glow Radius Factor:	6.0
+
+$Name: RTSF Harpoon#Weak
++nocreate
+
+$ImpactSnd:		MV_Missile
+$Trail:
+	+Start Width:			2.5
+	+End Width:				25
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.15
+	+Max Life:				1.5
+	+Spread:				0.01
+	+Bitmap:			TrailHarpoon1Vrm
+	+Bitmap Stretch:		100
+$Impact Effect:				FlashHitHarpoon1Orn
+$Dinky Impact Effect:		FlashHitHarpoon1Orn
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			4.96
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Freeflight Effect:				TrailHarpoon1Vrm
+$Homed Flight Effect:			TrailHarpoon1Vrm
+$Unhomed Flight Effect:			TrailHarpoon1Vrm
+$Muzzleflash:					MuzMissile1Cyn
+$Thruster Flame Effect:		missilethruster06
+$Thruster Glow Effect:		FlareHarpoon1Orn
+$Thruster Glow Radius Factor:	6.0
+
+$Name: RTSF Trebuchet
++nocreate	
+$ImpactSnd:		MV_Missile
+$Trail:
+	+Start Width:			5.0
+	+End Width:				5.0
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.1
+	+Max Life:				10.0
+	+Spread:				0.3
+	+Bitmap:			TrailTreb1Orn
+	+Bitmap Stretch:		100
+$Impact Effect:						FlashHitTreb1Blu
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			10.37
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			10
+$Homed Flight Effect:		TrailTreb1Blu
+$Muzzleflash:					MuzMissile3Cyn
+$Thruster Flame Effect:		missilethruster03
+$Thruster Glow Effect:		FlareTreb1Blu
+$Thruster Glow Radius Factor:	3.0
+
+$Name: RTSF TAG-A
++nocreate
+
+$ImpactSnd:		MV_Missile
+$Trail:
+	+Start Width:			2.5
+	+End Width:				2.5
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.15
+	+Max Life:				3.0
+	+Spread:				0.2
+	+Bitmap:			TrailMissile1Cyn
+	+Bitmap Stretch:		50
+$Impact Effect:				FlashHitTag1Cyn
+$Muzzleflash:				MuzMissile2Cyn
+$Thruster Flame Effect:		missilethruster04
+$Thruster Glow Effect:		FlareMissile1Cyn
+$Thruster Glow Radius Factor:	5.0
+
+$Name: RTSF TAG-B
++nocreate
+
+$ImpactSnd:		MV_Missile
+$Trail:
+	+Start Width:			2.5
+	+End Width:				2.5
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.15
+	+Max Life:				3.0
+	+Spread:				0.2
+	+Bitmap:			TrailMissile1Cyn
+	+Bitmap Stretch:		50
+$Impact Effect:				FlashHitTag1Cyn
+$Muzzleflash:				MuzMissile1Cyn
+$Thruster Flame Effect:		missilethruster04
+$Thruster Glow Effect:		FlareMissile1Cyn
+$Thruster Glow Radius Factor:	4.0
+
+$Name: RTSF Piranha
++nocreate
+
+$Shockwave name:	ShockwaveBomb1Cyn
+$ImpactSnd:		MV_Clusterboom
+$Trail:
+	+Start Width:			4.0
+	+End Width:				25.0
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.15
+	+Max Life:				1.5
+	+Spread:				0.01
+	+Bitmap:			TrailMissile1Cyn
+	+Bitmap Stretch:		50
+$Impact Effect:						FlashHitPiranha1Cyn
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			10.93
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Muzzleflash:				MuzMissile3Cyn
+$Thruster Flame Effect:		missilethruster04
+$Thruster Glow Effect:		FlareMissile1Cyn
+$Thruster Glow Radius Factor:	3.0
+
+$Name: RTSF Stiletto II
++nocreate
+
+$ImpactSnd:		MV_Disruptor_Missile
+$Trail:
+	+Start Width:	0
+	+End Width:		0
+	+Start Alpha:	0.0
+	+End Alpha:		0.0
+	+Max Life:		0.0
+	+Bitmap:		nothing_0000
+$Impact Effect:						FlashHitStilettoII1Blu
+$Dinky Impact Effect:				FlashHitStilettoII1Blu
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			10.65
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Muzzleflash:					MuzMissile3Cyn
+$Thruster Flame Effect:		missilethruster03
+$Thruster Glow Effect:		FlareStilettoII1Blu
+$Thruster Glow Radius Factor:	4.0
+
+$Name: RTSF Infyrno
++nocreate
+
+$ImpactSnd:		MV_Clusterboom
+$Trail:
+	+Start Width:			2.5
+	+End Width:				25.0
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.15
+	+Max Life:				5.0
+	+Spread:				0.01
+	+Bitmap:			TrailMissile1Cyn
+	+Bitmap Stretch:		50
+$Impact Effect:						FlashHitPiranha1Cyn
+$Dinky Impact Effect:				FlashHitPiranha1Cyn
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			10.93
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Muzzleflash:				MuzMissile1Cyn
+$Thruster Flame Effect:		missilethruster04
+$Thruster Glow Effect:		FlareMissile1Cyn
+$Thruster Glow Radius Factor:	6.0
+
+$Name: RTSF Infyrno D
++nocreate
+
+$ImpactSnd:		MV_Clusterboom
+$Trail:
+	+Start Width:			2.5
+	+End Width:				25.0
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.15
+	+Max Life:				5.0
+	+Spread:				0.01
+	+Bitmap:			TrailMissile1Cyn
+	+Bitmap Stretch:		50
+$Impact Effect:						FlashHitPiranha1Cyn
+$Dinky Impact Effect:				FlashHitPiranha1Cyn
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			10.93
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Muzzleflash:				MuzMissile1Cyn
+$Thruster Flame Effect:		missilethruster04
+$Thruster Glow Effect:		FlareMissile1Cyn
+$Thruster Glow Radius Factor:	6.0
+
+$Name: RTSF Helios
++nocreate
+
+$Shockwave name:	ShockwaveHelios1Gld
+$Dinky shockwave:
++Shockwave Name:	ShockwaveDinky1Blu
+$ImpactSnd:			88
+$Flags:				( "particle spew" )
+$Trail:
+	+Start Width:			20.0
+	+End Width:				70.0
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.15
+	+Max Life:				4.5
+	+Spread:				0.0
+	+Bitmap:				TrailHelios1Gld
+	+Bitmap Stretch:		300
+	+Faded Out Sections:	5
+$Impact Effect:						FlashHitHelios1Gld
+$Dinky Impact Effect:				FlashHitHelios2Gld
+$Piercing Impact Explosion:			exp04
+$Piercing Impact Radius:			19.66
+$Piercing Impact Velocity:			25
+$Piercing Impact Splash Velocity:	-25
+$Piercing Impact Variance:			20000
+$Piercing Impact Particles:			10
+$Freeflight Effect:					TrailHelios1Gld
+$Homed Flight Effect:				TrailHelios1Gld
+$Unhomed Flight Effect:				TrailHelios1Gld
+$Muzzleflash:				MuzMissile4Cyn
+$Pspew:
+	+Index:		0
+	+Count:		0
+$Pspew:
+	+Index:		1
+	+Count:		0
+$Pspew:
+	+Index:		2
+	+Count:		0
+$Pspew:
+	+Index:		3
+	+Count:		0
+$Thruster Flame Effect:		missilethruster04
+$Thruster Glow Effect:		FlareHelios1Gld
+$Thruster Glow Radius Factor:	2.5
+
+$Name: RTSF Cluster Baby
++nocreate
+
+$ImpactSnd:			MV_Missile
+$Trail:
+	+Start Width:			1.5
+	+End Width:				6.0
+	+Start Alpha:			1.0
+	+End Alpha:				0.0
+	+Alpha Decay Exponent:	0.15
+	+Max Life:				6.0
+	+Spread:				0.2
+	+Bitmap:			TrailHornet1Yel
+	+Bitmap Stretch:		75
+$Impact Effect:						FlashHitHornet1Yel
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			3.44
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Freeflight Effect:				TrailHornet1Yel
+$Homed Flight Effect:			TrailHornet1Yel
+$Unhomed Flight Effect:			TrailHornet1Yel
+$Thruster Flame Effect:		missilethruster05
+$Thruster Glow Effect:		FlareHornet1Yel
+$Thruster Glow Radius Factor:	4.0
+
+$Name: RTSF Cluster Bomb Baby
++nocreate
+
+$ImpactSnd:			MV_Missile
+$Trail:
+	+Start Width:	0.0
+	+End Width:		0.0
+	+Start Alpha:	0.0
+	+End Alpha:		0.0
+	+Max Life:		0.1
+	+Bitmap:		nothing_0000
+$Impact Effect:						FlashHitCBB1Yel
+$Piercing Impact Explosion:			exp06
+$Piercing Impact Radius:			3.44
+$Piercing Impact Velocity:			20
+$Piercing Impact Splash Velocity:	-5
+$Piercing Impact Variance:			0.1
+$Piercing Impact Particles:			5
+$Thruster Flame Effect:		missilethruster05
+$Thruster Glow Effect:		FlareHornet1Yel
+$Thruster Glow Radius Factor:	6.0
+
+#End
+
+

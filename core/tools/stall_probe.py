@@ -13,8 +13,9 @@ import json
 import sys
 from pathlib import Path
 
-root = Path(sys.argv[1] if len(sys.argv) > 1 else
-            r"D:\Games\FreespaceOpen\FS2\RTS-fleet-command-artifacts\evidence\outcome02")
+if len(sys.argv)!=2:
+    raise SystemExit('Usage: python core/tools/stall_probe.py <batch-or-evidence-directory>')
+root = Path(sys.argv[1])
 
 STALL = 60.0
 far_stall = collections.Counter()

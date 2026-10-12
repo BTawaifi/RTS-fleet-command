@@ -2,4 +2,52 @@
 $Team Name: RTS Shivan Red
 $Team Stripe Color: ( 255, 35, 25 )
 $Team Base Color: ( 85, 0, 0 )
+$Team Name: RTS Faction Blue
+$Team Stripe Color: ( 70, 220, 255 )
+$Team Base Color: ( 23, 73, 85 )
+
+$Team Name: RTS Faction Red
+$Team Stripe Color: ( 255, 75, 75 )
+$Team Base Color: ( 85, 25, 25 )
+
+$Team Name: RTS Faction Gold
+$Team Stripe Color: ( 255, 190, 70 )
+$Team Base Color: ( 85, 63, 23 )
+
+$Team Name: RTS Faction 4
+$Team Stripe Color: ( 45, 190, 255 )
+$Team Base Color: ( 15, 63, 85 )
+
+$Team Name: RTS Faction 5
+$Team Stripe Color: ( 70, 230, 105 )
+$Team Base Color: ( 23, 76, 35 )
+
+$Team Name: RTS Faction 6
+$Team Stripe Color: ( 195, 115, 255 )
+$Team Base Color: ( 65, 38, 85 )
+
+$Team Name: RTS Faction 7
+$Team Stripe Color: ( 255, 130, 45 )
+$Team Base Color: ( 85, 43, 15 )
+
+$Team Name: RTS Faction 8
+$Team Stripe Color: ( 255, 100, 195 )
+$Team Base Color: ( 85, 33, 65 )
+
+$Team Name: RTS Faction 9
+$Team Stripe Color: ( 190, 240, 70 )
+$Team Base Color: ( 63, 80, 23 )
+
+$Team Name: RTS Faction 10
+$Team Stripe Color: ( 110, 100, 255 )
+$Team Base Color: ( 36, 33, 85 )
+
+$Team Name: RTS Faction 11
+$Team Stripe Color: ( 60, 225, 185 )
+$Team Base Color: ( 20, 75, 61 )
+
+$Team Name: RTS Faction 12
+$Team Stripe Color: ( 255, 115, 95 )
+$Team Base Color: ( 85, 38, 31 )
+
 #End

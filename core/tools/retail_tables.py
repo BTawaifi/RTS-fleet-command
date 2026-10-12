@@ -87,7 +87,7 @@ def parse_names(text):
     """
     names = set()
     for match in _NAME.finditer(text):
-        value = match.group("name").split(";", 1)[0].strip()
+        value = canonical_weapon_name(match.group("name").split(";", 1)[0].strip())
         if value:
             names.add(value)
     return names
@@ -103,8 +103,18 @@ def parse_nocreate_names(text):
     for block in _ENTRY_SPLIT.findall(text):
         name = _NAME.search(block)
         if name and _NOCREATE.search(block):
-            out.add(name.group("name").strip())
+            out.add(canonical_weapon_name(name.group("name").split(";",1)[0].strip()))
     return out
+
+
+def parse_weapon_names(text):
+    """Canonical weapon names: FSO strips the obsolete leading demo marker @."""
+    return {canonical_weapon_name(name) for name in parse_names(text)}
+
+
+def canonical_weapon_name(name):
+    # Upstream ship_parse and weapon_parse both strip the legacy demo marker.
+    return name[1:] if name.startswith('@') else name
 
 
 def read(path):
@@ -158,5 +168,5 @@ def retail_beam_names():
         value = name.group("name").split(";", 1)[0].strip()
         lowered = block.lower()
         if value and ("$beaminfo:" in lowered or '"beam"' in lowered):
-            beams.add(value)
+            beams.add(canonical_weapon_name(value))
     return beams

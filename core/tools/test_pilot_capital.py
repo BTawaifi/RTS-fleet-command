@@ -50,9 +50,11 @@ require 'fs2rts_pilot'; require 'fs2rts_input'
     -- consults it.
     R.IsStaticDefense=function(self,s) return s~=nil and s.isSentry==true end
 R.IsPlayerEnemy=function(self,s) return s~=nil and s.team=='RED' end
+R.GetWeaponFiringRange=function() return 10000 end
 R.IsMissionPauseDisabled=function() return false end
 R.SetStatus=function(self,s) self.status=s end
-local target={valid=true,team='RED',signature=99}
+sexps={}; mn={runSEXP=function(text) sexps[#sexps+1]=text; return true end}
+local target={valid=true,team='RED',signature=99,Name='Enemy hull'}
 function target:getSignature() return self.signature end
 function target:isValid() return self.valid end
 -- The faithful shipValid/shipAlive above call the real engine methods
@@ -61,11 +63,11 @@ function target:isValid() return self.valid end
 function target:getBreedName() return 'Ship' end
 function target:isDying() return false end
 local function bank(name)
-  local weapon={Name=name,isValid=function() return true end}
+  local weapon={Name=name,isValid=function() return true end,isBeam=function() return false end}
   return {WeaponClass=weapon,isValid=function() return true end}
 end
 local function turret(name,locked)
-  local s={valid=true,Name=name,TurretLocked=locked,PrimaryBanks={bank(name)},SecondaryBanks={}}
+  local s={valid=true,Name=name,CanonicalName=name..' canonical',TurretLocked=locked,PrimaryBanks={bank(name)},SecondaryBanks={}}
   function s:isValid() return self.valid end
   function s:isTurret() return true end
   function s:targetingOverride(v) self.overridden=v; return true end
@@ -102,8 +104,8 @@ class PilotTargetSubsystemTests(unittest.TestCase):
           -- setter behave like the engine: ADE_VIRTVAR(Target, l_Subsystem,
           -- "object", ...) reads its argument with l_Object.GetPtr, so anything
           -- that is not an object is a hard type error.
-          local subsysA={valid=true,Name='shield generator'}
-          local subsysB={valid=true,Name='engine'}
+          local subsysA={valid=true,Name='shield generator',CanonicalName='shield generator'}
+          local subsysB={valid=true,Name='engine',CanonicalName='engine'}
           for _,s in ipairs({subsysA,subsysB}) do function s:isValid() return self.valid end end
           R.target[1]=subsysA; R.target[2]=subsysB
           local assigned={}
@@ -125,6 +127,7 @@ class PilotTargetSubsystemTests(unittest.TestCase):
             end
           end
           R:InitializePilotTurretGroups(R.ship)
+          R.PilotTurretGroupIndex=1
           -- Only the active group's turrets are driven, so assert on those
           -- rather than on a fixed turret index.
           local active=R.PilotTurretGroups[R.PilotTurretGroupIndex]
@@ -138,6 +141,9 @@ class PilotTargetSubsystemTests(unittest.TestCase):
           R.PilotTargetSubsystemIndex=1
           R:ApplyPilotTurretGroup(R.target)
           assertActiveHasTarget('the active turret group was not pointed at the target object')
+          assert(sexps[#sexps]:find('turret%-set%-forced%-subsys%-target') and sexps[#sexps]:find('shield generator',1,true),
+            'subsystem selection is only a label and does not reach native targeting')
+          assert(sexps[#sexps]:find('canonical',1,true),'HUD turret label was used instead of unique model name')
           R.PilotTargetSubsystemIndex=2
           R:InvalidatePilotTurretTargets()
           R:ApplyPilotTurretGroup(R.target)
@@ -145,6 +151,7 @@ class PilotTargetSubsystemTests(unittest.TestCase):
           -- Clearing the target must clear it to nil, not leave a stale handle.
           R:InvalidatePilotTurretTargets()
           R:ApplyPilotTurretGroup(nil)
+          assert(sexps[#sexps]:find('turret%-clear%-forced%-target'),'subsystem targeting survives target loss')
           for _,entry in ipairs(active.turrets) do
             local idx=entry.subsystem
             for i=0,#R.ship do if R.ship[i]==idx then idx=i end end
@@ -164,14 +171,17 @@ class CapitalPilotTests(unittest.TestCase):
           assert(R:IsPilotableShip(R.ship),'GTD capital was not accepted for pilot mode')
           R:InitializePilotTurretGroups(R.ship)
           assert(#R.PilotTurretGroups==2,'turrets with equal weapons were not grouped')
+          assert(R.PilotTurretGroupIndex==nil and R.ship[1].TurretLocked and R.ship[3].TurretLocked,
+            'capital possession must select all batteries while suppressing automatic fire')
+          R:TogglePilotTurretGroup()
           local first=R.PilotTurretGroups[R.PilotTurretGroupIndex]
           assert(first.label=='Harpoon' and #first.turrets==1)
-          assert(R.ship[3].TurretLocked==false and R.ship[3].Target==R.target)
+          assert(R.ship[3].TurretLocked==true and R.ship[3].Target==R.target)
           assert(R.ship[1].TurretLocked==true and R.ship[2].TurretLocked==true)
           assert(R:CyclePilotTurretGroup(1))
           local active=R.PilotTurretGroups[R.PilotTurretGroupIndex]
           assert(active.label=='Laser' and #active.turrets==2)
-          assert(R.ship[1].TurretLocked==false and R.ship[1].Target==R.target)
+          assert(R.ship[1].TurretLocked==true and R.ship[1].Target==R.target)
           assert(R.ship[2].TurretLocked==true,'a turret locked before possession was unexpectedly enabled')
           assert(R:ShouldOverrideKey(']'))
           R:OnKeyPressed('[')
@@ -181,6 +191,49 @@ class CapitalPilotTests(unittest.TestCase):
           assert(R.ship[1].TurretLocked==false and R.ship[2].TurretLocked==true and R.ship[3].TurretLocked==false,
             'native turret lock state was not restored on pilot exit')
           assert(R.PilotTurretGroups==nil)
+        ''')
+
+    def test_withdrawal_approach_is_pilotable_but_corridor_is_committed(self):
+        self.lua.execute('''
+          R.GameStatus='ACTIVE'
+          R.ship.HitpointsLeft=1000; mn.getMissionTime=function() return 10 end
+          R.Withdrawals={[7]={destination=ba.createVector(1,2,3),phase='WITHDRAWING'}}
+          R.RecordPilotTime=function() error('approach possession accepted') end
+          R.IsCommandStation=function() return false end
+          assert(not pcall(function() R:StartPilotMode(R.ship) end),
+            'withdrawal approach should remain pilotable before corridor entry')
+          R.Withdrawals[7].inCorridor=true
+          assert(R:StartPilotMode(R.ship)==false and R.status:find('after extraction',1,true),
+            'corridor-committed withdrawal must refuse possession')
+          R.Withdrawals[7].inCorridor=false; R.Withdrawals[7].departureStarted=true
+          assert(R:StartPilotMode(R.ship)==false,
+            'warp-started withdrawal must refuse possession')
+        ''')
+
+    def test_withdrawal_becomes_the_pilot_navigation_objective(self):
+        self.lua.execute('''
+          R.Withdrawals={[7]={destination=ba.createVector(1,2,3),phase='WITHDRAWING // EXPOSED'}}
+          R.PilotPreviousUserOrder={mission='ATTACK',targetSignature=99}
+          R.IsFiniteVector=function(self,value) return value~=nil end
+          local order,source=R:GetPilotTacticalOrder()
+          assert(source=='EXTRACTION' and order.mission=='WITHDRAW'
+            and order.destination.x==1 and order.operationPhase=='WITHDRAWING // EXPOSED',
+            'pilot directives must target the committed extraction route over stale combat orders')
+          local point,label=R:GetPilotNavigationPoint(order)
+          assert(point==order.destination and label=='RALLY',
+            'native pilot navigation marker must use the extraction destination')
+        ''')
+
+    def test_committed_withdrawal_turrets_stay_locked_and_cannot_fire(self):
+        self.lua.execute('''
+          R.IsShipWithdrawing=function() return true end
+          R:InitializePilotTurretGroups(R.ship)
+          R:UpdatePilotTurretFire(true,true)
+          assert((R.ship[1].primaryFires or 0)==0 and (R.ship[3].primaryFires or 0)==0
+            and (R.ship[3].secondaryFires or 0)==0,
+            'pilot turret fire bypassed irreversible withdrawal ownership')
+          assert(R.ship[1].TurretLocked and R.ship[2].TurretLocked and R.ship[3].TurretLocked,
+            'withdrawal-owned turrets were unlocked during pilot mode')
         ''')
 
 

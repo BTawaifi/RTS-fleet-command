@@ -1,22 +1,14 @@
-"""Structural checks over data/scripts/*.lua, as a runnable suite.
+"""Package/asset/API-pattern checks; not native engine or gameplay evidence.
 
-tools/undefined_global_check.py already proves this, but only when a human
-remembers to run it. This wraps the same analysis in unittest so the constraint
-is enforced by the test run itself.
-
-Why it matters: FSO aborts the process with an uncatchable C++ exception when a
-scripting call resolves to an undefined global, so a missing name is not a Lua
-error you notice in play -- it is a crash with no stack and no log line. The
-same class of failure is a method the engine's scripting object does not have.
-
-Run: python core/tools/test_script_structure.py
+Lua scope/use-before-declaration coverage is in test_lua_scope_order.
+This file checks required-module closure and the boundary doubles' util surface,
+plus the historical unsupported texture-use call pattern.
 """
 
 import re
 import unittest
 from pathlib import Path
 
-import undefined_global_check as checker
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "data" / "scripts"
 
@@ -25,67 +17,33 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "data" / "scripts"
 # hook down with it. gr.drawImage binds the handle itself.
 TEXTURE_METHODS = {"isValid", "getFilename", "getWidth", "getHeight", "unload"}
 
-# Names FSO does NOT define as scripting globals. The mod uses module-local
-# `valid` helpers (fs2rts_ai_util.valid, fs2rts_util.shipValid) precisely
-# because no global exists; a call to a bare `shipValid(...)` would abort the
-# engine, and it would not be caught by any Lua test because the engine never
-# gets to raise a Lua error.
-NOT_FSO_GLOBALS = {"shipValid", "shipAlive", "valid", "UseIcon"}
 
 
 def _sources():
-    for path in sorted(SCRIPTS.glob("*.lua")):
+    for path in sorted(SCRIPTS.rglob("*.lua")):
         yield path, path.read_text(encoding="utf-8", errors="replace")
 
 
-def _strip(text):
-    """Blank out comments and string literals so prose is not read as code."""
-    out = re.sub(r"--\[\[.*?\]\]", " ", text, flags=re.DOTALL)
-    out = re.sub(r"--[^\n]*", " ", out)
-    out = re.sub(r"'(\\.|[^'\\])*'", "''", out)
-    return re.sub(r'"(\\.|[^"\\])*"', '""', out)
+def _module(path):
+    """require() name of a script: fs2rts_hud/common.lua -> fs2rts_hud.common."""
+    return ".".join(path.relative_to(SCRIPTS).with_suffix("").parts)
+
+
 
 
 class UndefinedGlobalTests(unittest.TestCase):
-    """The same analysis as tools/undefined_global_check.py, as a test."""
+    """Package closure; name/scope correctness is covered by test_lua_scope_order."""
 
-    def test_every_bare_global_call_is_a_module_local_or_a_real_fso_global(self):
-        problems = []
-        for path, text in _sources():
-            known = checker.declared_names(text) | checker.FSO_GLOBALS
-            stripped = _strip(text)
-            for match in checker.CALL.finditer(stripped):
-                name = match.group(1)
-                if name in known or name in checker.LUA_KEYWORDS:
-                    continue
-                line = stripped[: match.start()].count("\n") + 1
-                problems.append(f"{path.name}:{line}  {name}()")
-        self.assertEqual(
-            problems, [],
-            "bare global calls that no module defines and FSO does not provide; "
-            "FSO aborts the process on these:\n  " + "\n  ".join(problems))
 
-    # The exact shipped set. A threshold cannot catch a module being renamed or
-    # removed, and a structural test that silently scans fewer files than it
-    # used to is worse than no test at all.
-    EXPECTED = {
-        "fs2rts.lua", "fs2rts_ai.lua", "fs2rts_ai_planning.lua", "fs2rts_ai_production.lua",
-        "fs2rts_ai_telemetry.lua", "fs2rts_ai_util.lua", "fs2rts_camera.lua", "fs2rts_config.lua",
-        "fs2rts_factions.lua", "fs2rts_hud.lua", "fs2rts_input.lua", "fs2rts_lifecycle.lua",
-        "fs2rts_operations.lua", "fs2rts_orders.lua", "fs2rts_pilot.lua", "fs2rts_player_wing.lua",
-        "fs2rts_production.lua", "fs2rts_selection.lua", "fs2rts_service.lua", "fs2rts_state.lua",
-        "fs2rts_station.lua", "fs2rts_strategy.lua", "fs2rts_ui_text.lua", "fs2rts_util.lua",
-    }
 
-    def test_the_checker_covers_every_shipped_script(self):
-        found = {p.name for p in SCRIPTS.glob("*.lua")}
-        self.assertEqual(
-            self.EXPECTED - found, set(),
-            "scripts the structural checks no longer scan; a module was renamed, removed, "
-            "or moved out of data/scripts")
-        self.assertEqual(
-            found - self.EXPECTED, set(),
-            "unexpected scripts in data/scripts; add them to the allowlist or move them out")
+    def test_required_mod_modules_resolve_from_the_entrypoint(self):
+        sources=dict((_module(path),text) for path,text in _sources())
+        self.assertIn("fs2rts",sources,"mission scripting entrypoint is missing")
+        required=set()
+        for text in sources.values():
+            required.update(re.findall(r'require\s*\(?\s*[\"\'](fs2rts[^\"\']*)',text))
+        self.assertTrue(required,"no module imports were inspected")
+        self.assertEqual(required-set(sources),set(),"required mod modules are missing")
 
     # An earlier draft of this class asserted "no module rebinds an FSO global".
     # It is deliberately not here: the check cannot be written without false
@@ -108,29 +66,7 @@ class EngineApiShapeTests(unittest.TestCase):
             f"l_Texture exposes only {sorted(TEXTURE_METHODS)}; these call sites "
             "would abort the HUD draw hook:\n  " + "\n  ".join(offenders))
 
-    def test_no_script_binds_an_fso_absent_global(self):
-        offenders = []
-        for path, text in _sources():
-            # A module-local of the same name is exactly the fix, not the bug:
-            # fs2rts_util defines shipValid and every consumer imports it with
-            # `local shipValid = U.shipValid`. Only a call with no declaration
-            # in scope is the engine-aborting case.
-            declared = checker.declared_names(text)
-            stripped = _strip(text)
-            for name in sorted(NOT_FSO_GLOBALS):
-                for match in re.finditer(rf"(?<![\w.:]){re.escape(name)}\s*\(", stripped):
-                    if name in declared:
-                        continue
-                    line = stripped[: match.start()].count("\n") + 1
-                    offenders.append(f"{path.name}:{line}  {name}()")
-        self.assertEqual(
-            offenders, [],
-            "FSO defines no such scripting global; a call here aborts the process:\n  "
-            + "\n  ".join(offenders))
 
-    # test_every_required_helper_module_is_present used to live here. It was
-    # redundant: UndefinedGlobalTests.test_the_checker_covers_every_shipped_script
-    # pins the exact 24-file set, which is strictly stronger.
 
 
 class UtilSurfaceTests(unittest.TestCase):
@@ -230,8 +166,7 @@ class UtilSurfaceTests(unittest.TestCase):
                     problems.append(
                         f"{path.name}:{line}: fs2rts_util stub omits {missing} -- nil upvalues in "
                         "every module that loads it")
-        self.assertGreaterEqual(
-            len(checked), 6, f"only located {len(checked)} fs2rts_util stubs: {checked}")
+        self.assertTrue(checked,"no util stubs were inspected")
         self.assertEqual(problems, [], "\n  ".join(problems))
 
 

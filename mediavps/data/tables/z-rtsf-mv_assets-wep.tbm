@@ -1,0 +1,216 @@
+; Generated optional MediaVP alias patches; load only with MediaVP assets.
+
+#Primary Weapons
+
+$Name: RTSF Subach HL-7
++nocreate
+$Tech Model: wep_subach_tech.pof
++Closeup_pos: 0.0, 0.0, -90
++Closeup_zoom: 0.51
+
+$Name: RTSF Mekhu HL-7
++nocreate
+$Tech Model: wep_mekhu_tech.pof
++Closeup_pos: 0.0, 0.0, -90
++Closeup_zoom: 0.45
+$Icon:		iconmd4
+$Anim: 		md4
+
+$Name: RTSF Mekhu HL-7D
++nocreate
+$Icon:		iconmd4
+$Anim: 		md4
+
+$Name: RTSF Akheton SDG
++nocreate
+$Tech Model: wep_akheton_tech.pof
++Closeup_pos: 0.0, 0.0, -90
++Closeup_zoom: 0.43
+
+$Name: RTSF Morning Star
++nocreate
+$Tech Model: wep_morningstar_tech.pof
++Closeup_pos: 0.0, 0.0, -95
++Closeup_zoom: 0.41
+
+$Name: RTSF Prometheus R
++nocreate
+$Tech Model: wep_promr_tech.pof
++Closeup_pos: 0.0, 0.0, -98
++Closeup_zoom: 0.48
+
+$Name: RTSF Prometheus S
++nocreate
+$Tech Model: wep_proms_tech.pof
++Closeup_pos: 0.0, 0.0, -102
++Closeup_zoom: 0.48
+
+$Name: RTSF Maxim
++nocreate
+$Tech Model: wep_maxim_tech.pof
++Closeup_pos: 0.0, 0.0, -95
++Closeup_zoom: 0.40
+
+$Name: RTSF UD-8 Kayser
++nocreate
+$Tech Model: wep_kayser_tech.pof
++Closeup_pos: 0.0, 0.0, -96
++Closeup_zoom: 0.42
+
+$Name: RTSF Circe
++nocreate
+$Tech Model: wep_circe_tech.pof
++Closeup_pos: 0.0, 0.0, -61
++Closeup_zoom: 0.39
+
+$Name: RTSF Lamprey
++nocreate
+$Tech Model: wep_lamprey_tech.pof
++Closeup_pos: 0.0, 0.0, -94
++Closeup_zoom: 0.41
+
+;;Shivan flak weapons.
+;;Moving them here, above all missiles and FS1 stuff as this is obviously used by FS2. Somebody included them as secondaries
+
+#End
+
+
+
+#Secondary Weapons
+
+$Name: RTSF Rockeye
++nocreate
+$Tech Model:		rockeye-tech.pof
++Closeup_pos: 0.0, 0.0, -44
++Closeup_zoom: 0.58
+$Detail distance:	( 0, 6, 25 )
+
+$Name: RTSF Rockeye D
++nocreate
+$Tech Model:		rockeye-tech.pof
+$Detail distance:	( 0, 6, 25 )
+
+$Name: RTSF Tempest
++nocreate
+$Tech Model:		tempest_tech.pof
++Closeup_pos: 0.0, 0.0, -3
++Closeup_zoom: 0.45
+$Detail distance:	( 0, 3, 11 )
+
+$Name: RTSF Tempest D
++nocreate
+$Tech Model:		tempest_tech.pof
+$Detail distance:	( 0, 3, 11 )
+
+$Name: RTSF Hornet
++nocreate
+$Tech Model:		newhornet_tech.pof
++Closeup_pos: 0.0, 0.0, -3
++Closeup_zoom: 0.5
+$Detail distance:	( 0, 3, 11 )
+
+$Name: RTSF Hornet D
++nocreate
+$Tech Model:		newhornet_tech.pof
+$Detail distance:	( 0, 3, 11 )
+
+$Name: RTSF Hornet#Weak
++nocreate
+$Tech Model:		newhornet_tech.pof
+$Detail distance:	( 0, 3, 11 )
+
+$Name: RTSF Tornado
++nocreate
+$Tech Model:		bombardier-tech.pof
++Closeup_pos: 0.0, 0.0, -32
++Closeup_zoom: 0.58
+$Detail distance:	( 0, 3, 12 )
+
+$Name: RTSF Tornado D
++nocreate
+$Tech Model:		bombardier-tech.pof
+$Detail distance:	( 0, 3, 12 )
+
+$Name: RTSF Harpoon
++nocreate
+$Tech Model:		crossbow_tech.pof
++Closeup_pos: 0.0, 0.0, -4
++Closeup_zoom: 0.5
+$Detail distance:	( 0, 5, 21 )
+
+$Name: RTSF Harpoon D
++nocreate
+$Tech Model:		crossbow_tech.pof
+$Detail distance:	( 0, 5, 21 )
+
+$Name: RTSF Harpoon#Weak
++nocreate
+$Tech Model:		crossbow_tech.pof
+$Detail distance:	( 0, 5, 21 )
+
+$Name: RTSF Trebuchet
++nocreate
+$Tech Model:		trebuchet-tech.pof
++Closeup_pos: 0.0, 0.0, -55
++Closeup_zoom: 0.55
+$Detail distance:	( 0, 7, 29 )
+
+$Name: RTSF Piranha
++nocreate
+$Tech Model:		piranha_tech.pof
++Closeup_pos: 0.0, 0.0, -90
++Closeup_zoom: 0.55
+$Detail distance:	( 0, 7, 28 )
+
+$Name: RTSF Stiletto II
++nocreate
+$Tech Model:		stilettoII_tech.pof
++Closeup_pos: 0.0, 0.0, -10
++Closeup_zoom: 0.55
+$POF target LOD:	0
+$Detail distance:	( 0, 8, 32 )
+
+$Name: RTSF Infyrno
++nocreate
+$Tech Model:		infyrno-tech.pof
++Closeup_pos: 0.0, 0.0, -57
++Closeup_zoom: 0.55
+$POF target LOD:	0
+$Detail distance:	( 0, 3, 13 )
+
+$Name: RTSF Infyrno D
++nocreate
+$Tech Model:		infyrno-tech.pof
+$POF target LOD:	0
+$Detail distance:	( 0, 3, 13 )
+
+$Name: RTSF Helios
++nocreate
+$Tech Model:		helios_tech.pof
++Closeup_pos: 0.0, 0.0, -19
++Closeup_zoom: 0.55
+$POF target LOD:	0
+$Detail distance:	( 0, 20, 39, 78 )
+
+$Name: RTSF EMP Adv.
++nocreate
+$Tech Model:		empulse2_tech.pof
++Closeup_pos: 0.0, 0.0, -7
++Closeup_zoom: 0.55
+
+;-----------------------------------------------START FS1 WEAPONS-------------------------------------
+; ----------------------------------------------------------------------------------
+
+$Name: RTSF Cluster Bomb Baby
++nocreate
+$Detail distance:	( 0, 3, 11 )
+
+;New Shivan Modeled Secondaries
+
+$Name: RTSF Cluster Baby
++nocreate
+$Detail distance:	( 0, 3, 11 )
+
+#End
+
+

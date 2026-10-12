@@ -1,158 +1,14 @@
-"""Algebraic invariant linter for FreeSpace 2 RTS headless AI telemetry.
+"""Resource/build accounting checks plus historical tuning diagnostics.
 
-WHY THIS EXISTS
-===============
-Every real bug found in the RTS-fleet-command project so far was found by
-DIFFERENTIAL review (diff against a baseline, reason about intent) or by running
-headless batches and comparing metrics. That method finds code that DIFFERS from
-what was intended. It cannot find ABSENCES, ASSUMPTIONS, or UNREACHED paths.
+Three registered invariants check accounting/lifecycle consistency. Four alarms
+describe old starvation/composition symptoms; they do not define good gameplay.
+JSON preserves legacy status values and adds kind. --require-clean gates only
+invariants (including when combined with --json); unknown evidence exits 2.
+Report mode and diagnostic alarms never certify faction balance.
 
-The proof that this is a real gap is in the project's own history:
-
-  * ``RETICLE_COLOR_SELECTED`` shipped a live crash through 370 passing tests and
-    a static check, because it was declared ``local`` 147 lines BELOW its use
-    (Lua scope does not extend backwards). Headless runs never draw the HUD, so
-    no headless harness exercises that code -- only a real game window does.
-  * ``fs2rts_ai_production.lua`` wiped ``state.savingSince`` after every purchase.
-    With ``FieldCheapHullWhileSaving=true`` that purchase WAS the cheap hull the
-    save window deliberately fields alongside the goal, so the clock restarted
-    every think, the saving window never aged into ``savingFallback``, and the
-    bank never accumulated. Across 4/4 headless matches the entire
-    capital/heavy/juggernaut class built ZERO ships: ``GTSC Faustus`` fighters
-    went 54 -> 282, ``GVF Thoth`` 43 -> 242, sentries 67 -> 7, losses_units
-    67 -> 220. Every metric-based tool reported this as "mixed / some better
-    some worse" rather than naming the cause.
-
-Both are absences. This module is the linter for that class.
-
-WHAT AN "INVARIANT" MEANS HERE
-==============================
-An invariant is an ALGEBRAIC relationship that must hold regardless of how the
-AI is implemented: money in equals money accounted for, a loss recorded equals a
-loss counted, a hull that was paid for eventually exists or was cancelled. They
-are true BY CONSTRUCTION of the economy and roster rules, not by correlation
-between two metrics. A correlation can be explained away ("the AI got better at
-surviving"); an accounting identity cannot.
-
-Every invariant reports: a name, a per-faction-per-match verdict, the evidence
-numbers, and a one-line statement of the absence it detects.
-
-RECORD SHAPE AND STREAMING
-==========================
-Telemetry is JSON Lines at ``<batch>/results/w/<worker>/a-<id>/probe/data/
-rts-ai-*.jsonl``, one record per line::
-
-    {"schema":2.0,"sequence":N,"time":T,"event":"FACTION","data":{...}}
-
-Files are 40 MB each, so every reader here STREAMS line by line and keeps only
-bounded aggregates. Nothing loads a whole file into memory.
-
-THE ONE THAT MUST FIRE
-======================
-``roster_escalation`` is the discriminator for the livelock: on the known-good
-batch ``session-fix-20260930`` every one of the 12 faction-matches buys exactly
-one capital-class hull; on the known-bad batch ``sentryfix-20261001`` all 12 buy
-zero. ``cp_drift_not_persistently_negative`` and ``bank_target_reachable``
-corroborate it from the economy side. A linter that fires on everything is
-worthless, so ``test_ai_invariants.py`` asserts both directions against those
-two real batches' shapes.
-
-HOW SPEND IS RECONCILED: A MEASUREMENT, NOT A BOUND
-===================================================
-``production_spend_reconciles`` started life as "interval sum of
-``economy.flow.productionSpend`` must equal the summed ``cost`` of PRODUCTION +
-SENTRY_BUILD build events". That does not hold, and it is not measurement noise:
-``productionSpend`` is recorded at ``RTS:RecordAIEconomyFlow``, the chokepoint
-every CP movement funnels through, but three of its callers are not builds and
-emit no build event --
-
-  * ``RTS:BuyUpgrade`` (core/data/scripts/fs2rts_station.lua:160) spends CP for
-    a station upgrade track and emits nothing of its own;
-  * ``RTS:QueueOrbitalStrike`` (fs2rts_station.lua:753) spends the BLUE ability
-    cost and emits only on the refusal path;
-  * ``RTS:ServiceFleetShip`` (fs2rts_service.lua:370/377/392) spends CP per tick
-    for hull/subsystem/ammo repair and emits FLEET_SERVICE_WORK, whose ``spent``
-    is real but is not a build event.
-
-Measured on ``capgate-20261001``, those two named sinks plus upgrades are 6.7% to
-38.1% of a faction's spend, so a tolerance wide enough to accept them also
-accepts a genuinely unattributed sink, which is why this check used to fail on
-correct data. A BOUND cannot fix that: the gap is not bounded by anything the
-emitter promises.
-
-It is now MEASURED instead. Three facts make every CP movement observable, and
-all three are read from the telemetry rather than assumed:
-
-  1. ``economy.flowCumulative.productionSpend`` -- the running gauge behind the
-     interval flow, never zeroed (fs2rts_ai_telemetry.lua:367-370). Measured
-     equal to the summed intervals to within 0.005 CP.
-  2. ``CP_SPEND`` -- one record per deduction through the same function, with
-     ``faction``/``flow``/``amount``/``cpBefore``/``cpAfter``
-     (fs2rts_ai_telemetry.lua:374-378). Summing it must reproduce the gauge.
-  3. ``economy.commandPoints`` -- the bank itself. Between two FACTION snapshots
-     the bank can only move by what the flow says it moved, so
-     ``|dCP - (income + bounty + refund - spend)|`` is an EMITTER-INDEPENDENT
-     identity that holds even on a batch with no CP_SPEND record at all. Measured
-     max deviation 1e-4 CP over all 36 faction-matches of the three real batches.
-
-With those, the check no longer asks "is the gap small enough" but "is every CP
-movement accounted for", and the two failure modes stay distinguishable:
-
-  * the bank moved and the flow did not (or the gauge counted a deduction the
-    event stream dropped) -- an UNATTRIBUTED SINK, and a FAIL;
-  * build events exceed the flow -- a build charged without reaching the
-    chokepoint at all, i.e. a SECOND CP WRITER, also a FAIL;
-  * flow exceeds the build events and nothing else moved -- that is the named
-    non-build gap, now quantified as ``ledger - buildEventCost`` instead of
-    bounded, and a PASS;
-  * flow exceeds the build events on a batch that predates the CP_SPEND emitter
-    -- UNDEFINED, reported as WARN with ``ledger-not-reported``, never as a
-    failure. Several staged batches are in that state, and
-    ``compare_batches.py`` already draws exactly that line for
-    ``cp_spend_drift`` ("0 when the batch predates either record"), so this linter
-    copies its approach rather than inventing a second one.
-
-``roster_escalation``'s ``unlockedTiers`` had the same disease in miniature: it
-recorded the tiers a faction was SEEN to buy something on, which is an
-observation, not the schedule. Escalation is TIME-based
-(``RTS:GetCurrentEscalationTier``, fs2rts_factions.lua:31-46, driven by mission
-time and ``Config.Setup.Durations[].tierUnlocks``), so the set is now computed
-from the real schedule and the match's last telemetry timestamp.
-
-HOW TO RUN
-==========
-Human-readable report over a batch::
-
-    cd D:\\Games\\FreespaceOpen\\FS2\\RTS-fleet-command-1.4.1\\core\\tools
-    python ai_invariants.py D:\\Games\\FreespaceOpen\\FS2\\rts-headless-staging\\sentryfix-20261001
-
-Exit code is 0 when every invariant passes, 1 when any invariant is violated,
-and 2 on a usage or input error.
-
-CI / gating mode. ``--require-clean`` prints one ``FAIL <name> <match> <faction>``
-line per violation and a machine-readable ``SUMMARY`` line, and exits 1 on any
-violation, 2 on error::
-
-    python ai_invariants.py --require-clean <batch>
-    # in CI, after producing a batch:
-    python ai_invariants.py --require-clean results/latest || exit 1
-
-Only ``--require-clean`` is meant to gate a build. Without it the tool is a
-report and always exits 0 on a clean batch, so it is safe to run by hand.
-``--json`` emits the full machine-readable result set for other tooling.
-
-TOLERANCES AND WHY THEY ARE NOT WIDENED
-=======================================
-Every threshold below is derived from the real batches and is documented
-at its definition. Where an invariant could not be made tight without producing
-false failures on the GOOD batch, it is reported as WARN rather than FAIL, and
-the reason is stated. Widening a band until a known defect passes is the failure
-mode this module exists to prevent, so every non-zero tolerance is justified by
-a measurement, not by a wish that the batch go green.
-
-The CP tolerances are now the tightest the emitter's own precision allows rather
-than a band around an unexplained gap: two are float round-trip noise floors and
-one is a fraction of the smallest quantity the system can move.
+Snapshot/ledger prefixes and in-flight queues must share an observation cutoff.
+Tolerances and legacy duration schedules are documented beside their definitions.
+See docs/AI_ACCEPTANCE_AND_INVARIANTS.md for the actual acceptance contract.
 """
 
 from __future__ import annotations
@@ -162,8 +18,10 @@ import collections
 import glob
 import io
 import json
+import math
 import os
 import sys
+from run_evidence import valid_record, is_finite_number
 
 TELEMETRY_GLOB = "rts-ai-*.jsonl"
 
@@ -234,7 +92,7 @@ BANK_TARGET_REACH_RATIO = 1.0
 # --- escalation schedule, transcribed from the live config ------------------
 #
 # Escalation is TIME-based, not purchase-based: RTS:GetCurrentEscalationTier
-# (core/data/scripts/fs2rts_factions.lua:31-46) walks
+# (core/data/scripts/fs2rts_factions/escalation.lua:29-44) walks
 # Config.Setup.Durations[SetupDurationIndex].tierUnlocks against
 # GetScenarioElapsed (MISSION time minus ScenarioStartTime) and returns the
 # highest index whose entry has passed, so tier i becomes available at
@@ -245,7 +103,7 @@ BANK_TARGET_REACH_RATIO = 1.0
 # test_ai_invariants.test_tier_unlock_schedule_matches_the_live_config re-reads
 # fs2rts_config.lua and fails if this copy drifts from the config it names.
 #
-# The { 0, 300, 900, 1800 } literal at fs2rts_factions.lua:34 is deliberately
+# The { 0, 300, 900, 1800 } literal at fs2rts_factions/escalation.lua:32 is deliberately
 # NOT here: it is dead code, reachable only when GetDurationProfile() returns
 # nil, and using it would understate the schedule on every real batch.
 TIER_UNLOCK_SCHEDULES = {
@@ -298,17 +156,23 @@ class FactionFacts(object):
         "first_cp", "last_cp", "cp_peak",
         "snapshot_count", "snapshots_at_or_below_floor",
         "purchases_by_class", "purchases_by_tier", "purchase_count",
-        "queued_keys", "spawned_keys", "sentry_started", "sentry_terminated",
+        "queued_keys", "spawned_keys", "sentry_started", "sentry_terminated", "sentry_deadlines", "end_time",
+        "job_times", "last_snapshot_order", "final_queue_jobs", "completed_builds",
         "final_queue", "saving_desired", "bank_targets",
         "cp_delta_bad", "bounty_delta_bad", "service_spend",
         "upgrade_spend", "escalation_unlocks", "tier_seen",
         "cp_spend_entries", "cp_spend_ledger", "cp_spend_ledger_at_publish",
         "flow_cumulative", "flow_cumulative_reported",
         "conservation_violations", "conservation_max_dev",
+        "incomplete_economy_snapshots", "last_economy_complete", "conservation_intervals",
     )
 
     def __init__(self, faction):
         self.faction = faction
+        self.job_times = {}
+        self.last_snapshot_order = 0
+        self.final_queue_jobs = []
+        self.completed_builds = 0
         self.flow = collections.Counter()
         self.spend_events = 0.0
         self.sentry_spend_events = 0.0
@@ -329,6 +193,8 @@ class FactionFacts(object):
         self.spawned_keys = collections.Counter()
         self.sentry_started = collections.Counter()
         self.sentry_terminated = collections.Counter()
+        self.sentry_deadlines = collections.defaultdict(list)
+        self.end_time = 0
         self.final_queue = None
         self.saving_desired = 0
         self.bank_targets = []
@@ -350,6 +216,9 @@ class FactionFacts(object):
         # Interval CP conservation: bank movement against the reported flow.
         self.conservation_violations = 0
         self.conservation_max_dev = 0.0
+        self.incomplete_economy_snapshots = 0
+        self.last_economy_complete = False
+        self.conservation_intervals = 0
 
     @property
     def match_duration(self):
@@ -382,7 +251,7 @@ class MatchMeta(object):
     __slots__ = (
         "end_time", "duration_index", "duration_name", "duration_source",
         "tier_schedule", "scenario_start", "scenario_start_source",
-        "elapsed_at_end", "unlocked_tiers",
+        "elapsed_at_end", "unlocked_tiers", "rosters", "integrity_errors",
     )
 
     def __init__(self, end_time=0.0):
@@ -395,6 +264,8 @@ class MatchMeta(object):
         self.scenario_start_source = "assumed-mission-time-zero"
         self.elapsed_at_end = 0.0
         self.unlocked_tiers = []
+        self.rosters = {}
+        self.integrity_errors = 0
 
     @property
     def schedule_known(self):
@@ -460,9 +331,11 @@ def scan_match(path):
     duration_index = None
     duration_name = None
     duration_source = "default"
+    explicit_schedule = None
     scenario_start = None
     scenario_source = "assumed-mission-time-zero"
     run_time = None
+    ordinal = 0
     with io.open(path, "r", encoding="utf-8", errors="replace") as handle:
         for line in handle:
             line = line.strip()
@@ -473,27 +346,42 @@ def scan_match(path):
             except ValueError:
                 # A torn final line is expected when a run is killed mid-write;
                 # skipping it is the documented behaviour, not a silent failure.
+                meta.integrity_errors += 1
                 continue
+            if not valid_record(record):
+                meta.integrity_errors += 1
+                continue
+            ordinal += 1
             event = record.get("event")
             data = record.get("data")
             if not isinstance(data, dict):
+                meta.integrity_errors += 1
                 continue
             when = _num(record.get("time"))
             if when > end_time:
                 end_time = when
 
             if event == "RUN":
+                rosters=(data.get("balance") or {}).get("aiRosters")
+                if isinstance(rosters,dict):
+                    meta.rosters={key:rows for key,rows in rosters.items() if isinstance(rows,list)}
                 # RUN.data.setup.duration is the profile NAME ("30 MIN"); the
                 # index is not in this record. Its own time is mission start,
                 # which is the fallback scenario clock (see _resolve_escalation).
                 run_time = when
                 name = (data.get("setup") or {}).get("duration")
+                schedule = (data.get("setup") or {}).get("tierUnlocks")
+                if isinstance(schedule,list) and schedule and all(isinstance(v,(int,float)) and math.isfinite(v) and v>=0 for v in schedule) and schedule==sorted(schedule):
+                    explicit_schedule=tuple(schedule)
                 if name:
                     duration_name = str(name)
                     if duration_source == "default":
                         duration_source = "run-record-name"
 
             elif event == "ACCEPTANCE_SETUP":
+                schedule=data.get("tierUnlocks")
+                if isinstance(schedule,list) and schedule and all(isinstance(v,(int,float)) and math.isfinite(v) and v>=0 for v in schedule) and schedule==sorted(schedule):
+                    explicit_schedule=tuple(schedule)
                 # durationIndex is self.SetupDurationIndex, i.e. the 1-based
                 # index into Config.Setup.Durations. Preferred over the name: it
                 # is the exact value the emitter resolved the profile with.
@@ -518,6 +406,10 @@ def scan_match(path):
                 f = _facts_for(facts, faction)
                 economy = data.get("economy") or {}
                 flow = economy.get("flow") or {}
+                complete = is_finite_number(economy.get('commandPoints')) and all(
+                    is_finite_number(flow.get(key)) for key in ('income','bounty','refund','productionSpend'))
+                if not complete:
+                    f.incomplete_economy_snapshots += 1
                 # The ledger total as of THIS publish, captured before the
                 # interval this record reports is folded in. Compared against
                 # flowCumulative from the same publish, this is the exact
@@ -538,13 +430,15 @@ def scan_match(path):
                 # baseline instead of being compared against it.
                 if f.first_cp is None:
                     f.first_cp = cp
-                else:
+                elif complete and f.last_economy_complete:
+                    f.conservation_intervals += 1
                     deviation = abs((cp - f.last_cp) - (interval_in - interval_spend))
                     if deviation > f.conservation_max_dev:
                         f.conservation_max_dev = deviation
                     if deviation > CP_CONSERVATION_TOLERANCE_CP:
                         f.conservation_violations += 1
                 f.last_cp = cp
+                f.last_economy_complete = complete
                 if cp > f.cp_peak:
                     f.cp_peak = cp
                 f.snapshot_count += 1
@@ -562,7 +456,9 @@ def scan_match(path):
                 f.losses_snapshot = sum(
                     _num(v) for v in (data.get("losses") or {}).values())
                 f.last_snapshot_time = when
+                f.last_snapshot_order = ordinal
                 f.final_queue = economy.get("queue")
+                f.final_queue_jobs = economy.get('queueJobs') or []
                 f.tier_seen = max(f.tier_seen, 0)
 
             elif event == "CP_SPEND":
@@ -585,7 +481,7 @@ def scan_match(path):
                     continue
                 f = _facts_for(facts, faction)
                 f.loss_events += 1
-                f.loss_times.append(when)
+                f.loss_times.append((when, ordinal))
 
             elif event == "PRODUCTION":
                 faction = data.get("faction")
@@ -596,7 +492,9 @@ def scan_match(path):
                 if action == "QUEUE_ACCEPTED":
                     cost = _num(data.get("cost"))
                     f.spend_events += cost
-                    f.queued_keys[(data.get("class"), _num(data.get("queuedAt")))] += 1
+                    key = ('job', data['jobId']) if data.get('jobId') is not None else (data.get('class'), _num(data.get('queuedAt')))
+                    f.queued_keys[key] += 1
+                    f.job_times[key] = (when, ordinal, when + _num(data.get('buildSeconds')))
                     count = int(_num(data.get("count"), 1) or 1)
                     tier = int(_num(data.get("tier"), 1) or 1)
                     f.purchases_by_class[data.get("class")] += count
@@ -608,10 +506,14 @@ def scan_match(path):
                     # flow, so this identity must hold to the cent.
                     before = _num(data.get("cpBefore"))
                     after = _num(data.get("cpAfter"))
+                    f.cp_peak=max(f.cp_peak,before)
                     if abs((before - after) - cost) > 1.0:
                         f.cp_delta_bad += 1
-                elif action == "UNIT_SPAWNED":
-                    f.spawned_keys[(data.get("class"), _num(data.get("queuedAt")))] += 1
+                elif action in ('UNIT_SPAWNED', 'BUILD_FAILED', 'QUEUE_CANCELLED', 'QUEUE_REFUNDED'):
+                    if action == 'UNIT_SPAWNED':
+                        f.completed_builds += 1
+                    key = ('job', data['jobId']) if data.get('jobId') is not None else (data.get('class'), _num(data.get('queuedAt')))
+                    f.spawned_keys[key] += 1
                 elif action == "BOUNTY":
                     before = _num(data.get("cpBefore"))
                     after = _num(data.get("cpAfter"))
@@ -625,10 +527,11 @@ def scan_match(path):
                     continue
                 f = _facts_for(facts, faction)
                 action = data.get("action")
-                key = (data.get("class"), data.get("cost"))
+                key = ("job", data["jobId"]) if data.get("jobId") is not None else (data.get("class"), data.get("cost"))
                 if action == "BUILD_STARTED":
                     f.sentry_spend_events += _num(data.get("cost"))
                     f.sentry_started[key] += 1
+                    f.sentry_deadlines[key].append(_num(data.get("finishAt")))
                 elif action in SENTRY_TERMINAL_ACTIONS:
                     f.sentry_terminated[key] += 1
 
@@ -644,6 +547,9 @@ def scan_match(path):
                 if faction is None:
                     continue
                 f = _facts_for(facts, faction)
+                # The bank is sampled immediately before a purchase here.
+                # Thirty-second FACTION samples can miss every successful save.
+                f.cp_peak=max(f.cp_peak,_num(data.get("commandPoints")))
                 if data.get("reason") == SAVING_REASON:
                     f.saving_desired += 1
                     if data.get("desiredRole") == "capital":
@@ -657,19 +563,20 @@ def scan_match(path):
     # Loss times are kept because the snapshot time is only known at end of
     # stream; the count is O(100) per match, so this stays bounded.
     for f in facts.values():
+        f.end_time = end_time
         if f.last_snapshot_time is not None:
             f.loss_events_at_cut = sum(
-                1 for t in f.loss_times if t <= f.last_snapshot_time)
+                1 for t, order in f.loss_times if order <= f.last_snapshot_order)
         else:
             f.loss_events_at_cut = 0
 
     _resolve_escalation(meta, end_time, duration_index, duration_name,
-                        duration_source, scenario_start, scenario_source, run_time)
+                        duration_source, scenario_start, scenario_source, run_time,explicit_schedule)
     return facts, meta
 
 
 def _resolve_escalation(meta, end_time, duration_index, duration_name,
-                        duration_source, scenario_start, scenario_source, run_time):
+                        duration_source, scenario_start, scenario_source, run_time,explicit_schedule=None):
     """Fill MatchMeta from what the telemetry said about the scenario clock.
 
     Two questions, both answered by the batch rather than assumed:
@@ -708,6 +615,11 @@ def _resolve_escalation(meta, end_time, duration_index, duration_name,
     meta.duration_source = duration_source
     meta.duration_name = duration_name or DURATION_PROFILE_NAMES.get(index)
     meta.tier_schedule = TIER_UNLOCK_SCHEDULES.get(index)
+    if explicit_schedule:
+        meta.duration_index=None
+        meta.duration_name='ELIMINATION'
+        meta.duration_source='explicit-escalation-schedule'
+        meta.tier_schedule=explicit_schedule
 
     if scenario_start is not None:
         meta.scenario_start = scenario_start
@@ -751,6 +663,7 @@ class Verdict(object):
             "match": self.match,
             "faction": self.faction,
             "status": self.status,
+            "kind": CHECK_KINDS[self.invariant],
             "evidence": self.evidence,
             "explanation": self.explanation,
         }
@@ -758,7 +671,9 @@ class Verdict(object):
     def format_line(self):
         ev = " ".join("%s=%s" % (k, _fmt(v)) for k, v in sorted(self.evidence.items()))
         return "%-9s %-34s %-14s %-5s %s" % (
-            self.status, self.invariant, "%s/%s" % (self.match, self.faction), "", ev)
+            ("ALERT" if self.status == "FAIL" else "CLEAR" if self.status == "PASS" else self.status)
+            if CHECK_KINDS[self.invariant] == "diagnostic" else self.status,
+            self.invariant, "%s/%s" % (self.match, self.faction), "", ev)
 
 
 def _fmt(value):
@@ -781,20 +696,17 @@ EXPLANATIONS = {
         "Detects hulls paid for that neither spawned, were cancelled, nor were "
         "still legitimately in the queue at the final snapshot.",
     "cp_drift_not_persistently_negative":
-        "Detects a faction that claims to be saving while its bank never grows: "
-        "the saving-window livelock, where income arrives and is spent before "
-        "the target can ever be met.",
+        "Historical low-bank/saving alarm. Investigate competing expenses and actual "
+        "funding progress; pressure or deliberate spending can be legitimate.",
     "roster_escalation":
-        "Detects a faction that unlocks capital/heavy/juggernaut hulls and then "
-        "builds none of them: the absence that the saving-clock livelock "
-        "produced, and that no metric-diff tool named.",
+        "No capital-class completion observed after unlock. Check funding, build "
+        "duration, pending queues and tactical need; this is not a required purchase.",
     "fleet_composition_not_degenerate":
-        "Detects a roster that has collapsed onto a single hull class or onto "
-        "T1 only, which is what a faction buying nothing but its cheapest "
-        "affordable hull looks like.",
+        "Historical concentrated-roster alarm. Specialization may be a valid "
+        "counter-strategy; compare its outcomes before changing composition.",
     "bank_target_reachable":
-        "Detects a declared save target the bank provably never reached, which "
-        "makes the saving window a permanent no-op by construction.",
+        "The recorded bank did not reach a declared target within this observation "
+        "window. That does not prove the target is permanently unreachable.",
 }
 
 
@@ -833,7 +745,6 @@ def check_production_spend_reconciles(facts, match):
         f = facts[faction]
         flow = f.flow["productionSpend"]
         events = f.spend_events + f.sentry_spend_events
-        residual = flow - events
         negative_tolerance = max(NEGATIVE_RESIDUAL_FLOOR_CP,
                                  abs(events) * NEGATIVE_RESIDUAL_REL_TOLERANCE)
         ledger_reported = f.ledger_reported
@@ -843,6 +754,11 @@ def check_production_spend_reconciles(facts, match):
         # and in no gauge, which is why the gauge is compared at the publish and
         # not at end of file.
         ledger_tail = f.cp_spend_ledger - f.cp_spend_ledger_at_publish
+        # Build events include the file tail too. Compare them against spend
+        # through the same endpoint, while retaining the independent publish
+        # ledger/gauge and interval bank-conservation checks above.
+        comparison_flow = flow + (ledger_tail if ledger_reported else 0.0)
+        residual = comparison_flow - events
 
         # The two signs are DIFFERENT defects and get different treatment.
         defects = []
@@ -855,13 +771,19 @@ def check_production_spend_reconciles(facts, match):
         if defects:
             status = "FAIL"
             direction = defects[0]
+        elif f.incomplete_economy_snapshots:
+            status = 'WARN'
+            direction = 'bank-conservation-incomplete-fields'
+        elif f.snapshot_count < 2:
+            status = "WARN"
+            direction = "bank-conservation-not-observed"
         elif residual > 0.0 and not ledger_reported:
             status = "WARN"
             direction = "ledger-not-reported"
         else:
             status = "PASS"
             direction = "reconciled"
-        pct = (100.0 * residual / flow) if flow else 0.0
+        pct = (100.0 * residual / comparison_flow) if comparison_flow else 0.0
         # What the two named non-build sinks account for. Reported, NOT gated:
         # the ledger attributes every CP to a deduction but does not classify it,
         # and upgradeSpend plus service spend does not sum to the whole gap on
@@ -872,6 +794,7 @@ def check_production_spend_reconciles(facts, match):
         named_non_build = f.upgrade_spend + f.service_spend
         evidence = {
             "flowProductionSpend": flow,
+            "comparisonSpendIncludingTail": comparison_flow,
             "buildEventCost": events,
             "prodEvents": f.spend_events,
             "sentryEvents": f.sentry_spend_events,
@@ -895,8 +818,10 @@ def check_production_spend_reconciles(facts, match):
             "ledgerDrift": abs(drift) if ledger_reported else "not-reported",
             "ledgerDriftTolerance": LEDGER_DRIFT_TOLERANCE_CP if ledger_reported else "not-reported",
             "conservationViolations": f.conservation_violations,
+            "incompleteEconomySnapshots": f.incomplete_economy_snapshots,
             "conservationMaxDev": f.conservation_max_dev,
             "conservationTolerance": CP_CONSERVATION_TOLERANCE_CP,
+            "conservationIntervals": f.conservation_intervals,
             "negativeTolerance": negative_tolerance,
             "direction": direction,
         }
@@ -946,31 +871,50 @@ def check_no_orphan_builds(facts, match):
     for faction in sorted(facts):
         f = facts[faction]
         unmatched = []
+        duplicate = sum(max(0, count - 1) for count in f.queued_keys.values())
+        duplicate += sum(max(0, count - f.queued_keys.get(key, 0)) for key, count in f.spawned_keys.items())
         for key, count in f.queued_keys.items():
             remaining = f.spawned_keys.get(key, 0)
             for _ in range(max(0, count - remaining)):
-                unmatched.append("%s@%.1f" % (key[0], key[1]))
+                unmatched.append(key)
         # A build still in the final queue snapshot has not had time to finish.
         # That is a timing cut, not an orphan.
         final = f.final_queue or {}
         in_flight = 0
         if final.get("class"):
             in_flight = 1
-        orphans = [u for u in unmatched if not _matches_final_queue(u, f)]
+        def pending(key):
+            if key[0] == 'job':
+                _, order, deadline = f.job_times[key]
+                return key[1] in f.final_queue_jobs or final.get('jobId') == key[1] or (order > f.last_snapshot_order and deadline > f.end_time)
+            return _matches_final_queue('%s@%.17g' % key, f)
+        orphans = [u for u in unmatched if not pending(u)]
         sentry_open = 0
+        sentry_in_flight = 0
         for key, count in f.sentry_started.items():
-            sentry_open += max(0, count - f.sentry_terminated.get(key, 0))
-        status = "PASS" if not orphans and not sentry_open else "FAIL"
+            remaining=max(0,count-f.sentry_terminated.get(key,0))
+            deadlines=sorted(f.sentry_deadlines.get(key, []))
+            # Completed/cancelled jobs consume earlier starts. Preserve unknown
+            # deadlines as failures; only an explicit future finish is in flight.
+            open_deadlines=deadlines[len(deadlines)-remaining:] if remaining else []
+            pending=sum(1 for deadline in open_deadlines if deadline>f.end_time)
+            sentry_in_flight+=pending
+            sentry_open+=remaining-pending
+        duplicate += sum(max(0, count-f.sentry_started.get(key,0)) for key,count in f.sentry_terminated.items())
+        status = "PASS" if not orphans and not sentry_open and not duplicate else "FAIL"
         out.append(Verdict(
             "no_orphan_builds", match, faction, status,
             {
                 "buildsQueued": int(sum(f.queued_keys.values())),
-                "buildsSpawned": int(sum(f.spawned_keys.values())),
+                "buildsSpawned": f.completed_builds,
+                "buildsTerminated": int(sum(f.spawned_keys.values())),
                 "unmatchedBuilds": len(unmatched),
                 "inFinalQueue": in_flight,
                 "orphanBuilds": len(orphans),
                 "sentryBuildsOpen": sentry_open,
-                "orphanSample": ",".join(orphans[:4]) if orphans else "",
+                "sentryBuildsInFlight": sentry_in_flight,
+                "duplicateOrUnknownTerminals": duplicate,
+                "orphanSample": ','.join(('job:%s' % key[1]) if key[0]=='job' else ('%s@%.1f' % key) for key in orphans[:4]),
             },
             EXPLANATIONS["no_orphan_builds"]))
     return out
@@ -1071,7 +1015,7 @@ def check_roster_escalation(facts, match, meta):
 
     Escalation unlocks tiers 3 (capital), 4 (heavy) and 5 (juggernaut) on a
     MISSION-TIME schedule -- ``Config.Setup.Durations[].tierUnlocks``, walked by
-    ``RTS:GetCurrentEscalationTier`` (fs2rts_factions.lua:31-46) -- so the roster
+    ``RTS:GetCurrentEscalationTier`` (fs2rts_factions/escalation.lua:29-44) -- so the roster
     rule makes a capital-class purchase ATTAINABLE once the schedule has passed
     that tier, not guaranteed. The verdict is therefore stated over the
     escalation CLASS (tier >= 3), and ``unlockedTiers`` reports what the SCHEDULE
@@ -1104,7 +1048,12 @@ def check_roster_escalation(facts, match, meta):
         # A faction that bought nothing above tier 1 never had a capital-class
         # hull available OR never took it. Both are the absence we care about --
         # except when the schedule had not unlocked one yet.
-        capital_available = meta.max_tier_unlocked >= ESCALATION_TIER_FLOOR
+        roster=meta.rosters.get(faction)
+        capital_tiers=[_num(row.get("tier")) for row in roster or []
+                       if isinstance(row,dict) and _num(row.get("tier"))>=ESCALATION_TIER_FLOOR]
+        first_capital_tier=min(capital_tiers) if capital_tiers else None
+        capital_available = (meta.max_tier_unlocked>=first_capital_tier if first_capital_tier is not None
+                             else False if roster is not None else meta.max_tier_unlocked>=ESCALATION_TIER_FLOOR)
         if esc > 0:
             status = "PASS"
             mechanism = "capital-class-built"
@@ -1121,6 +1070,7 @@ def check_roster_escalation(facts, match, meta):
             "roster_escalation", match, faction, status,
             {
                 "capitalClassBuilds": esc,
+                "firstRosterCapitalTier": first_capital_tier if roster is not None else "not-reported",
                 "tierHistogram": by_tier,
                 "maxTierBuilt": max(seen_tiers) if seen_tiers else 0,
                 "totalBuilds": f.purchase_count,
@@ -1220,29 +1170,18 @@ def check_bank_target_reachable(facts, match):
     return out
 
 
-CHECKS = (
-    check_production_spend_reconciles,
-    check_losses_reconcile,
-    check_no_orphan_builds,
-    check_cp_drift,
-    check_roster_escalation,
-    check_fleet_composition,
-    check_bank_target_reachable,
+CHECK_REGISTRY = (
+    ("production_spend_reconciles", check_production_spend_reconciles, "invariant"),
+    ("losses_reconcile", check_losses_reconcile, "invariant"),
+    ("no_orphan_builds", check_no_orphan_builds, "invariant"),
+    ("cp_drift_not_persistently_negative", check_cp_drift, "diagnostic"),
+    ("roster_escalation", check_roster_escalation, "diagnostic"),
+    ("fleet_composition_not_degenerate", check_fleet_composition, "diagnostic"),
+    ("bank_target_reachable", check_bank_target_reachable, "diagnostic"),
 )
-
-# The invariant name each check emits. Declared alongside the check so a new
-# check cannot silently produce a nameless row in a CI log; the test
-# `test_every_registered_check_is_covered_by_an_explanation` asserts this stays
-# in sync with EXPLANATIONS.
-CHECK_NAMES = (
-    "production_spend_reconciles",
-    "losses_reconcile",
-    "no_orphan_builds",
-    "cp_drift_not_persistently_negative",
-    "roster_escalation",
-    "fleet_composition_not_degenerate",
-    "bank_target_reachable",
-)
+CHECK_NAMES = tuple(name for name, _, _ in CHECK_REGISTRY)
+CHECKS = tuple(check for _, check, _ in CHECK_REGISTRY)
+CHECK_KINDS = {name: kind for name, _, kind in CHECK_REGISTRY}
 
 
 def check_batch(batch_dir, paths=None):
@@ -1264,6 +1203,7 @@ def check_batch(batch_dir, paths=None):
             "match": label,
             "path": path,
             "endTime": meta.end_time,
+            "telemetryIntegrityErrors": meta.integrity_errors,
             "factions": sorted(facts),
             "escalation": {
                 "durationProfile": meta.duration_name or "unknown",
@@ -1288,6 +1228,12 @@ def iter_verdicts(result):
             yield match["match"], verdict
 
 
+def accounting_exit_code(result):
+    hard = [v for _, v in iter_verdicts(result) if v["kind"] == "invariant"]
+    incomplete = any(m.get('telemetryIntegrityErrors', 0) for m in result['matches'])
+    return 2 if incomplete else 1 if any(v["status"] == "FAIL" for v in hard) else 2 if not hard or any(v["status"] == "WARN" for v in hard) else 0
+
+
 def summarize(result):
     counts = collections.Counter()
     for _match, verdict in iter_verdicts(result):
@@ -1308,9 +1254,10 @@ def _render(result, out, show_events=False):
             v = Verdict(verdict["invariant"], match["match"], verdict["faction"],
                         verdict["status"], verdict["evidence"], verdict["explanation"])
             out.write("     %s\n" % v.format_line())
-    counts = summarize(result)
-    out.write("\nSUMMARY pass=%d fail=%d warn=%d\n"
-              % (counts["PASS"], counts["FAIL"], counts["WARN"]))
+    hard = collections.Counter(v["status"] for _, v in iter_verdicts(result) if v["kind"] == "invariant")
+    alerts = sum(v["kind"] == "diagnostic" and v["status"] == "FAIL" for _, v in iter_verdicts(result))
+    out.write("\nSUMMARY invariants_pass=%d invariants_fail=%d invariants_unknown=%d diagnostic_alerts=%d gameplay_acceptance=NOT_EVALUATED\n"
+              % (hard["PASS"], hard["FAIL"], hard["WARN"], alerts))
 
 
 def render_require_clean(result, out):
@@ -1322,7 +1269,17 @@ def render_require_clean(result, out):
     total = 0
     violations = 0
     warns = 0
+    alerts = 0
+    for item in result['matches']:
+        if item.get('telemetryIntegrityErrors'):
+            out.write('WARN telemetry_integrity %s malformed_records=%d\n' % (item['match'], item['telemetryIntegrityErrors']))
+            warns += 1
     for match, verdict in iter_verdicts(result):
+        if verdict["kind"] == "diagnostic":
+            if verdict["status"] == "FAIL":
+                alerts += 1
+                out.write("ALERT %s %s %s %s\n" % (verdict["invariant"], match, verdict["faction"], verdict["explanation"]))
+            continue
         total += 1
         if verdict["status"] == "FAIL":
             violations += 1
@@ -1334,21 +1291,19 @@ def render_require_clean(result, out):
             ev = " ".join("%s=%s" % (k, _fmt(v)) for k, v in sorted(verdict["evidence"].items()))
             out.write("WARN %s %s %s %s\n"
                       % (verdict["invariant"], match, verdict["faction"], ev))
-    out.write("SUMMARY checks=%d failures=%d warnings=%d batch=%s\n"
-              % (total, violations, warns, result["batch"]))
-    return violations
+    out.write("SUMMARY checks=%d failures=%d warnings=%d diagnostic_alerts=%d gameplay_acceptance=NOT_EVALUATED batch=%s\n"
+              % (total, violations, warns, alerts, result["batch"]))
+    return accounting_exit_code(result)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="ai_invariants.py",
-        description="Algebraic invariant linter for RTS headless AI telemetry. "
-                    "Exits non-zero when an invariant that must hold by "
-                    "construction of the economy/roster rules is violated.")
+        description="Check resource/build accounting and report separate tuning diagnostics. "
+                    "No output from this tool establishes gameplay balance.")
     parser.add_argument("batch", help="batch directory (or a single telemetry file)")
     parser.add_argument("--require-clean", action="store_true",
-                        help="CI/gating mode: emit one line per violation and exit "
-                             "1 if any invariant fails")
+                        help="accounting gate: exit 1 on violations, 2 on incomplete evidence; tuning alarms do not gate")
     parser.add_argument("--json", action="store_true",
                         help="emit the full machine-readable result set")
     args = parser.parse_args(argv)
@@ -1364,16 +1319,12 @@ def main(argv=None):
 
     if args.json:
         sys.stdout.write(json.dumps(result, indent=1, sort_keys=True) + "\n")
+        return accounting_exit_code(result) if args.require_clean else 0
     elif args.require_clean:
-        violations = render_require_clean(result, sys.stdout)
-        if violations:
-            return 1
-        return 0
+        return render_require_clean(result, sys.stdout)
     else:
         _render(result, sys.stdout)
-        if summarize(result)["FAIL"]:
-            return 1
-        return 0
+        return accounting_exit_code(result)
     return 0
 
 

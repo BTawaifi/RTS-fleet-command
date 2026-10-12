@@ -4,6 +4,10 @@ local R=require 'fs2rts_state'
 local U=require 'fs2rts_util'
 local alive,valid,vec=U.shipAlive,U.shipValid,U.vec
 local function sig(s) return valid(s) and s:getSignature() or -1 end
+local function canAutoEngage(self,attacker,target)
+    if self.CanAutoEngage then return self:CanAutoEngage(attacker,target) end
+    return self:AreEnemies(attacker,target)
+end
 local function strike(g) return g.role=='bomber' or g.role=='capital' or g.role=='heavy' or g.role=='juggernaut' end
 local function screen(g) return g.role=='fighter' or g.role=='escort' end
 local function settings(self) return self.Config.AI.Operations or {} end
@@ -33,10 +37,15 @@ function R:BuildAIOperations(kind,groups,home,now,threatValue,homeEmergency)
     -- requirement. CounterattackQuietSeconds gates that; 0 keeps the immediate
     -- release, a positive value requires the condition to hold that long.
     self.AIHomeQuietSince=self.AIHomeQuietSince or {}
+    self.AIHomeQuietBaseline=self.AIHomeQuietBaseline or {}
     local quietSince=self.AIHomeQuietSince[kind]
-    if previousThreat>0 and threatValue<previousThreat*.2 then quietSince=quietSince or now else quietSince=nil end
-    self.AIHomeQuietSince[kind]=quietSince
+    local baseline=self.AIHomeQuietBaseline[kind]
+    if quietSince then
+        if threatValue>=baseline*.2 then quietSince,baseline=nil,nil end
+    elseif previousThreat>0 and threatValue<previousThreat*.2 then quietSince,baseline=now,previousThreat end
     local counterattack=quietSince~=nil and (now-quietSince)>=(settings(self).CounterattackQuietSeconds or 0)
+    if counterattack then quietSince,baseline=nil,nil end
+    self.AIHomeQuietSince[kind]=quietSince; self.AIHomeQuietBaseline[kind]=baseline
     local fronts={}
     for _,g in ipairs(groups) do
         g.operation=nil
@@ -58,27 +67,32 @@ function R:BuildAIOperations(kind,groups,home,now,threatValue,homeEmergency)
             -- this operation's clocks across that gap so returning replacements
             -- resume the same assault instead of starting an identical assembly.
             local paused=math.max(0,now-op.missingSince)
-            for _,field in ipairs({'phaseAt','launchedAt','engagedAt','approachDeadline','suppressionUntil'}) do
+            for _,field in ipairs({'phaseAt','launchedAt','engagedAt','lastProgressAt','approachDeadline','suppressionUntil'}) do
                 if op[field] then op[field]=op[field]+paused end
             end
             op.missingSince=nil
-            -- lastUpdate is intentionally NOT stamped here. The engagedAt rewind
-            -- below is measured from now-lastUpdate, and lastUpdate is only ever
-            -- written in the live-front path, so across a recovery gap it stays
-            -- stale and the elapsed window is paused a second time. That double
-            -- shift looks wrong in isolation, but stamping it here changes the
-            -- phase timings that test_operations.py's withdraw/exploit/
-            -- counterattack window pins, and the group re-enters a different
-            -- branch as a result. Left as-is until that contract is re-specified.
+            -- The recovery adjustment already covers the whole missing interval.
+            -- A simultaneous home emergency must not add it a second time.
+            op.lastUpdate=now
         end
         op.target=front.target; op.groups=list; op.value=0; op.strikes=0; op.screens=0
         local paused=math.max(0,now-(op.lastUpdate or now))
-        if homeEmergency and op.engagedAt and (op.phase=='ENGAGE' or op.phase=='EXPLOIT') then op.engagedAt=op.engagedAt+paused end
+        if homeEmergency and op.engagedAt and (op.phase=='ENGAGE' or op.phase=='EXPLOIT') then
+            op.engagedAt=op.engagedAt+paused
+            if op.lastProgressAt then op.lastProgressAt=op.lastProgressAt+paused end
+        end
         op.lastUpdate=now
+        local durability=op.target.HitpointsLeft+(op.target.Shields and op.target.Shields.CombinedLeft or 0)
+        -- Self-healing chip damage must not renew a stalled siege forever.
+        if op.progressDurability and durability<op.progressDurability-math.max(1,(op.target.HitpointsMax or 0)*.005) then
+            op.lastProgressAt=now; op.progressDurability=durability
+        end
+        op.progressDurability=op.progressDurability or durability
         local anchor=nil; local nearest=math.huge
         for _,g in ipairs(list) do
             g.operation=op; op.value=op.value+g.value
-            if strike(g) then op.strikes=op.strikes+1 end
+            -- Beam escorts can continue a siege after a bomber wing is lost.
+            if strike(g) or g.role=='escort' then op.strikes=op.strikes+1 end
             if screen(g) then op.screens=op.screens+1 end
             -- Prefer a slow strike asset as the rendezvous/escort anchor.
             local speed=math.max(1,math.abs(g.units[1].Physics.VelocityMax.z))
@@ -110,7 +124,7 @@ function R:BuildAIOperations(kind,groups,home,now,threatValue,homeEmergency)
             if (ready>=op.value*.75 and op.strikes>0 and (op.screens>0 or defense==0))
                 or now-op.phaseAt>=(settings(self).AssembleSeconds or 45) or counterattack then
                 op.serial=op.serial+1; op.initialValue=op.value; op.initialStrikes=op.strikes
-                op.initialDefense=defense; op.launchedAt=now; op.engagedAt=nil; op.reserveReleased=false; op.flankDone=false
+                op.initialDefense=defense; op.launchedAt=now; op.engagedAt=nil; op.lastProgressAt=nil; op.progressDurability=durability; op.reserveReleased=false; op.flankDone=false
                 op.reserveId=nil; op.flankId=nil; op.suppressionIndex=nil; op.suppressionTarget=nil
                 op.suppressionUntil=nil; op.suppressionSpent=false; op.suppressionGroup=nil
                 if #list>=4 then
@@ -132,15 +146,15 @@ function R:BuildAIOperations(kind,groups,home,now,threatValue,homeEmergency)
             end
         elseif op.phase=='APPROACH' then
             if nearest<=(op.target.Radius or 0)+6000 or now>=op.approachDeadline then
-                op.engagedAt=now
+                op.engagedAt=now; op.lastProgressAt=now
                 self:SetAIOperationPhase(op,'ENGAGE','CONTACT_OR_APPROACH_DEADLINE',now)
             end
         elseif op.phase=='ENGAGE' or op.phase=='EXPLOIT' then
             if not homeEmergency and ((op.value<op.initialValue*.4 and defense>op.value)
                 or (op.initialStrikes>0 and op.strikes==0 and defense>0)) then
                 self:SetAIOperationPhase(op,'WITHDRAW','STRIKE_FORCE_LOST',now)
-            elseif not homeEmergency and now-(op.engagedAt or now)>=(settings(self).AttackSeconds or 360) then
-                self:SetAIOperationPhase(op,'WITHDRAW','OPERATION_DEADLINE',now)
+            elseif not homeEmergency and now-(op.lastProgressAt or op.engagedAt or now)>=(settings(self).AttackSeconds or 360) then
+                self:SetAIOperationPhase(op,'WITHDRAW','OPERATION_NO_PROGRESS',now)
             elseif op.phase=='ENGAGE' and (defense==0 or (op.initialDefense>0 and defense<op.initialDefense*.45)) then
                 self:SetAIOperationPhase(op,'EXPLOIT','DEFENSE_BROKEN',now)
             end
@@ -166,12 +180,12 @@ function R:BuildAIOperations(kind,groups,home,now,threatValue,homeEmergency)
 end
 
 function R:ChooseAIOperationTarget(op,g,coverage)
-    if op.phase=='EXPLOIT' then return op.target end
+    if op.phase=='EXPLOIT' and g.role~='fighter' then return op.target end
     local best,score=nil,-math.huge
     if screen(g) then
         for _,wing in ipairs(op.groups) do
             local attacker=wing.role=='bomber' and wing.targetedBy or nil
-            if alive(attacker) and self:AreEnemies(g.units[1],attacker)
+            if alive(attacker) and canAutoEngage(self,g.units[1],attacker)
                 and g.units[1].Position:getDistance(attacker.Position)<6000 then
                 local value=self:AIProfile(attacker).value
                 if ((coverage or {})[sig(attacker)] or 0)<math.max(value,g.value)*1.5 then return attacker end
@@ -179,11 +193,16 @@ function R:ChooseAIOperationTarget(op,g,coverage)
         end
     end
     for _,target in ipairs(op.defenders) do
-        if alive(target) and self:AreEnemies(g.units[1],target) then
+        if alive(target) and canAutoEngage(self,g.units[1],target) then
             local role=self:GetShipRole(target)
             local inReach=g.units[1].Position:getDistance(target.Position)
                 <=(self:AIProfile(g.units[1]).range or 0)+(target.Radius or 0)
-            local suitable=(strike(g) and (self:IsCapitalTarget(target) or (self:IsStaticDefense(target) and inReach)))
+            -- Bombers must keep their base objective instead of being pulled
+            -- off course by mobile capital escorts. Nearby fixed defenses
+            -- remain valid priorities; hard local threats are handled before
+            -- operation orders are applied.
+            local suitable=(strike(g) and ((g.role~='bomber' and self:IsCapitalTarget(target))
+                or (self:IsStaticDefense(target) and inReach)))
                 or (screen(g) and (role=='fighter' or role=='bomber' or role=='escort'))
             if suitable then
                 local value=self:AIProfile(target).value
@@ -274,6 +293,13 @@ function R:ApplyAIOperationOrder(g,target,mission,context,home,now,coverage)
         context.reason='COORDINATED_APPROACH'; return op.anchor.units[1],'ESCORT'
     end
     local chosen=self:ChooseAIOperationTarget(op,g,coverage)
+    if chosen==op.target and self:IsCommandStation(chosen) and g.role=='fighter' then
+        local anchor=op.anchor and op.anchor.units[1]
+        if alive(anchor) and anchor~=g.units[1] then
+            context.reason='COVER_STRIKE'; context.protected=sig(anchor)
+            return anchor,'ESCORT'
+        end
+    end
     context.reason=op.phase=='EXPLOIT' and 'BREAKTHROUGH_EXPLOIT' or 'OPERATION_ROLE_TARGET'
     if chosen==op.target and self:IsCommandStation(chosen) and strike(g)
         and (not op.suppressionGroup or op.suppressionGroup==g.id) then

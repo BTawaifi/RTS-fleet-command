@@ -23,10 +23,12 @@ function RTS:ResetCoordinatedAI()
     self.AIObservations={}; self.AIFactionHistory={}; self.AIDecisionHistory={}
     self.AIPushHistory={}
     self.AIAssaultTargets={}; self.AIProductionNeeds={}
+    self.AIOpponentDemand={}
     self.AIProductionEmergency={}
     self.AIOperations={}; self.AIHomeThreatHistory={}
+    self.AIHomeQuietSince={}; self.AIHomeQuietBaseline={}
     self.AITauntNextAt={}
-    self.AIStats={decisions=0,retained=0,switches=0,reissued=0,nativeChanges=0,completed=0,losses={},hits={},received={}}
+    self.AIStats={decisions=0,retained=0,switches=0,reissued=0,nativeChanges=0,completed=0,losses={},kills={},hits={},received={}}
     self.AIPrimaryReview={}; self.AIRetreatUntil={}; self.AISummaryAt=-100
     self.AIFrameSampleAt=-100; self.AIShipIndex=nil; self.AIProfileIndex=nil
     self.AIDetailBuffer={}; self.AITraceSequence=0
@@ -45,21 +47,18 @@ function RTS:ResetCoordinatedAI()
     -- decisions are sampled at an arbitrary, unreproducible rate.
     self.AIHeavyDecisionSamples=0
     self.AILethalDamageByShip={}
-    self.AIBaseHullSamples={}; self.AIBaseDamageSummaryAt=nil
+    self.AIBaseHullSamples={}; self.AIBaseDamageSummaryAt=nil; self.AICombatDamageSummaryAt=nil
 end
 
 function RTS:SupportsResolvedDamageTelemetry()
     if self.ResolvedDamageTelemetryAvailable~=nil then return self.ResolvedDamageTelemetryAvailable end
-    local available=false
-    if ba and type(ba.isEngineVersionAtLeast)=='function' then
-        local ok,result=pcall(function() return ba.isEngineVersionAtLeast(26,1,0) end)
-        available=ok and result==true
-    end
-    self.ResolvedDamageTelemetryAvailable=available
-    if not available then
-        self.ResolvedDamageTelemetryUnavailableReason='resolved damage hook unavailable on this engine build; station hull deltas remain available'
-    end
-    return available
+    -- On Ship Damage is a local experiment extension, absent from upstream
+    -- 26.1 HEAD. A version number does not advertise that capability, and
+    -- registering an unknown hook can raise a native engine error.
+    -- A harness using the modified engine must explicitly set this field true.
+    self.ResolvedDamageTelemetryAvailable=false
+    self.ResolvedDamageTelemetryUnavailableReason='custom resolved-damage hook not declared by harness; station hull deltas remain available'
+    return false
 end
 
 function RTS:RegisterBaseDamageTelemetry()
@@ -86,11 +85,11 @@ function RTS:RegisterBaseDamageTelemetry()
         self.BaseDamageTelemetry.unavailableReason=self.ResolvedDamageTelemetryUnavailableReason
         recordBaseDamageHooks(self); return
     end
-    local stations={
-        {faction='BLUE',name=self.Config.CarrierShip},
-        {faction='RED',name=self.Config.EnemyCommandShip},
-        {faction='GOLD',name=self.Config.ThirdCommandShip},
-    }
+    local stations={}
+    for _,kind in ipairs(self:GetFactionKeys()) do
+        local faction=self:GetFactionDefinition(kind)
+        if faction then stations[#stations+1]={faction=kind,name=faction.station} end
+    end
     for _,station in ipairs(stations) do
         local targetFaction,targetName=station.faction,station.name
         if type(targetName)=='string' and targetName~='' then
@@ -243,7 +242,7 @@ end
 
 function RTS:CaptureBaseHullBaseline()
     self.AIBaseHullSamples={}
-    for _,kind in ipairs({'BLUE','RED','GOLD'}) do
+    for _,kind in ipairs(self:GetFactionKeys()) do
         local station=self:GetFactionCommandShip(kind)
         if valid(station) then self.AIBaseHullSamples[kind]=station.HitpointsLeft end
     end
@@ -399,7 +398,7 @@ function RTS:EmitAIFinalBalance(result,now)
     -- fields - alive, objectValid, cap, CP, queue - exactly as before.
     local collected=self:IsAITraceActive()
     local factions={}
-    for _,kind in ipairs({'BLUE','RED','GOLD'}) do
+    for _,kind in ipairs(self:GetFactionKeys()) do
         local station=self:GetFactionCommandShip(kind)
         local state=self.AIStates and self.AIStates[kind]
         local cap=self:GetFleetCap(kind)
@@ -410,7 +409,7 @@ function RTS:EmitAIFinalBalance(result,now)
         if queue then
             local option=queue.option or queue.entry or {}
             local estimate=queue.estimate or (option.class and self:GetPurchaseEstimate(option.class,option.tier or 1,option.count or queue.count or 1))
-            queued={class=option.class or 'UNKNOWN',tier=option.tier or 1,count=queue.count or option.count or 1,
+            queued={jobId=queue.id,class=option.class or 'UNKNOWN',tier=option.tier or 1,count=queue.count or option.count or 1,
                 cost=option.cost or (estimate and estimate.cost) or 0,
                 remainingSeconds=math.max(0,(tonumber(queue.finishTime) or now)-now),
                 capacityWaitSeconds=queue.blockedAt and math.max(0,now-queue.blockedAt) or 0}
@@ -449,7 +448,7 @@ function RTS:EmitAIFinalBalance(result,now)
             end
         end)
     end
-    for _,kind in ipairs({'BLUE','RED','GOLD'}) do
+    for _,kind in ipairs(self:GetFactionKeys()) do
         local faction=factions[kind]
         faction.committedUnits=faction.combatants+(faction.queue and faction.queue.count or 0)
     end
@@ -472,10 +471,145 @@ function RTS:IsMissionPauseDisabled()
         and self.Config.AI.DisableMissionPause~=false
 end
 
+function RTS:RegisterBaseDamageProtection()
+    local installed=self.BaseDamageProtectionHooks or {}
+    self.BaseDamageProtectionHooks=installed
+    local protected=self.BaseDamageProtectedWeapons or {}
+    self.BaseDamageProtectedWeapons=protected
+    self.FighterBlastVariantsLoaded=self.FighterBlastVariantsLoaded or {}
+    self.FighterChipVariantMissing=self.FighterChipVariantMissing or {}
+    -- Keep this source inventory in parity with the generated retail/FSPort
+    -- fighter-bank table. Missing bundled clones fail closed; unknown add-on
+    -- weapons and countermeasures remain usable but direct station hits stay blocked.
+    local knownFighterChipSourceWeapons={
+        ['Akheton SDG']=true,['Circe']=true,['Cluster Baby']=true,['Cluster Bomb Baby']=true,
+        ['EMP Adv.']=true,['Harpoon']=true,['Harpoon D']=true,['Harpoon#Weak']=true,
+        ['Helios']=true,['Hornet']=true,['Hornet D']=true,['Hornet#Weak']=true,
+        ['Infyrno']=true,['Infyrno D']=true,['Lamprey']=true,['Maxim']=true,['Maxim D']=true,
+        ['Mekhu HL-7']=true,['Mekhu HL-7D']=true,['Morning Star']=true,['MorningStar D']=true,
+        ['Piranha']=true,['Prometheus D']=true,['Prometheus R']=true,['Prometheus S']=true,
+        ['Rockeye']=true,['Rockeye D']=true,['Shivan Heavy Laser']=true,['Shivan Mega Laser']=true,
+        ['Stiletto II']=true,['Subach HL-7']=true,['Subach HL-D']=true,['TAG-A']=true,['TAG-B']=true,
+        ['Targeting Laser']=true,['Tempest']=true,['Tempest D']=true,['Tornado']=true,['Tornado D']=true,
+        ['Training']=true,['Trebuchet']=true,['UD-8 Kayser']=true,['UD-D Kayser']=true,
+        ['Vasudan Light Laser']=true,
+    }
+    local function suppress(target,source)
+        return valid(target) and self:IsCommandStation(target) and valid(source)
+            and source:getBreedName()=='Ship' and not self:CanDamageBase(source)
+    end
+    local function register(key,name,callback,condition,override)
+        if installed[key] then return end
+        local ok
+        if condition then ok=engine.addHook(name,callback,condition,override)
+        else ok=engine.addHook(name,callback) end
+        if ok then installed[key]=true else self:Log('BASE DAMAGE GUARD REGISTRATION FAILED: '..key) end
+    end
+    register('weapon-created','On Weapon Created',function()
+        local weapon=hv['Weapon']
+        if valid(weapon) then
+            local parent=weapon.Parent
+            if valid(parent) and parent:getBreedName()=='Ship' then
+                local role=self:GetShipRole(parent)
+                if role=='fighter' then
+                    local original=weapon.Class and weapon.Class.Name
+                    local variantName=original and (original:sub(1,5)=='RTSF ' and original or 'RTSF '..original)
+                    local variant=variantName and tb.WeaponClasses[variantName] or nil
+                    if variant and variant:isValid() then
+                        local loadedVariants=self.FighterBlastVariantsLoaded or {}
+                        self.FighterBlastVariantsLoaded=loadedVariants
+                        if loadedVariants[variantName]==nil then
+                            local loaded=variant:loadWeapon()
+                            loadedVariants[variantName]=loaded==true
+                            if not loadedVariants[variantName] then
+                                self:Log('FIGHTER BLAST VARIANT PAGE-IN FAILED: '..variantName)
+                            end
+                        end
+                        if not loadedVariants[variantName] then
+                            -- A failed chip asset must not silently restore full damage.
+                            weapon:vanish(); return
+                        end
+                        weapon.Class=variant
+                        protected[weapon:getSignature()]=false
+                    else
+                        local missingKey=tostring(original)
+                        local knownSource=original and original:sub(1,5)=='RTSF ' and original:sub(6) or missingKey
+                        if not self.FighterChipVariantMissing[missingKey] then
+                            self.FighterChipVariantMissing[missingKey]=true
+                            if knownFighterChipSourceWeapons[knownSource] then
+                                self:Log('KNOWN FIGHTER CHIP VARIANT MISSING; discarding weapon: '..knownSource)
+                            else
+                                self:Log('UNMAPPED FIGHTER WEAPON; direct station collisions remain blocked: '..missingKey)
+                            end
+                        end
+                        if knownFighterChipSourceWeapons[knownSource] then
+                            protected[weapon:getSignature()]=true
+                            weapon:vanish(); return
+                        end
+                        protected[weapon:getSignature()]=true
+                    end
+                elseif not self:CanDamageBase(parent) then
+                    protected[weapon:getSignature()]=true
+                end
+            end
+        end
+    end)
+    register('weapon-delete','On Weapon Delete',function()
+        local weapon=hv['Weapon']
+        if valid(weapon) then protected[weapon:getSignature()]=nil end
+    end)
+    register('beam-fire','On Beam Fire',function()
+        local beam=hv['Beam']
+        if valid(beam) then
+            local parent=beam.ParentShip
+            if valid(parent) and parent:getBreedName()=='Ship' and not self:CanDamageBase(parent) then
+                protected[beam:getSignature()]=true
+            end
+        end
+    end)
+    register('beam-death','On Beam Death',function()
+        local beam=hv['Beam']
+        if valid(beam) then protected[beam:getSignature()]=nil end
+    end)
+    local stations={}
+    for index,kind in ipairs(self.Config.FactionOrder or self:GetFactionKeys()) do
+        if index<=3 or self:IsFactionEnabled(kind) then
+            local faction=self:GetFactionDefinition(kind)
+            if faction then stations[#stations+1]=faction.station end
+        end
+    end
+    for _,name in ipairs(stations) do
+        if type(name)=='string' and name~='' then
+            register('ship:'..name,'On Ship Collision',function() end,{['Ship']=name},function()
+                local target=hv['Ship']
+                local weapon,beam=hv['Weapon'],hv['Beam']
+                local projectile=valid(weapon) and weapon or valid(beam) and beam or nil
+                if valid(target) and self:IsCommandStation(target) and projectile then
+                    local parent
+                    if projectile==weapon then parent=weapon.Parent else parent=beam.ParentShip end
+                    local chipAllowed=protected[projectile:getSignature()]==false
+                    local blocked
+                    if chipAllowed then blocked=false
+                    else blocked=protected[projectile:getSignature()]==true or suppress(target,parent) end
+                    return blocked
+                end
+                local a,b=hv['Self'],hv['ShipB']
+                return suppress(a,b) or suppress(b,a)
+            end)
+        end
+    end
+end
+
+function RTS:ShouldDisableUnfocusedPause()
+    -- Intro/setup still owns the game view. Only the native pause-menu policy
+    -- needs the setup exclusion; losing focus must not freeze startup.
+    return self.Enabled==true and not self.PostBattleActive and self.Config.AI.DisableMissionPause~=false
+end
+
 function RTS:OnStateStart(oldState,newState)
     -- Backstop for any pause route the mod does not own itself (engine menu
-    -- shortcuts, controller chords). A normal Esc press never reaches here:
-    -- ShouldOverrideKey swallows it and toggles the mod's own pause instead.
+    -- shortcuts, controller chords). RTS Escape owns the mod's exit dialog;
+    -- it must not be replaced with the engine's plain pause screen.
     -- Same nil guard as OnStateEnd (lifecycle.lua): the engine has not been
     -- observed to hand us a nil state here, but a Lua error inside a state hook
     -- is not catchable by the mod, so the two handlers must agree on the
@@ -483,12 +617,12 @@ function RTS:OnStateStart(oldState,newState)
     local newName=newState and newState.Name or nil
     if newName==nil then return end
     local oldName=oldState and oldState.Name or nil
-    if self:IsMissionPauseDisabled() and oldName=='GS_STATE_GAME_PLAY' and newName=='GS_STATE_GAME_PAUSED' then
+    if self:IsMissionPauseDisabled() and not self.Paused and oldName=='GS_STATE_GAME_PLAY' and newName=='GS_STATE_GAME_PAUSED' then
         self:EmitAIEvent('PAUSE_SUPPRESSED',{reason='MISSION_CONTINUES'})
         ba.postGameEvent(ba.GameEvents['GS_EVENT_PREVIOUS_STATE'])
         return
     end
-    if newName=='GS_STATE_GAME_PLAY' then self:SetMissionFocusPolicy(self:IsMissionPauseDisabled())
+    if newName=='GS_STATE_GAME_PLAY' then self:SetMissionFocusPolicy(self:ShouldDisableUnfocusedPause())
     elseif newName~='GS_STATE_GAME_PAUSED' then self:SetMissionFocusPolicy(false) end
 end
 

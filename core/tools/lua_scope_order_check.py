@@ -353,7 +353,8 @@ def _module_globals(tokens: list[Token]) -> set[str]:
                 depth += 1
             elif t.value in _CLOSERS:
                 depth -= 1
-            prev_is_local = False
+            # A comma keeps us inside `local a, b, c = ...`; any other op ends the list.
+            prev_is_local = prev_is_local and t.value == ","
             continue
         if t.kind != "name":
             continue
@@ -367,8 +368,10 @@ def _module_globals(tokens: list[Token]) -> set[str]:
             # The names of a `local` declaration are NOT globals. Skipping them
             # is what stops every file-scope constant from being recorded as a
             # real global, which would in turn hide the very use-before-declare
-            # defect this tool exists to find.
-            prev_is_local = False
+            # defect this tool exists to find. Every name in the list is skipped,
+            # not only the first: `local a, b = ...` declares b as well.
+            nxt = tokens[idx + 1] if idx + 1 < len(tokens) else None
+            prev_is_local = nxt is not None and nxt.kind == "op" and nxt.value == ","
             continue
         if t.value == "function":
             nxt = tokens[idx + 1] if idx + 1 < len(tokens) else None
@@ -667,7 +670,7 @@ def check(scripts_dir: Path | str | None = None,
           include_info: bool = True) -> list[Finding]:
     root = Path(scripts_dir) if scripts_dir else SCRIPTS
     out: list[Finding] = []
-    for path in sorted(root.glob("*.lua")):
+    for path in sorted(root.rglob("*.lua")):
         out.extend(analyze_file(path))
     if not include_info:
         out = [f for f in out if f.level == "error"]

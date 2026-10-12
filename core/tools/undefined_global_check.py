@@ -101,7 +101,7 @@ def declared_names(text: str) -> set[str]:
 
 def main() -> int:
     problems = []
-    for path in sorted(SCRIPTS.glob("*.lua")):
+    for path in sorted(SCRIPTS.rglob("*.lua")):
         text = path.read_text(encoding="utf-8", errors="replace")
         known = declared_names(text) | FSO_GLOBALS
         # strip string literals and comments so prose does not count as calls

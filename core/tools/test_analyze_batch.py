@@ -82,37 +82,37 @@ class TerminationTests(unittest.TestCase):
             self.assertEqual(out["units_spawned"]["BLUE"], 4)
             self.assertNotEqual(out["termination"], "no_telemetry")
 
-    def test_reaching_the_cap_is_reported_as_the_cap(self):
+    def test_explicit_cap_result_is_reported_as_unresolved(self):
         with TemporaryDirectory() as tmp:
             fixture = Fixture(tmp)
             records = [faction_record(fixture, when=float(t)) for t in range(0, 3001, 100)]
-            run = fixture.write(records, plan={"max_sim_time": 3000})
+            run = fixture.write(records, plan={"max_sim_time": 3000}, result={'time_limit_reached':True})
             out = analyze_batch.analyze(run)
 
             self.assertEqual(out["termination"], "simulation_cap")
             self.assertTrue(out["time_limit"])
-            self.assertTrue(out["cap_inferred"])
+            self.assertFalse(out["cap_inferred"])
             self.assertFalse(out["crashed"])
             self.assertAlmostEqual(out["cap_progress"], 100.0, places=1)
             self.assertEqual(out["termination_detail"].count("3000s cap"), 1)
 
-    def test_absent_telemetry_is_a_crash(self):
+    def test_absent_telemetry_does_not_prove_a_crash(self):
         with TemporaryDirectory() as tmp:
             fixture = Fixture(tmp)
             run = fixture.write([])
             for path in (run / "probe" / "data").glob("rts-ai-*.jsonl"):
                 path.unlink()
             out = analyze_batch.analyze(run)
-            self.assertTrue(out["crashed"])
+            self.assertFalse(out["crashed"])
             self.assertEqual(out["termination"], "no_telemetry")
             self.assertEqual(out["records"], 0)
 
-    def test_empty_telemetry_file_is_a_crash(self):
+    def test_empty_telemetry_does_not_prove_a_crash(self):
         with TemporaryDirectory() as tmp:
             fixture = Fixture(tmp)
             run = fixture.write([])
             out = analyze_batch.analyze(run)
-            self.assertTrue(out["crashed"])
+            self.assertFalse(out["crashed"])
             self.assertEqual(out["telemetry_state"], "empty")
             self.assertEqual(out["records"], 0)
 
@@ -130,7 +130,7 @@ class TerminationTests(unittest.TestCase):
     def test_battle_end_is_a_natural_terminal(self):
         with TemporaryDirectory() as tmp:
             fixture = Fixture(tmp)
-            records = [faction_record(fixture), fixture.record("BATTLE_END", 200.0, result="BLUE")]
+            records = [faction_record(fixture), fixture.record("BATTLE_END", 200.0, result="BLUE", globalResolved=True, victorFaction='BLUE')]
             run = fixture.write(records, plan={"max_sim_time": 3000})
             out = analyze_batch.analyze(run)
             self.assertEqual(out["termination"], "battle_end")
@@ -150,6 +150,18 @@ class TerminationTests(unittest.TestCase):
 
 
 class TruncatedTailTests(unittest.TestCase):
+    def test_healthy_tail_and_personal_report_do_not_prove_global_completion(self):
+        with TemporaryDirectory() as tmp:
+            fixture=Fixture(tmp)
+            run=fixture.write([faction_record(fixture,when=3000),
+                fixture.record('BATTLE_END',3000,result='DEFEAT')],plan={'max_sim_time':3000})
+            match=analyze_batch.analyze(run)
+            self.assertFalse(match['global_resolved'])
+            self.assertFalse(match['time_limit'])
+            self.assertIsNone(match['outcome'])
+            self.assertEqual(match['personal_report'],'DEFEAT')
+            self.assertEqual(match['termination'],'unknown_without_result')
+
     def test_truncated_trailing_line_is_tolerated(self):
         with TemporaryDirectory() as tmp:
             fixture = Fixture(tmp)
@@ -196,6 +208,45 @@ class TruncatedTailTests(unittest.TestCase):
 
 
 class EconomyFlowTests(unittest.TestCase):
+    def test_ledger_without_cumulative_observation_has_no_reconciliation_verdict(self):
+        with TemporaryDirectory() as tmp:
+            fixture = Fixture(tmp)
+            match = analyze_batch.analyze(fixture.write([
+                fixture.record('CP_SPEND', 10, faction='BLUE', flow='productionSpend', amount=100),
+                faction_record(fixture, when=20, economy={'flow': {'productionSpend': 100}}),
+            ]))
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                metrics = analyze_batch.report([match], 'legacy', False)
+            self.assertIn('no cumulative spend snapshots; verdict unavailable', output.getvalue())
+            self.assertIsNone(metrics['cp_spend_drift'])
+
+    def test_reconciliation_compares_the_same_snapshot_cutoff(self):
+        with TemporaryDirectory() as tmp:
+            fixture = Fixture(tmp)
+            records = [
+                fixture.record('CP_SPEND', 10, faction='BLUE', flow='productionSpend', amount=100),
+                faction_record(fixture, when=20, economy={'flowCumulative': {'productionSpend': 100}}),
+                fixture.record('CP_SPEND', 20, faction='BLUE', flow='productionSpend', amount=500),
+            ]
+            match = analyze_batch.analyze(fixture.write(records))
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                metrics = analyze_batch.report([match], 'cutoff', False)
+            self.assertNotIn('MISMATCH', output.getvalue(), 'unsampled tail was called an accounting defect')
+            self.assertEqual(metrics['cp_spend_drift'], 0)
+            self.assertEqual(metrics['cp_spend_unobserved_tail'], 500)
+            # A later cumulative snapshot covers that spend and exposes a real
+            # disagreement. The cutoff must not hide observed accounting bugs.
+            records.append(faction_record(fixture, when=30, economy={'flowCumulative': {'productionSpend': 400}}))
+            match = analyze_batch.analyze(fixture.write(records, name='a-2'))
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                metrics = analyze_batch.report([match], 'mismatch', False)
+            self.assertIn('MISMATCH', output.getvalue())
+            self.assertEqual(metrics['cp_spend_drift'], 200)
+            self.assertEqual(metrics['cp_spend_unobserved_tail'], 0)
+
     def test_flow_spend_is_an_interval_so_it_must_be_summed(self):
         with TemporaryDirectory() as tmp:
             fixture = Fixture(tmp)
@@ -581,7 +632,17 @@ class DiscoveryTests(unittest.TestCase):
             self.assertEqual(len(without), 1)
             # an engine result alone is not evidence of life: no telemetry means
             # there is nothing to analyse, whatever the result says.
-            self.assertTrue(analyze_batch.analyze(*without[0])["crashed"])
+            self.assertFalse(analyze_batch.analyze(*without[0])["crashed"])
+
+
+class FactionDiscoveryTests(unittest.TestCase):
+    def test_analyzer_discovers_every_active_team_in_station_and_telemetry_maps(self):
+        match=analyze_batch.new_match()
+        match['stations'].update({"FACTION_04":{},"FACTION_06":{}})
+        match['flow']['FACTION_05']["income"]=1
+        match['battle']['FACTION_07']=[(1,{"value":1})]
+        self.assertEqual(analyze_batch.observed_factions([match]),(
+            "BLUE","RED","GOLD","FACTION_04","FACTION_05","FACTION_06","FACTION_07"))
 
 
 class ReportTests(unittest.TestCase):
@@ -612,7 +673,7 @@ class ReportTests(unittest.TestCase):
                                      "hullDamage": 4000.0, "share": 0.8}],
                            snapshot={"BLUE": {"commandPoints": 900.0, "stationHull": 1.0},
                                      "RED": {"commandPoints": 10.0, "stationHull": 0.0}}),
-            fixture.record("BATTLE_END", 210.0, result="BLUE"),
+            fixture.record("BATTLE_END", 210.0, result="BLUE", globalResolved=True, victorFaction='BLUE'),
         ]
         run = fixture.write(records, plan={"max_sim_time": 3000})
         return analyze_batch.analyze(run)
@@ -660,7 +721,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn("no LOSS records", text)
         self.assertIn("no COUNTERS records", text)
         self.assertIn("no AI_BUILD_DECISION records", text)
-        self.assertEqual(stats["crashed"], 1)
+        self.assertEqual(stats["crashed"], 0)
 
     def test_compare_prints_both_sides(self):
         with TemporaryDirectory() as tmp:
@@ -714,7 +775,7 @@ class MainTests(unittest.TestCase):
             finally:
                 sys.argv = argv
             text = buffer.getvalue()
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 2)
         self.assertIn("-- side-by-side --", text)
         self.assertIn("(2 matches)", text)
 

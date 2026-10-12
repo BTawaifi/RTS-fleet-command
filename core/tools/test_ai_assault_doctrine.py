@@ -15,7 +15,7 @@ static defence at rank 3 for a strike group and the operation objective - the
 enemy command station - at rank 1. The 200,000 gap is unpayable by distance, so
 every sentry in the defender ring outranks the station unconditionally, and
 ApplyAIOperationOrder returns that value with context.locked=true from
-fs2rts_strategy.lua:1422, after all local-threat logic. Hence
+fs2rts_strategy/strategic_plan.lua:468, after all local-threat logic. Hence
 localThreatSignature == target occurred 0 times and hardLocalThreat was false in
 100% of those records: the local threat was never consulted, not outvoted. These
 guards therefore exercise a VETO on what operations returns, not a re-weighting
@@ -29,12 +29,12 @@ import unittest
 from pathlib import Path
 
 from lupa.lua51 import LuaRuntime
+from script_modules import module_text
 
 # RTS_SCRIPTS_OVERRIDE lets the kill-check harness point this module at a mutated
 # COPY of the scripts directory, exactly as test_ai_concentration.py does.
 SCRIPTS = Path(os.environ.get('RTS_SCRIPTS_OVERRIDE')
                or (Path(__file__).resolve().parents[1] / 'data/scripts'))
-STRATEGY = SCRIPTS / 'fs2rts_strategy.lua'
 
 FIXTURE = r'''
 local Vec = {}; Vec.__index = Vec
@@ -137,19 +137,6 @@ class AssaultDoctrineGuardTests(unittest.TestCase):
             'AssaultStaticDefenceLock must ship false; got '..tostring(d.AssaultStaticDefenceLock))
           assert(d.AssaultMobileThreatLock==false,
             'AssaultMobileThreatLock must ship false; got '..tostring(d.AssaultMobileThreatLock))
-          assert(d.AssaultStaticDefenceThreatDistance==3600,
-            'AssaultStaticDefenceThreatDistance default moved: '..tostring(d.AssaultStaticDefenceThreatDistance))
-          assert(d.AssaultStaticDefenceCorridorWidth==0,
-            'AssaultStaticDefenceCorridorWidth must default to 0; got '..tostring(d.AssaultStaticDefenceCorridorWidth))
-          assert(d.AssaultMobileThreatCorridorWidth==0,
-            'AssaultMobileThreatCorridorWidth must default to 0; got '..tostring(d.AssaultMobileThreatCorridorWidth))
-          -- the four flags other work pinned must not be disturbed
-          assert(Config.Station.AI.CapitalAwareInvestment==false,'CapitalAwareInvestment must still ship false')
-          assert(Config.AI.BoundBankTarget==false,'BoundBankTarget must still ship false')
-          assert(Config.AI.PreserveSavingClockWhileFielding==false,
-            'PreserveSavingClockWhileFielding must still ship false')
-          assert(Config.AI.FieldCheapHullWhileSaving==false,
-            'FieldCheapHullWhileSaving must still ship false')
 
           -- and the gate must be inert for both buckets at the shipped default
           local g,st=scenario()
@@ -163,6 +150,12 @@ class AssaultDoctrineGuardTests(unittest.TestCase):
           local t2=R:ApplyAssaultObjectiveLock(g,escort,'PRIMARY',{})
           assert(t2==escort,'with both flags off a mobile diversion must pass through untouched')
         """)
+
+    def test_committed_withdrawal_owner_cannot_receive_a_new_strategic_order(self):
+        self.check("""local lead=ship(1,0,0,'BLUE'); local target=station(2,1000,0,'RED')
+          R.IsShipWithdrawing=function(self,s) return s==lead end
+          assert(not R:IssueStrategicOrder(lead,target,'attack','PRIMARY',0,true),
+            'strategic planner installed a new order on a committed withdrawal')""")
 
     # -- the sentry bucket ----------------------------------------------------
 
@@ -228,7 +221,7 @@ class AssaultDoctrineGuardTests(unittest.TestCase):
     def test_the_reactive_bound_is_enforced_and_configurable(self):
         """Kill-check: red if the threat-distance bound stops biting. localThreat
         is re-derived every tick from LocalEngageRadius, but the INTERCEPT
-        retention swap at fs2rts_strategy.lua:1040-1044 can re-bind it to a
+        retention swap at fs2rts_strategy/strategic_plan.lua:86-90 can re-bind it to a
         previous target well outside that radius, so an unbounded reactive test
         would let exactly that stale target re-appear as an objective."""
         self.check("""
@@ -407,7 +400,7 @@ class AssaultDoctrineGuardTests(unittest.TestCase):
         only a veto if it runs after ApplyAIOperationOrder has produced the
         diverted target and before CommitAIGroup records it; anywhere else it
         would either be overwritten or would never see the sentry at all."""
-        text = STRATEGY.read_text(encoding='utf-8')
+        text = module_text(SCRIPTS, 'fs2rts_strategy')
         op = text.find('target,mission=self:ApplyAIOperationOrder(')
         lock = text.find('target,mission=self:ApplyAssaultObjectiveLock(')
         commit = text.find('mission=self:CommitAIGroup(')

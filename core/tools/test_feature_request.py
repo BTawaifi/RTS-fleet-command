@@ -8,6 +8,7 @@ import unittest
 
 from lupa.lua51 import LuaRuntime
 from test_station import SETUP, SCRIPTS
+from script_modules import module_text
 
 EXTRA = r'''
 -- ---- engine and per-suite doubles, installed after the mod loads ----------
@@ -21,6 +22,7 @@ io.setCursorHidden=io.setCursorHidden or function() end
 ba.postGameEvent=ba.postGameEvent or function() end
 ba.setButtonControlMode=ba.setButtonControlMode or function() end
 gr={setCamera=function() end,getScreenWidth=function() return 1920 end,getScreenHeight=function() return 1080 end,
+  loadTexture=function() return {isValid=function() return true end,getWidth=function() return 128 end,getHeight=function() return 128 end} end,
   setColor=function() end,drawRectangle=function() end,drawLine=function() end,drawCircle=function() end,
   drawString=function() end,drawRectangleCentered=function() end,drawImage=function() end,
   drawTargetingBrackets=function() return nil end,
@@ -41,7 +43,7 @@ end
 -- shimmed here: a module that calls an undefined global would otherwise pass
 -- these tests and abort the engine with an uncatchable C++ exception.
 r.FollowSignature=nil; r.BattleCamActive=false; r.FreeCamActive=false
-r.Camera={Position=ba.createVector(0,0,0),Orientation={copy=function() return {} end},FOV=0.9}
+r.Camera={Position=ba.createVector(0,0,0),Orientation=ba.createVector(0,0,1),FOV=0.9}
 r.ordersIssued={}
 REAL_ISSUE_MOVE=r.IssueMove
 REAL_SET_USER_ORDER=r.SetUserOrder
@@ -99,7 +101,7 @@ ORDER_STAY_STILL='STAY'; ORDER_WAYPOINTS_ONCE='MOVE'; ORDER_ATTACK='ATTACK'; ORD
 -- asserting a HUD claim is not reading it.
 function captureStrings(fn)
   local realgr=gr; local out={}
-  gr={setColor=function() end,drawRectangle=function() end,drawRectangleCentered=function() end,
+  gr={loadTexture=realgr.loadTexture,setColor=function() end,drawRectangle=function() end,drawRectangleCentered=function() end,
     drawLine=function() end,drawCircle=function() end,drawImage=function() end,
     drawString=function(text) out[#out+1]=tostring(text) end,
     getStringWidth=function(text) return #tostring(text)*8 end,
@@ -145,7 +147,7 @@ class KeyBindingTests(unittest.TestCase):
           r.SetPaused=function(self,p) applied[#applied+1]=p==false and 'unpaused' or 'paused' end
           r.SetStatus=function() end
           for key,want in pairs({['1']=1,['2']=2,['3']=4,['4']=8,['0']=16}) do
-            applied={}; r:OnKeyPressed(key,key)
+            applied={}; r:OnKeyPressed('Alt-'..key,key)
             assert(applied[#applied]==want,
               'key '..key..' gave '..tostring(applied[#applied])..'x, expected '..want..'x')
           end""")
@@ -158,20 +160,27 @@ class KeyBindingTests(unittest.TestCase):
           local toggles=0
           r.TogglePause=function() toggles=toggles+1 end
           r.IsMissionPauseDisabled=function() return false end
+          controls={Pause='Pause'}
           r.Enabled=true; r.SetupActive=false; r.PostBattleActive=false; r.CinematicActive=false
           for _,key in ipairs({'Pause','Break'}) do
             toggles=0; r:OnKeyPressed(key,key)
             assert(toggles==1,key..' did not reach the gameplay pause (toggles='..toggles..')')
+            assert(r:ShouldOverrideKey(key,key),key..' leaked to native gameplay input')
           end
           -- Alt+Pause must still fall through to the native menu, or the player
           -- loses Options / Controls / Restart / Abort entirely.
           toggles=0; r:OnKeyPressed('Alt-Pause','Alt-Pause')
-          assert(toggles==0,'Alt+Pause was swallowed and the native menu became unreachable')""")
+          assert(toggles==0 and not r:ShouldOverrideKey('Alt-Pause','Alt-Pause'),
+            'Alt+Pause was swallowed and the native menu became unreachable')
+          r.PossessedSignature=123; toggles=0
+          r:OnKeyPressed('Pause','Pause')
+          assert(toggles==1 and r:ShouldOverrideKey('Pause','Pause'),
+            'Pause must remain a gameplay pause while piloting')""")
 
     def test_config_declares_the_new_scheme(self):
         self.check("""local c=r.Config.HomeworldControls
           assert(c.TimeSlower=='1' and c.TimePause=='2' and c.TimeFaster=='3' and c.TimeReset=='4')
-          assert(c.Wing1=='F1' and c.Wing2=='F2' and c.Wing3=='F3' and c.Wing4=='F4')
+          assert(c.Wing1=='1' and c.Wing2=='2' and c.Wing3=='3' and c.Wing4=='4')
           assert(c.SelectAll=='L' and c.Chase=='B' and c.MuteMusic=='N')
           assert(c.HoldPolicy=='J' and c.PassivePolicy=='Z' and c.DefensivePolicy=='X' and c.AggressivePolicy=='V')
           assert(c.Cinematic=='C')
@@ -194,7 +203,7 @@ class KeyBindingTests(unittest.TestCase):
     def test_no_duplicate_bindings(self):
         self.check("""local c=r.Config.HomeworldControls
           local seen={}
-          for _,key in ipairs({c.TimeSlower,c.TimePause,c.TimeFaster,c.TimeReset,c.Wing1,c.Wing2,c.Wing3,c.Wing4,
+          for _,key in ipairs({'Alt-'..c.TimeSlower,'Alt-'..c.TimePause,'Alt-'..c.TimeFaster,'Alt-'..c.TimeReset,c.Wing1,c.Wing2,c.Wing3,c.Wing4,
             c.SelectAll,c.Chase,c.MuteMusic,c.HoldPolicy,c.PassivePolicy,c.DefensivePolicy,c.AggressivePolicy,
             c.Cinematic,c.Stop,c.Engage,c.Release,c.ArmMove,c.ArmAttack,c.Focus,c.FocusBase,c.ZoomFar,c.ZoomNear,
             c.PanForward,c.PanBackward,c.PanLeft,c.PanRight}) do
@@ -202,20 +211,20 @@ class KeyBindingTests(unittest.TestCase):
             seen[key]=true
           end""")
 
-    def test_number_keys_are_time_ladder_not_wing_recall(self):
+    def test_number_keys_recall_groups(self):
         self.check("""r.testSelection={}
           local recalled=false; r.RecallControlGroup=function(self,g) recalled=g end
           r:OnKeyPressed('1','1'); r:OnKeyPressed('2','2'); r:OnKeyPressed('3','3'); r:OnKeyPressed('4','4')
-          assert(not recalled,'a number key recalled a wing instead of driving time')""")
+          assert(recalled==4,'number keys do not recall groups')""")
 
-    def test_function_keys_recall_and_assign_wings(self):
+    def test_digits_recall_and_shift_digits_assign_groups(self):
         self.check("""local recalled,assigned
           r.RecallControlGroup=function(self,g) recalled=g end
           r.AssignControlGroup=function(self,g) assigned=g end
-          r:OnKeyPressed('F3','F3'); assert(recalled==3 and assigned==nil,'F3 did not recall wing 3')
-          r.CtrlDown=true; r:OnKeyPressed('Ctrl-F3','F3')
-          assert(assigned==3,'Ctrl+F3 did not assign wing 3')
-          r.CtrlDown=false""")
+          r:OnKeyPressed('3','3'); assert(recalled==3 and assigned==nil,'3 did not recall group 3')
+          r:OnKeyPressed('Shift-3','3')
+          assert(assigned==3,'Shift+3 did not assign group 3')
+          r:OnKeyReleased('Shift','Shift')""")
 
     def test_policy_keys_cover_all_four_policies(self):
         self.check("""local seen={}
@@ -225,11 +234,87 @@ class KeyBindingTests(unittest.TestCase):
             'HOLD/RETREAT/STANDOFF/ENGAGE not all reachable by key')""")
 
     def test_music_key_toggles_the_audio_stream(self):
-        self.check("""musicCalls={}
+        self.check("""musicCalls={}; r.EnvironmentMusicHandle=21
           r:OnKeyPressed('N','N'); assert(r.MusicMuted==true,'N did not mute')
-          assert(#musicCalls==1 and musicCalls[1].handle==-1 and musicCalls[1].paused==true)
+          assert(#musicCalls==1 and musicCalls[1].handle==21 and musicCalls[1].paused==true)
           r:OnKeyPressed('N','N'); assert(r.MusicMuted==false,'N did not unmute')
           assert(musicCalls[2].paused==false)""")
+
+
+class FactionSetupTests(unittest.TestCase):
+    def setUp(self):
+        self.lua=boot()
+
+    def check(self,code):
+        self.lua.execute(code)
+
+    def test_mirror_races_remain_hostile_and_six_stations_form_a_hexagon(self):
+        self.check("""r.SetupFactionCountChoice=6; r:UpdateFactionCount()
+          assert(#r.Config.FactionOrder==12 and #r:GetFactionKeys()==6,'setup should expose twelve supported team slots and honor six teams')
+          r:SetFactionSpecies('BLUE','SHIVAN'); r:SetFactionSpecies('RED','SHIVAN')
+          local blue=ship('mirror blue',class('SF Mara'),ba.createVector(0,0,0),mn.Teams.friendly)
+          local red=ship('mirror red',class('SF Mara'),ba.createVector(1,0,0),mn.Teams.hostile)
+          assert(r:GetFactionKey(blue)=='BLUE' and r:GetFactionKey(red)=='RED','faction slot identity collapsed by duplicate species')
+          assert(r:AreEnemies(blue,red),'mirror species on separate IFF teams are not hostile')
+          r.UpdateCameraTransform=function() end
+          r.SetupActive=true
+          r:ApplyConfiguredBaseSpacing()
+          local keys=r:GetFactionKeys(); local d=r:GetBaseDistanceProfile().distance
+          assert(#keys==6 and r.ScenarioMapHalfExtent>d/(2*math.sin(math.pi/6)),'six-team map bounds do not include the whole layout')
+          for i=1,#keys do
+            local a=r.ScenarioBasePositions[keys[i]]; local b=r.ScenarioBasePositions[keys[i%#keys+1]]
+            assert(math.abs(a:getDistance(b)-d)<.01,'neighboring station spacing changed in the hexagon')
+          end""")
+
+    def test_legacy_gold_only_selection_keeps_the_chosen_slot(self):
+        self.check("""r.SetupFactionCountChoice=nil; r.SetupOpponents={RED=false,GOLD=true}; r:UpdateFactionCount()
+          local keys=r:GetFactionKeys()
+          assert(#keys==2 and keys[1]=='BLUE' and keys[2]=='GOLD','legacy Gold-only setup was replaced with Red by faction count')
+          assert(not r:IsFactionEnabled('RED') and r:IsFactionEnabled('GOLD'))""")
+
+    def test_symmetric_matches_assign_each_faction_a_neighboring_opening_target(self):
+        self.check("""r.SetupFactionCountChoice=6; r:UpdateFactionCount(); r.UpdateCameraTransform=function() end; r.SetupActive=true
+          r:ApplyConfiguredBaseSpacing()
+          local keys=r:GetFactionKeys(); local bases={}; local serial=0
+          for _,kind in ipairs(keys) do
+            local def=r:GetFactionDefinition(kind); local team=mn.Teams[def.team]
+            if not team then team={Name=def.team,isValid=function() return true end,attacks=function(a,b) return a~=b end}; mn.Teams[def.team]=team end
+            serial=serial+1
+            bases[kind]={Name=kind,Team=team,Position=r.ScenarioBasePositions[kind],HitpointsLeft=100,
+              isValid=function() return true end,getBreedName=function() return 'Ship' end,isDying=function() return false end,
+              getSignature=function() return serial end}
+          end
+          r.GetFactionCommandShip=function(self,kind) return bases[kind] end
+          r.AreEnemies=function(self,a,b) return a~=b end
+          for i,kind in ipairs(keys) do
+            local expected=keys[i%#keys+1]
+            assert(r:SelectFactionPrimaryTarget(kind)==bases[expected],kind..' did not choose its fair ring neighbor '..expected)
+          end""")
+
+    def test_setup_cycles_player_and_ai_species_then_paginates_larger_matches(self):
+        self.check("""r.SetupFactionCountChoice=nil; r.SetupOpponents={RED=true,GOLD=false}; r:UpdateFactionCount()
+          r:DrawSetupOverlay(1280,720)
+          local function click(id)
+            local q=r.SetupButtonRects[id]; assert(q,'missing setup control '..id)
+            assert(r:HandleSetupClick((q.x1+q.x2)/2,(q.y1+q.y2)/2),'setup click ignored '..id)
+          end
+          for i=1,4 do click('factions_more') end
+          assert(r.SetupFactionCount==6,'faction count stepper stopped at '..tostring(r.SetupFactionCount)..' choice='..tostring(r.SetupFactionCountChoice))
+          r:DrawSetupOverlay(1280,720)
+          click('faction_BLUE'); assert(r:GetFactionChoice('BLUE')=='GTVA','player faction did not cycle')
+          click('faction_RED'); assert(r:GetFactionChoice('RED')=='RANDOM','AI faction did not cycle independently')
+          click('faction_next'); r:DrawSetupOverlay(1280,720)
+          assert(r.SetupFactionPage==2 and r.SetupButtonRects.faction_FACTION_06,'faction page omitted a configured faction')
+          for i=1,#r.Config.FactionChoices do
+            if r:GetFactionChoice('FACTION_06')=='RANDOM' then break end
+            click('faction_FACTION_06')
+          end
+          assert(r:GetFactionChoice('FACTION_06')=='RANDOM','per-faction random choice unavailable')
+          r.SetupFactionCountChoice=12; r:UpdateFactionCount(); r:DrawSetupOverlay(1280,720)
+          click('faction_next')
+          r:DrawSetupOverlay(1280,720)
+          assert(r.SetupFactionPage==3 and r.SetupButtonRects.faction_FACTION_12,
+            'the setup screen cannot reach the last supported faction slot')""")
 
 
 class AutoModeTests(unittest.TestCase):
@@ -384,7 +469,7 @@ class ReticleTests(unittest.TestCase):
           local realgr=gr
           for _,role in ipairs(roles) do
             local calls={}
-            gr={setColor=function() end,
+            gr={setColor=function() end,getScreenWidth=realgr.getScreenWidth,getScreenHeight=realgr.getScreenHeight,
                 drawLine=function() calls[#calls+1]='line' end,
                 drawRectangle=function(x1,y1,x2,y2,filled)
                   calls[#calls+1]=filled==true and 'rect-fill' or 'rect-outline' end,
@@ -425,7 +510,7 @@ class ReticleTests(unittest.TestCase):
         # then reproduces the engine's own __indexer behaviour so the icon code
         # is exercised against a handle that rejects unknown methods.
         offenders = []
-        for path in sorted(SCRIPTS.glob("*.lua")):
+        for path in sorted(SCRIPTS.rglob("*.lua")):
             for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
                 if ":use(" in line:
                     offenders.append(f"{path.name}:{number}: {line.strip()}")
@@ -473,7 +558,8 @@ class ReticleTests(unittest.TestCase):
         self.check("""local realgr=gr
           local function capture(fn)
             local n=0
-            gr={setColor=function() end,
+            gr={loadTexture=realgr.loadTexture,drawImage=realgr.drawImage,setColor=function() end,
+              getScreenWidth=realgr.getScreenWidth,getScreenHeight=realgr.getScreenHeight,getCurrentCamera=realgr.getCurrentCamera,
               drawRectangle=function() n=n+1 end,
               drawLine=function() n=n+1 end,drawString=function() end,getStringWidth=function() return 10 end}
             fn(); gr=realgr; return n
@@ -510,6 +596,74 @@ class CinematicTests(unittest.TestCase):
 
     def setUp(self):
         self.lua = boot()
+        self.lua.execute("for _,name in ipairs({'GTC Fenris','SC Lilith','GTF Hercules','SF Mara','GTB Medusa','SB Nephilim'}) do if not tb.ShipClasses[name] then class(name) end end")
+
+    def test_intro_stages_opposing_fleets_tracks_subject_and_cleans_up(self):
+        self.check('''
+          local cp=r.CommandPoints
+          r:StartIntroCinematic()
+          local cast=r.IntroShips; assert(#cast==6)
+          assert(cast[1].Team~=cast[2].Team and cast[1].Target==cast[2])
+          local subject=cast[1]; r:UpdateIntroCinematic(.1)
+          assert(r.Camera.Position.y>40000,'camera still films the real bases')
+          local previousX=r.Camera.Position.x
+          subject.Position=subject.Position+ba.createVector(1000,0,0)
+          r:UpdateIntroCinematic(0)
+          assert(math.abs(r.Camera.Position.x-previousX-1000)<.001,'shot did not follow its moving subject')
+          r.CinematicElapsed=r:GetCinematicShotStart(5)+.1; r:UpdateIntroCinematic(0)
+          local route=r.MoveWaypoints[cast[5]:getSignature()]
+          assert(route and route.waypoint.Position.y==45000,'intro retreat entered the playable arena')
+          local weapon={Parent=cast[3],isValid=function() return true end,vanish=function(self) self.removed=true end}
+          mn.Weapons={weapon}
+          r:EndIntroCinematic(true)
+          assert(weapon.removed and r.IntroShips==nil and not r.CinematicActive)
+          for _,s in ipairs(cast) do assert(not s:isValid(),'intro hull leaked into setup') end
+          assert(r.CommandPoints==cp and next(r.UnitHistory or {})==nil,'intro changed real fleet/economy')
+        ''')
+
+    def test_partial_intro_creation_failure_removes_created_hulls(self):
+        self.check('''
+          local create=mn.createShip; local first
+          mn.createShip=function(...)
+            if first then return nil end
+            first=create(...); return first
+          end
+          local ok=pcall(function() r:StartIntroCinematic() end)
+          assert(not ok and first and not first:isValid() and r.IntroShips==nil)
+        ''')
+
+    def test_intro_order_refusal_cleans_up_the_entire_cast(self):
+        self.check('''
+          local create=mn.createShip; local cast={}
+          mn.createShip=function(...)
+            local s=create(...); cast[#cast+1]=s
+            s.giveOrder=function() return false end
+            return s
+          end
+          local ok=pcall(function() r:StartIntroCinematic() end)
+          assert(not ok,'refused intro order was ignored')
+          assert(r.IntroShips==nil,'refused order left the intro scene registered')
+          for _,s in ipairs(cast) do assert(not s:isValid(),'refused order leaked a hull') end
+        ''')
+
+    def test_intro_tail_holds_camera_and_fades_before_resetting_to_setup(self):
+        self.check('''
+          r:StartIntroCinematic()
+          r.CinematicElapsed=r:GetCinematicTotalDuration()-.01
+          r:UpdateIntroCinematic(0)
+          local x,y,z=r.Camera.Position.x,r.Camera.Position.y,r.Camera.Position.z
+          r:UpdateIntroCinematic(.11)
+          assert(r.CinematicTailHold and r.CinematicActive)
+          r:UpdateIntroCinematic(.5)
+          assert(r.Camera.Position.x==x and r.Camera.Position.y==y and r.Camera.Position.z==z,
+            'tail introduced another camera movement')
+          assert(r.CinematicCaptionAlpha<255,'tail flashed the faded caption back on')
+          r:UpdateIntroCinematic(r.Config.Cinematic.EndHoldSeconds)
+          assert(not r.CinematicActive and r.IntroFadeInUntil==r:UINow()+1,
+            'camera reset did not fade into setup')
+          r:StartIntroCinematic(); r:EndIntroCinematic(true)
+          assert(r.IntroFadeInUntil==nil,'explicit skip was delayed by transition fade')
+        ''')
 
     def check(self, code):
         self.lua.execute(code)
@@ -581,7 +735,7 @@ class BattleReportTests(unittest.TestCase):
     def test_summary_reports_duration_losses_and_factions(self):
         self.check("""r:ResetState(); r.SetupActive=false; r.ScenarioStartTime=0
           r.CombatTelemetryEnabled=true
-          r.AIStats={decisions=0,losses={BLUE={['GTF Myrmidon']=3,['SJ Sathanas']=1},RED={['GTF Perseus']=7}},hits={},received={}}
+          r.AIStats={decisions=0,losses={BLUE={['GTF Myrmidon']=3,['SJ Sathanas']=1},RED={['GTF Perseus']=7}},kills={BLUE={['GTF Perseus']=7}},hits={},received={}}
           r.AIEconomyFlow={BLUE={income=100,productionSpend=4200,bounty=0,refund=200}}
           now=421
           local s=r:BuildBattleSummary()
@@ -668,13 +822,18 @@ class MoveFacingTests(unittest.TestCase):
           r:IssueMove(ba.createVector(100,0,200))
           assert(r.UserOrders[s.signature].facing==nil,'a plain move invented a facing')""")
 
-    def test_facing_sexp_is_driven_every_frame_while_moving(self):
+    def test_facing_sexp_is_driven_after_arrival_without_fighting_waypoint_steering(self):
         self.check("""local s=mkFighter()
+          r.Enabled=true
           r.SetupActive=false; r.PostBattleActive=false; r.PossessedSignature=nil
           r.UserOrders={ [s.signature]={kind='move',destination=ba.createVector(0,0,0),facing=ba.createVector(1000,0,0)} }
           sexps={}
           r:UpdateMoveFacings()
-          assert(#sexps>0,'facing was never issued to the engine')
+          assert(#sexps==0,'arrival facing competed with native waypoint steering')
+          r.SetUserOrder=REAL_SET_USER_ORDER
+          r:OnWaypointsDone(s)
+          r:UpdateMoveFacings()
+          assert(#sexps>0,'arrival facing was never issued to the engine')
           assert(sexps[1]:find('set%-object%-facing'),'wrong SEXP: '..tostring(sexps[1]))""")
 
     def test_facing_is_dropped_when_the_ship_dies(self):
@@ -694,7 +853,8 @@ class SpatialTelemetryTests(unittest.TestCase):
 
     def setUp(self):
         self.lua = boot()
-        self.check("r:ResetState(); r.SetupActive=false; r.ScenarioStartTime=0; r.CombatTelemetryEnabled=true")
+        # A wrapping emitter spy alone is not a runtime trace destination.
+        self.check("r:ResetState(); r.SetupActive=false; r.ScenarioStartTime=0; r.CombatTelemetryEnabled=true; r.AIEventSink=function() end")
 
     def check(self, code):
         self.lua.execute(code)
@@ -790,7 +950,7 @@ class OutcomeTelemetryTests(unittest.TestCase):
 
     def setUp(self):
         self.lua = boot()
-        self.check("r:ResetState(); r.SetupActive=false; r.ScenarioStartTime=0; r.CombatTelemetryEnabled=true")
+        self.check("r:ResetState(); r.SetupActive=false; r.ScenarioStartTime=0; r.CombatTelemetryEnabled=true; r.AIEventSink=function() end")
 
     def check(self, code):
         self.lua.execute(code)
@@ -850,24 +1010,24 @@ class OutcomeTelemetryTests(unittest.TestCase):
           local emitted={}
           local real=r.EmitAIEvent
           r.EmitAIEvent=function(self,name,data,t) if name=='OUTCOME_CAUSE' then emitted[#emitted+1]=data end return real(self,name,data,t) end
-          r.Config.CarrierShip='RTS Blue Station'
+          local stationName=r.Config.CarrierShip
           local util=require 'fs2rts_ai_util'
           local bucket=util.baseDamageBucketKey
           r.BaseDamageTelemetry={totalByFaction={BLUE={hitCount=10,shieldDamage=0,hullDamage=0,weapons={}}}}
           local w=r.BaseDamageTelemetry.totalByFaction.BLUE.weapons
-          w[bucket('RTS Blue Station','Mekhu HL-7','Laser','PROJECTILE','UNKNOWN',false,false,'GOLD')]=
-            {targetName='RTS Blue Station',targetFaction='BLUE',weaponClass='Mekhu HL-7',weaponSubtype='Laser',
+          w[bucket(stationName,'Mekhu HL-7','Laser','PROJECTILE','UNKNOWN',false,false,'GOLD')]=
+            {targetName=stationName,targetFaction='BLUE',weaponClass='Mekhu HL-7',weaponSubtype='Laser',
              sourceKind='PROJECTILE',damageType='UNKNOWN',ballistic=false,beamWeapon=false,
              attackerFaction='GOLD',hitCount=8,shieldDamage=0,hullDamage=900}
-          w[bucket('RTS Blue Station','AAAf','Laser','BEAM','RTS Capital Beam',false,true,'GOLD')]=
-            {targetName='RTS Blue Station',targetFaction='BLUE',weaponClass='AAAf',weaponSubtype='Laser',
+          w[bucket(stationName,'AAAf','Laser','BEAM','RTS Capital Beam',false,true,'GOLD')]=
+            {targetName=stationName,targetFaction='BLUE',weaponClass='AAAf',weaponSubtype='Laser',
              sourceKind='BEAM',damageType='RTS Capital Beam',ballistic=false,beamWeapon=true,
              attackerFaction='GOLD',hitCount=2,shieldDamage=0,hullDamage=35}
           r.ScenarioStartTime=0
           r:EmitOutcomeCause('BLUE',1200)
           assert(#emitted==1,'no OUTCOME_CAUSE record emitted')
           local o=emitted[1]
-          assert(o.faction=='BLUE' and o.targetName=='RTS Blue Station')
+          assert(o.faction=='BLUE' and o.targetName==stationName)
           assert(#o.killers==2,'killers not listed: '..#o.killers)
           assert(o.killers[1].weapon=='Mekhu HL-7','wrong top killer: '..tostring(o.killers[1].weapon))
           assert(o.killers[1].attackerFaction=='GOLD','killer faction wrong')
@@ -1101,7 +1261,8 @@ class BattleReportAccuracyTests(unittest.TestCase):
         was not kind-guarded, so with BlueEliminated==false the expression fell
         through to GoldEliminated and reported a surviving BLUE as ELIMINATED
         whenever Gold happened to be dead."""
-        self.check("""r.BlueEliminated=false; r.RedEliminated=false; r.GoldEliminated=false
+        self.check("""r.SetupOpponents={RED=true,GOLD=true}; r:UpdateFactionCount()
+          r.BlueEliminated=false; r.RedEliminated=false; r.GoldEliminated=false
           local function flags(blue,red,gold)
             r.BlueEliminated=blue; r.RedEliminated=red; r.GoldEliminated=gold
             local seen={}
@@ -1197,7 +1358,7 @@ class HudClaimTests(unittest.TestCase):
         Saying otherwise is the same lie test_ai_escalation guards against."""
         self.check("""r:ResetState(); r.SetupActive=false; r.ScenarioStartTime=0
           r.TimeScale=8; r.LastNonZeroTimeScale=8
-          r.GetDurationProfile=function() return {targetSeconds=1800} end
+          r.GetEscalationProfile=function(self) return self.Config.Escalation end
           r.GetScenarioElapsed=function() return 600 end
           r.CountFriendlyCombatants=function() return 0 end
           r.CountHostiles=function() return 0 end
@@ -1211,10 +1372,10 @@ class HudClaimTests(unittest.TestCase):
         """1/2/3/4/0 select 1x/2x/4x/8x/16x outright. The legend still described
         the old relative slower/pause/faster/reset scheme, so the player was
         told the wrong thing about the control they are deciding with."""
-        self.check("""r:ResetState()
+        self.check("""r:ResetState(); r.ShowHotkeyHints=true
           local texts=captureStrings(function() r:DrawControls(1920,1080) end)
           assert(#texts>0,'the control legend drew nothing; the panel geometry is wrong')
-          assert(anyContains(texts,'1/2/3/4/0 = 1x/2x/4x/8x/16x game speed'),
+          assert(anyContains(texts,'Alt+1/2/3/4/0 = 1x/2x/4x/8x/16x speed') and anyContains(texts,'Shift+1-4 assign'),
             'the legend does not describe the absolute ladder: '..joinAll(texts))
           assert(not anyContains(texts,'time slower / pause / faster'),
             'the legend still advertises the old relative ladder: '..joinAll(texts))""")
@@ -1251,10 +1412,11 @@ class HudClaimTests(unittest.TestCase):
             r.GetPilotTargetSubsystemLabel=function() return subsystem end
             r.PilotTurretFiring=firing
             local box,row
-            gr={setColor=function() end,
+            gr={loadTexture=realgr.loadTexture,drawImage=realgr.drawImage,setColor=function() end,
               drawRectangle=function(x1,y1,x2,y2) box=y2 end,
-              drawString=function(text,x1,y1,x2,y2) if y2~=nil and (row==nil or y2>row) then row=y2 end end,
-              getStringWidth=function() return 10 end}
+              drawString=function(text,x,y) row=math.max(row or 0,y+9) end,
+              getStringHeight=function() return 9 end,
+              getStringWidth=function(text) return #text*6 end}
             r:DrawPilotHUD(1920,1080); gr=realgr
             return box,row
           end
@@ -1262,9 +1424,9 @@ class HudClaimTests(unittest.TestCase):
             {nil,nil,'',false,'no turret groups'},
             {nil,nil,'',true,'no groups, firing'},
             {nil,nil,'SUBSYSTEM 2/4',false,'no groups, subsystem'},
-            {{label='A'},0,'',false,'one group'},
-            {{label='A'},0,'SUBSYSTEM 2/4',false,'one group, subsystem'},
-            {{label='A'},0,'SUBSYSTEM 2/4',true,'one group, subsystem, firing'},
+            {{{label='A',turrets={}}},1,'',false,'one group'},
+            {{{label='A',turrets={}}},1,'SUBSYSTEM 2/4',false,'one group, subsystem'},
+            {{{label='A',turrets={}}},1,'SUBSYSTEM 2/4',true,'one group, subsystem, firing'},
           }
           for _,case in ipairs(cases) do
             local box,row=panelBottom(case[1],case[2],case[3],case[4])
@@ -1277,7 +1439,7 @@ class HudClaimTests(unittest.TestCase):
         """SentryRects and AbilityButtonRects were reset on every HUD frame and
         read nowhere: two table allocations per frame for a hover hit-test that
         does not exist."""
-        source = (SCRIPTS / "fs2rts_hud.lua").read_text(encoding="utf-8")
+        source = module_text(SCRIPTS, "fs2rts_hud")
         for name in ("SentryRects", "AbilityButtonRects"):
             self.assertNotIn(name, source,
                              f"{name} is written every frame and read nowhere; drop the reset or add the hit-test")

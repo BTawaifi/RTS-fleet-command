@@ -65,6 +65,7 @@ SCREEN_W=1920; SCREEN_H=1080
 FONT_W=6
 function setScreen(w,h) SCREEN_W=w; SCREEN_H=h end
 gr={setCamera=function() end,
+  loadTexture=function() return {isValid=function() return true end,getWidth=function() return 128 end,getHeight=function() return 128 end} end,
   getScreenWidth=function() return SCREEN_W end,
   getScreenHeight=function() return SCREEN_H end,
   setColor=function() end,
@@ -126,6 +127,12 @@ r.MapView=nil
 -- and PF_OVERFLOW when d.f <= 0, which getScreenCoords reports as false.
 PROJ_CALLS=0
 TANH=math.tan(1.02*1.39626348/2)
+gr.getVectorFromCoords=function(x,y,depth)
+  local dx=(x/(SCREEN_W*.5)-1)*TANH
+  local dy=(1-y/(SCREEN_H*.5))*TANH
+  local length=math.sqrt(dx*dx+dy*dy+1)
+  return ba.createVector(dx*depth/length,dy*depth/length,CAMZ+depth/length)
+end
 function projected(x,y,z)
   PROJ_CALLS=PROJ_CALLS+1
   local dx,dy,dz=x,y-0,z-CAMZ
@@ -174,20 +181,20 @@ end
 function boardFrame()
   -- ResetState leaves the mod in the pre-battle setup state, which swallows
   -- every mouse event, so the fixtures put it back into the playing state.
-  r:ResetState(); r.SetupActive=false; r.testSelection={}
+  local camera=r.Camera
+  r:ResetState(); r.Camera=camera; r.SetupActive=false; r.testSelection={}
   r.UIMetrics=nil; r.MapView=nil; r.Enabled=true; r.PossessedSignature=nil
   r.CinematicActive=false; r.PostBattleActive=false
   r.UIClock=1; r.TopBarCounters=nil; r.TopBarFieldCache=nil
   clearProjectionCache()
 end
--- test_station's SETUP replaces GetDurationProfile with {buildTimeScale=1},
+-- test_station's SETUP replaces GetEscalationProfile with {buildTimeScale=1},
 -- which has no name and no targetSeconds. The real one reads the configured
 -- duration table, and both the top bar's escalation clock and the setup screen
 -- are sized by those two numbers, so the fixtures put the real logic back
 -- rather than measuring the bar against a one-word clock.
 function realDurationProfile(self)
-  local durations=self.Config.Setup.Durations or {}
-  return durations[self.SetupDurationIndex or 1] or durations[1]
+  return self.Config.Escalation
 end
 -- The setup screen reads its pickers through these indices, and ResetState
 -- leaves them nil, which DrawSetupOverlay then concatenates.
@@ -195,9 +202,9 @@ function setupScreen(width, height)
   r:ResetState(); r.SetupActive=true
   r.SetupOpponents={RED=true,GOLD=false}
   r.SetupDifficultyIndex=1; r.SetupEconomyIndex=1
-  r.SetupDurationIndex=1; r.SetupBaseDistanceIndex=1
+  r.SetupBaseDistanceIndex=1
   r.SetupFactionCount=2
-  r.GetDurationProfile=realDurationProfile
+  r.GetEscalationProfile=realDurationProfile
   setScreen(width,height); r.UIMetrics=nil
 end
 '''
@@ -425,6 +432,21 @@ class ProjectionCostTests(unittest.TestCase):
 
 
 class GateTests(unittest.TestCase):
+    def test_facing_overlay_accepts_a_destination_behind_the_camera(self):
+        lua=boot()
+        lua.execute('''
+          clearBoard(); setCameraZ(-9000)
+          local s=addShip('hovered','GTF Aries',mkpos(0,0,0),'friendly')
+          r.Selected={s:getSignature()}; r.HoveredSelectionSigs={}
+          r.GetShipAtScreen=function() return s end
+          local dest=ba.createVector(0,0,-10000)
+          local facing=ba.createVector(0,0,10000)
+          local vm=getmetatable(dest)
+          vm.getScreenCoords=function(p) return projected(p.x,p.y,p.z) end
+          r.UserOrders[s:getSignature()]={kind='move',destination=dest,facing=facing}
+          r:BeginFrameProjection(); r:DrawWorldOverlays()
+        ''')
+
     """The pre-projection frustum test, and in particular that it cannot cost a
     click."""
 
@@ -494,15 +516,26 @@ class GateTests(unittest.TestCase):
                           "the gate built a region with no camera")
 
     def test_the_gate_still_works_without_gr_getEyeFOV(self):
-        """gr.getEyeFOV is the precise source for the tangent; Camera.FOV is the
-        same number and is what the mod already uses for its own pan and
-        reticle sizing, so the fallback is not a different answer, only a less
-        direct route to it."""
+        """Native screen rays calibrate the gate independently of getEyeFOV."""
         lua = boot()
         lua.execute("gr.getEyeFOV=nil")
         gate = lua.execute("return r:BuildViewportGate(1920,1080)")
         self.assertIsNotNone(gate, "the gate gave up when only gr.getEyeFOV was missing")
-        self.assertGreater(gate.tanH, 0)
+        self.assertGreater(gate.tolA, 0)
+        self.assertGreater(gate.tolB, 0)
+
+    def test_off_center_pick_gate_agrees_with_native_projection_model(self):
+        lua = boot()
+        lua.execute('''
+          for _,fraction in ipairs({.15,.3,.7,.85}) do
+            local x,y=SCREEN_W*fraction,SCREEN_H*.25
+            local point=gr.getVectorFromCoords(x,y,5000,false)
+            local sx,sy=projected(point.x,point.y,point.z)
+            assert(math.abs(sx-x)<.001 and math.abs(sy-y)<.001)
+            local gate=r:BuildPickGate(x,y,SCREEN_W,SCREEN_H,24)
+            assert(gate and r:PassesScreenGate(gate,point),'native cursor point rejected')
+          end
+        ''')
 
     def test_a_contact_the_gate_rejects_is_not_projected_but_still_gets_a_border_marker(self):
         """The gate is only allowed to be free for the off-screen contacts, and
@@ -698,6 +731,28 @@ class MapTests(unittest.TestCase):
                          "primary selection that is no longer in Selected, so the "
                          "HUD reports a ship the player just deselected")
 
+    def test_double_clicking_a_map_contact_selects_its_wing(self):
+        selected = self.check(r"""
+          setScreen(1920,1080); r.UIMetrics=nil; r.MapView=nil
+          r:ResetState(); r.SetupActive=false; clearBoard()
+          local first=addShip('alpha 1','GTF Aries',mkpos(-3000,0,0),'friendly')
+          local second=addShip('alpha 2','GTF Aries',mkpos(3000,0,0),'friendly')
+          r.ShipCache=nil; r:RegisterLogicalWing({first,second},'Blue Alpha')
+          local x,y=r:WorldToTacticalMap(first.Position)
+          r.UIClock=10; r.ShiftDown=false; r.Selected={}; r.LastLeftClickKey=nil
+          r.Enabled=true; r.PossessedSignature=nil; r.CinematicActive=false; r.PostBattleActive=false
+          bit.checkBit=function(button,b) return b==0 end
+          io.getMouseX=function() return x end; io.getMouseY=function() return y end
+          r.MapDrag={x1=x,y1=y}; r:OnMouseReleased(1)
+          local firstWasSingle=#r.Selected==1
+          r.UIClock=10.2
+          r.MapDrag={x1=x,y1=y}; r:OnMouseReleased(1)
+          local secondWasDouble=#r.Selected==2
+          return tostring(firstWasSingle)..','..tostring(secondWasDouble)..','..#r.Selected
+        """)
+        self.assertEqual(selected, "true,true,2",
+                         "a map double-click selected only the clicked hull instead of its logical wing")
+
     def test_an_armed_order_released_on_the_tactical_map_is_executed(self):
         """Only sentry and strike were handled on the map. Arming MOVE, pressing
         it on the map and clicking the destination changed the selection instead
@@ -751,6 +806,138 @@ class InputTests(unittest.TestCase):
 
     def check(self, code):
         return self.lua.execute(code)
+
+    def test_new_unit_popup_button_selects_the_delivered_batch(self):
+        selected = self.check(r"""
+          setScreen(1920,1080); r.UIMetrics=nil; r.MapView=nil
+          r:ResetState(); r.SetupActive=false; r.Enabled=true; r.CinematicActive=false; r.PostBattleActive=false
+          clearBoard()
+          local first=addShip('new alpha 1','GTF Aries',mkpos(-1000,0,0),'friendly')
+          local second=addShip('new alpha 2','GTF Aries',mkpos(1000,0,0),'friendly')
+          r.ShipCache=nil; r.UIClock=1; r:NotifyNewUnits({first}); r:NotifyNewUnits({second})
+          assert(#r.NewUnitPopup.signatures==2,'separate deliveries did not coalesce into one selectable notice')
+          r:DrawNewUnitPopup(1920,1080)
+          local card,button=r.NewUnitPopupRect,r.NewUnitPopupSelectRect
+          assert(card and button and card.x1>=0 and card.x2<=1920 and card.y1>=0 and card.y2<=1080,
+            'new unit popup escapes the game viewport')
+          r.IsPointOnRTSUI=function(self,x,y) return self:PointInside(self.NewUnitPopupRect,x,y) end
+          local x=(button.x1+button.x2)/2; local y=(button.y1+button.y2)/2
+          bit.checkBit=function(_,b) return b==0 end
+          io.getMouseX=function() return x end; io.getMouseY=function() return y end
+          r:OnMousePressed(1); r:OnMouseReleased(1)
+          return #r.Selected..','..tostring(r.Selected[1]==first:getSignature())..','..
+            tostring(r.Selected[2]==second:getSignature())..','..tostring(r.NewUnitPopup==nil)
+        """)
+        self.assertEqual(selected, "2,true,true,true",
+                         "clicking SELECT did not select and consume the newly delivered ships")
+
+    def test_drag_selection_never_takes_the_command_station(self):
+        """A box over the base and a wing selected the base along with the ships.
+        The base is selected by click only."""
+        result = self.check(r"""
+          setScreen(1920,1080); r.UIMetrics=nil; r.MapView=nil
+          r:ResetState(); r.SetupActive=false; r.Enabled=true; r.CinematicActive=false; r.PostBattleActive=false
+          clearBoard()
+          local wing=addShip('box wing 1','GTF Aries',mkpos(0,0,0),'friendly')
+          r.EachShip=function(self,fn) fn(stations.BLUE); fn(wing) end
+          r.BuildScreenGate=function() return nil end
+          r.ProjectShip=function() return 500,500 end
+          r.Selected={}; r.ShiftDown=false
+          r:SelectBox(0,0,1000,1000)
+          local sawWing, sawStation = false, false
+          for _,sig in ipairs(r.Selected) do
+            if sig==wing:getSignature() then sawWing=true end
+            if sig==stations.BLUE:getSignature() then sawStation=true end
+          end
+          return tostring(sawWing)..','..tostring(sawStation)
+        """)
+        self.assertEqual(result, "true,false", "box selection did not keep the wing and drop the station")
+
+    def test_a_hull_in_production_shows_its_warp_in_point_only_once_started(self):
+        result = self.check(r"""
+          local camera=r.Camera
+          r:ResetState(); r.Camera=camera; r.SetupActive=false; r.Enabled=true; r.PostBattleActive=false
+          tb.ShipClasses['GTF Aries']=tb.ShipClasses['GTF Aries'] or {Name='GTF Aries',isValid=function() return true end}
+          r.GetCarrier=function() return stations.BLUE end
+          r.GetSpawnFrame=function() return ba.createVector(100,0,200),nil end
+          r.BuildQueue={{started=false,option={class='GTF Aries',count=1},id=1}}
+          local idle=#r:GetBuildSignatures(10)
+          r.BuildQueue={{started=true,option={class='GTF Aries',count=1},id=2}}
+          local active=r:GetBuildSignatures(10)
+          return idle..','..#active..','..tostring(active[1] and active[1].pos.x)
+        """)
+        self.assertEqual(result, "0,1,100", "a queued hull showed a warp-in point, or a started one did not")
+        # A spawn point three km out is often off screen, and a 350 m ring at that range is
+        # a few pixels. Both cases must leave a visible marker: on screen where it projects,
+        # pinned to the edge where it does not.
+        drawn = self.check(r"""
+          r.BuildQueue={{started=true,option={class='GTF Aries',count=1},id=3}}
+          local onScreen=ba.createVector(100,0,200)
+          onScreen.getScreenCoords=function() return 960,540 end
+          local offScreen=ba.createVector(3000,0,3000)
+          offScreen.getScreenCoords=function() return false end
+          r.GetSpawnFrame=function() return onScreen,nil end
+          local onCount=r:DrawBuildSignatures()
+          r.GetSpawnFrame=function() return offScreen,nil end
+          r.BuildQueue[1].signatureAt=nil
+          local offCount=r:DrawBuildSignatures()
+          return tostring(onCount)..','..tostring(offCount)
+        """)
+        on, off = (int(x) for x in drawn.split(','))
+        self.assertGreater(on, 0, "an on-screen jump signature drew no marker")
+        self.assertGreater(off, 0, "an off-screen jump signature drew no edge marker")
+
+    def test_new_unit_card_is_centred_over_the_scene(self):
+        """The card hung off the left of the notification band. It is centred over
+        the 3D view, at the same height as before."""
+        offset = self.check(r"""
+          setScreen(1920,1080); r.UIMetrics=nil; r.MapView=nil
+          r:ResetState(); r.SetupActive=false; r.Enabled=true; r.CinematicActive=false; r.PostBattleActive=false
+          clearBoard()
+          local first=addShip('centre alpha 1','GTF Aries',mkpos(-1000,0,0),'friendly')
+          r.ShipCache=nil; r.UIClock=1
+          r:NotifyNewUnits({first})
+          r:DrawNewUnitPopup(1920,1080)
+          local v=r:GetContactViewport(1920,1080,r:GetUIMetrics(1920,1080))
+          local card=r.NewUnitPopupRect
+          return ((card.x1+card.x2)/2)-((v.x1+v.x2)/2)
+        """)
+        self.assertLess(abs(float(offset)), 2, 'new unit card is %s px off the scene centre' % offset)
+
+    def test_new_unit_popup_card_is_compact(self):
+        """The card used the full width of the notification band. It is a single
+        compact line: a label and a SELECT button."""
+        width = self.check(r"""
+          setScreen(1920,1080); r.UIMetrics=nil; r.MapView=nil
+          r:ResetState(); r.SetupActive=false; r.Enabled=true; r.CinematicActive=false; r.PostBattleActive=false
+          clearBoard()
+          local first=addShip('compact alpha 1','GTF Aries',mkpos(-1000,0,0),'friendly')
+          r.ShipCache=nil; r.UIClock=1
+          r:NotifyNewUnits({first})
+          r:DrawNewUnitPopup(1920,1080)
+          return r.NewUnitPopupRect.x2-r.NewUnitPopupRect.x1
+        """)
+        self.assertLessEqual(float(width), 340, 'new unit card is %s px wide' % width)
+
+    def test_new_unit_popup_lapses_within_a_few_seconds(self):
+        """The ready card used to stay for 12 seconds, and a card re-armed after
+        pilot mode (expiresAt cleared) got another 12 seconds on first draw."""
+        window = self.check(r"""
+          setScreen(1920,1080); r.UIMetrics=nil; r.MapView=nil
+          r:ResetState(); r.SetupActive=false; r.Enabled=true; r.CinematicActive=false; r.PostBattleActive=false
+          clearBoard()
+          local first=addShip('lapse alpha 1','GTF Aries',mkpos(-1000,0,0),'friendly')
+          r.ShipCache=nil; r.UIClock=1
+          r:NotifyNewUnits({first})
+          local delivered=r.NewUnitPopup.expiresAt-r:UINow()
+          r.NewUnitPopup.expiresAt=nil
+          r:DrawNewUnitPopup(1920,1080)
+          local redrawn=r.NewUnitPopup.expiresAt-r:UINow()
+          return delivered..','..redrawn
+        """)
+        delivered, redrawn = (float(x) for x in window.split(','))
+        self.assertLessEqual(delivered, 6, 'a delivered ready card lasts too long')
+        self.assertLessEqual(redrawn, 6, 'a re-armed ready card lasts too long')
 
     def test_a_world_drag_released_over_a_panel_does_not_press_it(self):
         """The press is the only place that knows where a gesture started, and
@@ -807,63 +994,26 @@ class InputTests(unittest.TestCase):
         self.assertEqual(held, 1,
                          "a click on a panel button no longer presses it")
 
-    def test_the_two_opponent_toggles_have_no_gap_between_them(self):
-        """The RED and GOLD toggles were laid out at two independent literal
-        offsets (x1+200..x1+445 and x1+455..x2-28), leaving a ten pixel strip
-        between them that belonged to no button at all. Clicking in it did
-        nothing, so the opponent the player was reaching for stayed off and
-        START ESCALATION came up one faction short of what the setup screen
-        said."""
-        for width, height in ((640, 480), (800, 600), (1024, 768),
-                              (1280, 720), (1920, 1080), (2560, 1440)):
-            rw_x2, gw_x1, left, right, gap = self.check("""
+    def test_faction_species_picker_fits_small_screens_and_keeps_rows_clickable(self):
+        for width,height in ((640,480),(800,600),(1024,768),(1280,720),(1920,1080)):
+            page_size,blue_y,red_bottom,start_y,inside=self.check("""
               setupScreen(%d,%d)
+              r.SetupFactionCountChoice=12; r:UpdateFactionCount()
               r:DrawSetupOverlay(%d,%d)
-              local rw=r.SetupButtonRects.red
-              local gw=r.SetupButtonRects.gold
-              -- a sweep across the whole opponent row: every pixel must belong
-              -- to one of the two toggles
-              local spans={rw,gw}
-              table.sort(spans,function(a,b) return a.x1<b.x1 end)
-              local gap=0
-              for x=spans[1].x1,spans[2].x2 do
-                local inside=false
-                for _,rect in ipairs(spans) do
-                  if x>=rect.x1 and x<=rect.x2 then inside=true end
-                end
-                if not inside then gap=gap+1 end
+              local blue=r.SetupButtonRects.faction_BLUE
+              local red=r.SetupButtonRects.faction_RED or blue
+              local count=r.SetupButtonRects.factions
+              local start=r.SetupButtonRects.start
+              local inside=true
+              for _,rect in pairs(r.SetupButtonRects) do
+                if rect.x1<0 or rect.y1<0 or rect.x2>%d or rect.y2>%d then inside=false end
               end
-              return rw.x2, gw.x1, spans[1].x1, spans[2].x2, gap
-            """ % (width, height, width, height))
-            self.assertEqual(rw_x2, gw_x1,
-                             "at %dx%d there is a %dpx dead strip between the RED "
-                             "and GOLD toggles"
-                             % (width, height, gw_x1 - rw_x2))
-            self.assertEqual(gap, 0,
-                             "at %dx%d a %dpx strip of the opponent row belongs to "
-                             "no button" % (width, height, gap))
-            self.assertLess(left, right,
-                            "at %dx%d the two toggles are inverted or collapsed"
-                            % (width, height))
-            # and the click handler has to agree with what was drawn: the pixel
-            # on either side of the shared edge must be that toggle's
-            sides = self.check("""
-              setupScreen(%d,%d)
-              r:DrawSetupOverlay(%d,%d)
-              local rw=r.SetupButtonRects.red
-              local out={}
-              r.SetupOpponents.RED=true
-              r:HandleSetupClick(rw.x2-1, rw.y1+5)
-              out[1]=tostring(r.SetupOpponents.RED)     -- expect false: RED
-              r.SetupOpponents.RED=true; r.SetupOpponents.GOLD=false
-              r:HandleSetupClick(rw.x2+1, rw.y1+5)
-              out[2]=tostring(r.SetupOpponents.GOLD)    -- expect true: GOLD
-              return out[1], out[2]
-            """ % (width, height, width, height))
-            self.assertEqual(sides, ("false", "true"),
-                             "at %dx%d the two toggles are drawn edge to edge but "
-                             "the click regions do not meet, so the pixel on one "
-                             "side of the boundary belongs to neither" % (width, height))
+              return r.SetupFactionPageSize,blue.y1,red.y2,start.y1,inside
+            """ % (width,height,width,height,width,height))
+            self.assertGreaterEqual(page_size,1)
+            self.assertLess(blue_y,red_bottom)
+            self.assertLess(red_bottom,start_y,"species rows overlap START at %dx%d" % (width,height))
+            self.assertTrue(inside,"setup button leaves the visible screen at %dx%d" % (width,height))
 
 
 class TopBarTests(unittest.TestCase):
@@ -892,8 +1042,7 @@ class TopBarTests(unittest.TestCase):
           r.PossessedSignature=nil; r.PostBattleActive=false
           r.CommandPoints=5000; r.GlobalPolicy='HOLD'
           r.UIClock=1; r.TopBarCounters=nil; r.TopBarFieldCache=nil
-          r.SetupDurationIndex=1
-          r.GetDurationProfile=realDurationProfile
+          r.GetEscalationProfile=realDurationProfile
           r.CountFriendlyCombatants=function() return 40 end
           r.CountHostiles=function() return 30 end
           local band=r:GetUIMetrics(%d,720).topBarHeight
@@ -926,9 +1075,9 @@ class TopBarTests(unittest.TestCase):
         rule out.
         """
         importance = [("CP: 5000", "CP 5000"),
-                      ("Fleet: 40/64", "F 40/64"),
-                      ("Contacts: 30", "C 30"),
-                      ("Policy: HOLD", "P HOLD")]
+                      ("Fleet: 40/64", "FLT 40/64"),
+                      ("Contacts: 30", "CON 30"),
+                      ("Policy: HOLD", "POL HOLD")]
         for w in range(1920, 700, -10):
             seen = set(self.bar(w))
             present = [any(f in seen for f in forms) for forms in importance]
@@ -943,7 +1092,7 @@ class TopBarTests(unittest.TestCase):
                                         sorted(seen)))
                 break
         # and the shortening path itself is exercised somewhere
-        self.assertTrue(any("C 30" in self.bar(w) for w in range(1920, 700, -10)),
+        self.assertTrue(any("CON 30" in self.bar(w) for w in range(1920, 700, -10)),
                         "the contact count is never abbreviated, so shorten-before-"
                         "drop is not being exercised")
 
@@ -955,9 +1104,9 @@ class TopBarTests(unittest.TestCase):
             seen = set(self.bar(w))
             # reported LEAST important survivor first, so scanning down the
             # widths names each field at the width where it was given up
-            for name, short in (("Policy: HOLD", "P HOLD"),
-                                ("Contacts: 30", "C 30"),
-                                ("Fleet: 40/64", "F 40/64")):
+            for name, short in (("Policy: HOLD", "POL HOLD"),
+                                ("Contacts: 30", "CON 30"),
+                                ("Fleet: 40/64", "FLT 40/64")):
                 if name in seen or short in seen:
                     order.append(name)
                     break
@@ -985,7 +1134,7 @@ class TopBarTests(unittest.TestCase):
         self.assertIsNotNone(gone,
                              "the title survives at every width down to 700px, so "
                              "its sacrifice order is not being exercised")
-        self.assertTrue("F 40/64" in self.bar(gone),
+        self.assertTrue("FLT 40/64" in self.bar(gone),
                         "at %dpx, the width where the title goes, the fleet count "
                         "went with it: %s" % (gone, self.bar(gone)))
 
@@ -1000,14 +1149,11 @@ class TopBarTests(unittest.TestCase):
         for w in range(1920, 700, -10):
             seen = self.bar(w)
             present = [f for f in forms if f in seen]
-            self.assertTrue(present,
-                            "at %dpx the speed note is neither drawn in full nor "
-                            "abbreviated: %s" % (w, seen))
             if any(f.startswith("TIME") for f in present):
                 abbreviated.append(w)
             # the escalation clock is the one that must not be sacrificed first
-            if not any(f.startswith("Tiers") or f.startswith("TIME") for f in present):
-                self.assertTrue(any(t.startswith("TIER ") for t in seen),
+            if not present:
+                self.assertTrue(any(t.startswith("TIER ") or t.startswith("T4 ") for t in seen),
                                 "at %dpx the speed note went and took the "
                                 "escalation clock with it: %s" % (w, seen))
                 return

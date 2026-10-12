@@ -117,4 +117,42 @@ $On Object Render:
 [
     return type(RTS) == "table" and RTS:ShouldHideObject(hv.Self) or false
 ]
+$State: GS_STATE_GAME_PLAY
+$On Countermeasure Fire:
+[
+    if type(RTS) == "table" then RTS:OnPilotCountermeasureFired(hv.Ship,hv.Countermeasure) end
+]
+
+$State: GS_STATE_GAME_PLAY
+$On Turret Fired:
+[
+    if type(RTS) == "table" then RTS:OnPilotTurretFired(hv.Weapon,hv.Ship) end
+]
+
+$State: GS_STATE_GAME_PLAY
+$On HUD Comm Menu Opened:
+[
+    if type(RTS) == "table" then RTS:OnPilotCommMenuOpened() end
+]
+
+$State: GS_STATE_GAME_PLAY
+$On HUD Comm Menu Closed:
+[
+    if type(RTS) == "table" then RTS:OnPilotCommMenuClosed() end
+]
+
+$State: GS_STATE_GAME_PLAY
+$On HUD Comm Order Issued:
+[
+    if type(RTS) == "table" then RTS:OnPilotCommOrder(hv.Recipient,hv.Order,hv.Target,hv.Subsystem,hv.Name) end
+]
++Override:
+[
+    return type(RTS) == "table" and RTS:ShouldOverridePilotCommOrder(hv.Recipient,hv.Order,hv.Name) or false
+]
+$State: GS_STATE_GAME_PLAY
+$On Ship Depart:
+[
+    if type(RTS) == "table" then RTS:OnShipDeparture(hv.Ship,hv.Method) end
+]
 #End

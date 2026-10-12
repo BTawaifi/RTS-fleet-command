@@ -1,0 +1,13 @@
+#Secondary Weapons
+; Retail sentry cannon: 138 seconds at 80 m/s supports the configured 11 km.
+; Defensive artillery keeps its ship damage; it is not a capital siege beam.
+; Blast damage has its own type; setting only impact type leaves splash uncapped.
+$Name: Vasudan Flux Cannon
++nocreate
+$Damage Type: RTS Static Artillery
+$Shockwave damage type: RTS Static Artillery
+$Dinky shockwave:
++Shockwave damage type: RTS Static Artillery
+$Lifetime: 138
++Weapon Range: 11000
+#End

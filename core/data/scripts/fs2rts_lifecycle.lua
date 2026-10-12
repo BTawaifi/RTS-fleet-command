@@ -6,18 +6,23 @@ local RTS = require "fs2rts_state"
 local clamp, lower, vec, copyVec, distance2, objectValid, shipValid, shipAlive, teamName, tableContainsSignature
     = U.clamp, U.lower, U.vec, U.copyVec, U.distance2, U.objectValid, U.shipValid, U.shipAlive, U.teamName, U.tableContainsSignature
 
-function RTS:ScaleCommandStationsForDuration()
-    local duration=self:GetDurationProfile(); if duration==nil then return end; local scale=duration.stationHullScale or 1
-    if self.SetupFactionCount>=3 then scale=scale*(duration.threeFactionStationScale or 1) end
-    for _,kind in ipairs({"BLUE","RED","GOLD"}) do
+function RTS:ScaleCommandStationsForEscalation()
+    local profile=self:GetEscalationProfile(); if profile==nil then return end; local scale=profile.stationHullScale or 1
+    self.FactionStationRadii=self.FactionStationRadii or {}
+    if self.SetupFactionCount>=3 then scale=scale*(profile.threeFactionStationScale or 1) end
+    for _,kind in ipairs(self:GetFactionKeys()) do
         if self:IsFactionEnabled(kind) then
             local station=self:GetFactionCommandShip(kind)
             if shipValid(station) then
+                self.FactionStationRadii[kind]=station.Radius
                 local configuredBase=self.Config.StationBaseHull
                 local base=self.StationBaseHull[station.Name] or configuredBase or station.HitpointsMax
                 self.StationBaseHull[station.Name]=base
                 station.HitpointsMax=base*scale
                 station.HitpointsLeft=station.HitpointsMax
+                -- Hull armor alone leaves gun mounts vulnerable to full light
+                -- weapon/debris damage. Protect the whole fixed installation.
+                for i=1,#station do station[i].ArmorClass='RTS Command Hull' end
             end
         end
     end
@@ -25,9 +30,9 @@ end
 
 function RTS:GetLivingFactionKeys()
     local result = {}
-    if shipValid(self:GetCarrier()) and not self.BlueEliminated then result[#result+1] = "BLUE" end
-    if self:IsFactionEnabled("RED") and shipValid(self:GetEnemyCommand()) and not self.RedEliminated then result[#result+1] = "RED" end
-    if self:IsFactionEnabled("GOLD") and shipValid(self:GetThirdCommand()) and not self.GoldEliminated then result[#result+1] = "GOLD" end
+    for _,kind in ipairs(self:GetFactionKeys()) do
+        if not self:IsFactionEliminated(kind) and shipAlive(self:GetFactionCommandShip(kind)) then result[#result+1]=kind end
+    end
     return result
 end
 
@@ -36,40 +41,40 @@ end
 function RTS:BuildBattleSummary()
     local summary={durationSeconds=self:GetScenarioElapsed(),tier=self:GetCurrentEscalationTier(),
         cpRemaining=self.CommandPoints,cpSpent=0,losses=0,kills=0,capitalLosses=0,fleetCap=self:GetFleetCap("BLUE"),factions={}}
+    for _,kind in ipairs(self:GetFactionKeys()) do
+        if self:IsFactionEnabled(kind) then
+            local faction=self.Config.Factions[kind]
+            summary.factions[kind]={key=kind,label=self:GetFactionDisplayName(kind),ships=0,mobileShips=0,installations=0}
+        end
+    end
     self:EachShip(function(ship)
-        if ship.Name==self.Config.ObserverShip then return end
+        if ship.Name==self.Config.ObserverShip or not shipAlive(ship) then return end
         local kind=self:GetFactionKey(ship)
         if kind~=nil then
             local entry=summary.factions[kind]
             if entry==nil then
                 local faction=self.Config.Factions[kind]
-                entry={key=kind,label=(faction and faction.name) or kind,eliminated=false,ships=0}
+                entry={key=kind,label=self:GetFactionDisplayName(kind),eliminated=false,ships=0,mobileShips=0,installations=0}
                 summary.factions[kind]=entry
             end
             entry.ships=entry.ships+1
+            if self:IsCommandStation(ship) or self:IsStaticDefense(ship) then entry.installations=entry.installations+1 else entry.mobileShips=entry.mobileShips+1 end
         end
     end)
     local ordered={}
-    for _,entry in pairs(summary.factions) do
-        if entry.key=="BLUE" then ordered[#ordered+1]=entry
-        elseif entry.key=="RED" then ordered[#ordered+1]=entry
-        elseif entry.key=="GOLD" then ordered[#ordered+1]=entry end
+    for _,kind in ipairs(self:GetFactionKeys()) do
+        local entry=summary.factions[kind]
+        if entry then ordered[#ordered+1]=entry end
     end
     summary.factions=ordered
-    -- Keyed lookup, not an `and`/`or` chain. A chain cannot express three
-    -- independent booleans: for kind=="BLUE" with BlueEliminated==false the
-    -- first two tests are false, so evaluation falls through to the
-    -- unguarded tail and the report claims BLUE is eliminated because
-    -- GoldEliminated happens to be true - the exact inverse of the
-    -- PostBattleResult that opened the screen. ai_planning carries the same
-    -- shape with the correct `or false` tail; this is the drifted copy.
-    local eliminatedByKind={BLUE=self.BlueEliminated,RED=self.RedEliminated,GOLD=self.GoldEliminated}
-    for _,entry in ipairs(ordered) do entry.eliminated=eliminatedByKind[entry.key]==true end
+    for _,entry in ipairs(ordered) do entry.eliminated=self:IsFactionEliminated(entry.key) end
     local blueLosses=self.AIStats and self.AIStats.losses and self.AIStats.losses["BLUE"]
     if blueLosses~=nil then
         for className,count in pairs(blueLosses) do
             summary.losses=summary.losses+(count or 0)
-            if className:find("Sathanas") or className:find("Colossus") or className:find("Lucifer")
+            local role=self.ShipCostRoleMap and self.ShipCostRoleMap[className]
+            if role=="capital" or role=="heavy" or role=="juggernaut"
+                or className:find("Sathanas") or className:find("Colossus") or className:find("Lucifer")
                 or className:find("Deimos") or className:find("Sobek") or className:find("Hecate")
                 or className:find("Orion") or className:find("Hatshepsut") or className:find("Ravana")
                 or className:find("Arcadia") then
@@ -77,112 +82,99 @@ function RTS:BuildBattleSummary()
             end
         end
     end
-    local enemyLosses=self.AIStats and self.AIStats.losses or {}
-    for _,kind in ipairs({"RED","GOLD"}) do
-        local bucket=enemyLosses[kind]
-        if bucket~=nil then for _,count in pairs(bucket) do summary.kills=summary.kills+(count or 0) end end
-    end
-    local flow=self.AIEconomyFlow and self.AIEconomyFlow["BLUE"]
+    local kills=self.AIStats and self.AIStats.kills and self.AIStats.kills.BLUE or {}
+    for _,count in pairs(kills) do summary.kills=summary.kills+(count or 0) end
+    local flow=(self.AIEconomyFlowCumulative or self.AIEconomyFlow or {}).BLUE
     if flow~=nil then summary.cpSpent=(flow.productionSpend or 0)+(flow.refund and -flow.refund or 0) end
+    summary.fleetHistory=self.GetFleetHistorySummary and self:GetFleetHistorySummary() or nil
+    summary.strategicVictor=self.StrategicResult and self.StrategicResult.victor or 'UNRESOLVED'
+    summary.playerStationLost=self.BlueEliminated==true
     return summary
 end
 
--- Attrition score used when the time box expires with stations still standing.
--- Every input already exists: AIStats.losses counts hulls destroyed per faction
--- and per class, and Config.Bounties / ShipCostMap price them. The point is
--- that a match must be LOSABLE: with victory firing only on elimination, a
--- three-way free-for-all needs two station kills at a measured rate of roughly
--- one per 3,000 s, so it was mathematically unable to resolve inside its own
--- advertised length. That is why 8 of 8 batches ended time_limit, and why no
--- amount of beam-cap or hull tuning changed the outcome.
---
--- stationHullFraction is the deepest bite any single hostile took out of one
--- station, so a faction that nearly cracked a base is rewarded for it without
--- the match having to run long enough to finish the job.
-function RTS:GetAttritionScore(kind)
-    local losses=self.AIStats and self.AIStats.losses or {}
-    local bounties=(self.Config and self.Config.Bounties) or {}
-    local shipCost=self.ShipCostMap or {}
-    local function valueOf(className)
-        local price=shipCost[className]
-        if price==nil then price=bounties[className] end
-        if type(price)~="number" then price=0 end
-        return price
-    end
-    local killed, lost=0,0
-    for _,bucket in ipairs(losses) do
-        for className,count in pairs(bucket or {}) do
-            local value=valueOf(className)*(count or 0)
-            if bucket==losses[kind] then killed=killed+value else lost=lost+value end
+-- Report visibility, the player's station loss and global resolution are
+-- separate state. A later fleet fate never rewrites the strategic snapshot.
+function RTS:EvaluateFactionVictory()
+    if self.SetupActive or self.PostBattleActive then return end
+    local living=self:GetLivingFactionKeys()
+    if not self.StrategicResult and #living<=1 then
+        local victor=living[1] or 'NONE'
+        self.BattleVictor=victor
+        self.StrategicResult={victor=victor,time=mn.getMissionTime(),summary=self:BuildBattleSummary()}
+        self:EnterGlobalAftermath()
+        self.GameStatus=victor=='NONE' and 'DRAW' or victor=='BLUE' and 'VICTORY' or 'DEFEAT'
+        self.AftermathResultStatus=self.GameStatus
+        self.AftermathResultText=victor=='NONE' and 'MUTUAL DESTRUCTION // NO COMMAND STATION SURVIVED'
+            or self:GetFactionDisplayName(victor)..' WON THE STRATEGIC BATTLE'
+        if self.BlueEliminated and victor~='NONE' then self.AftermathResultText='YOUR STATION DESTROYED // '..self.AftermathResultText end
+        self.BattleSummary=self:BuildBattleSummary(); self:OpenPostBattle(self.AftermathResultText)
+    elseif not self.StrategicResult and self.BlueEliminated and not self.PlayerDefeatShown then
+        self.PlayerDefeatShown=true; self.PlayerStationLostAt=mn.getMissionTime()
+        self.GameStatus='DEFEAT'; self.BattleSummary=self:BuildBattleSummary()
+        self:OpenPostBattle('YOUR STATION WAS LOST // THE GLOBAL BATTLE CONTINUES')
+    elseif self.StrategicResult and not self.FleetFateFinal then
+        local mobile,player,opponents=0,0,0
+        for _,ship in ipairs(self:GetShipList()) do
+            if shipAlive(ship) and ship.Name~=self.Config.ObserverShip then
+                local own=self:GetFactionKey(ship)=='BLUE'
+                if not own then opponents=opponents+1 end
+                if not self:IsCommandStation(ship) and not self:IsStaticDefense(ship) then
+                    mobile=mobile+1; if own then player=player+1 end
+                end
+            end
+        end
+        -- The player's fleet is settled once none of its own mobile hulls remain
+        -- (escaped or lost). Hostile leftovers must not hold the result open, so
+        -- this test is on the player's count, not the global one.
+        if player==0 or opponents==0 then
+            self.FleetFateFinal=true
+            local escaped=0
+            for _,record in pairs(self.UnitHistory or {}) do
+                if record.faction=='BLUE' and record.fate=='ESCAPED' then escaped=escaped+1 end
+            end
+            self.AftermathResultStatus=player>0 and opponents==0 and 'VICTORY' or #living==0 and 'DRAW' or self.AftermathResultStatus
+            self.AftermathResultText=player>0 and opponents==0 and 'YOUR FACTION IS THE SOLE REMAINING FORCE'
+                or #living==0 and 'MUTUAL DESTRUCTION // NO COMMAND STATION SURVIVED' or self.AftermathResultText
+            if escaped>0 then self.AftermathResultText='FLEET EXTRACTED // '..self.AftermathResultText end
+            self.BattleSummary=self:BuildBattleSummary(); self.GameStatus=self.AftermathResultStatus
+            self:OpenPostBattle(self.AftermathResultText..(mobile==0 and ' // NO MOBILE SHIPS REMAIN' or ''))
+        elseif #living==0 and self.AftermathResultStatus~='DRAW' then
+            -- Keep the first strategic report as history, while continued combat
+            -- can still earn the draw offered by Resume.
+            self.AftermathResultStatus='DRAW'; self.GameStatus='DRAW'
+            self.AftermathResultText='MUTUAL DESTRUCTION // NO COMMAND STATION SURVIVED'
+            self.BattleSummary=self:BuildBattleSummary(); self:OpenPostBattle(self.AftermathResultText)
         end
     end
-    -- Credit for station damage actually dealt, taken from the base-damage
-    -- telemetry the mod already records per attacker faction. Normalised against
-    -- the leading faction's total so the term is bounded to [0,1] without
-    -- hardcoding a hull value that the beam cap keeps moving.
-    local totals={}
-    local byFaction=(self.BaseDamageTelemetry and self.BaseDamageTelemetry.totalByFaction) or {}
-    for _,kind in ipairs({"BLUE","RED","GOLD"}) do
-        local sum=0
-        for _,row in ipairs(byFaction[kind] or {}) do sum=sum+(row.hullDamage or 0) end
-        totals[kind]=sum
-    end
-    local peak=math.max(totals["BLUE"] or 0,totals["RED"] or 0,totals["GOLD"] or 0)
-    local stationFraction=peak>0 and ((totals[kind] or 0)/peak) or 0
-    local weight=(self.Config and self.Config.Victory and self.Config.Victory.StationCreditWeight) or 0.25
-    return killed-lost+weight*stationFraction,killed,lost,stationFraction
 end
 
-function RTS:EvaluateFactionVictory()
-    if self.SetupActive then return end
-    if self.BlueEliminated then
-        self.GameStatus="DEFEAT"
-        if not self.PostBattleActive then self.BattleSummary=self:BuildBattleSummary(); self:OpenPostBattle("BLUE STATION DESTROYED // BLUE FLEET DEFEATED") end
-        return
+function RTS:EnterGlobalAftermath()
+    if self.AftermathActive then return end
+    self.AftermathActive=true; self.AftermathStationCount=#self:GetLivingFactionKeys()
+    for _,sig in ipairs(sortedNumericKeys(self.FleetServices or {})) do
+        local ship=self:FindShipBySignature(sig); local service=self.FleetServices[sig]
+        if shipValid(ship) then self:CancelFleetServiceForShip(ship,service.pendingOrder) end
     end
-    if self.BattleVictor~=nil then return end
-    local living=self:GetLivingFactionKeys()
-    if #living==1 and living[1]=="BLUE" then
-        self.BattleVictor="BLUE"; self.GameStatus="VICTORY"; self.StatusMessage="GTVA // BLUE FLEET IS VICTORIOUS"; self.StatusUntil=math.huge
-        self:ShowAnnouncement("BLUE FLEET VICTORIOUS",8,"BLUE"); self.BattleSummary=self:BuildBattleSummary(); self:OpenPostBattle("ALL OPPOSING STATIONS DESTROYED // BLUE FLEET VICTORIOUS")
-    elseif #living==0 then
-        self.BattleVictor="NONE"; self.GameStatus="DEFEAT"; self.StatusMessage="NO FACTION SURVIVED"; self.StatusUntil=math.huge
-        self:ShowAnnouncement("NO FACTION SURVIVED",8,nil); self.BattleSummary=self:BuildBattleSummary(); self:OpenPostBattle("MUTUAL DESTRUCTION // NO FACTION SURVIVED")
-        return
+    self.FleetServices={}; self.PendingStrikes={}
+    for _,job in ipairs(self.PendingSentries or {}) do
+        self:EmitAIEvent('SENTRY_BUILD',{action='BUILD_CANCELLED',faction=job.kind,class=job.option.class,
+            jobId=job.id,cost=job.cost,refundedCP=0,reason='GLOBAL_RESULT'},mn.getMissionTime())
     end
-    -- Time box LAST, so the defeat and last-standing branches above always win
-    -- and a match that ends on a kill is never re-decided by the clock.
-    local duration=self:GetDurationProfile()
-    local box=(duration and duration.targetSeconds) or 1800
-    if box<=0 or self:GetScenarioElapsed()<box then return end
-    if (self.Config and self.Config.Victory and self.Config.Victory.TimeBoxEnabled)==false then return end
-    self:ResolveTimeBoxVictory()
-end
-
-function RTS:ResolveTimeBoxVictory()
-    local scored={}
-    for _,kind in ipairs({"BLUE","RED","GOLD"}) do
-        scored[kind]=self:GetAttritionScore(kind)
+    self.PendingSentries={}
+    for _,queued in ipairs(self.BuildQueue or {}) do
+        self:EmitAIEvent('PRODUCTION',{action='QUEUE_CANCELLED',producer='PLAYER',faction='BLUE',
+            jobId=queued.id,class=queued.option.class,count=queued.option.count or 1,cost=queued.option.cost,
+            refundedCP=0,reason='GLOBAL_RESULT',queuedAt=queued.queuedAt},mn.getMissionTime())
     end
-    local best=scored["BLUE"]; local bestKind="BLUE"
-    for _,kind in ipairs({"RED","GOLD"}) do
-        if scored[kind][1]>best[1] then best, bestKind=scored[kind], kind end
+    self.BuildQueue={}
+    for kind,state in pairs(self.AIStates or {}) do
+        local queue=state.queue
+        if queue then self:EmitAIEvent('PRODUCTION',{action='QUEUE_CANCELLED',producer='AI',faction=kind,
+            jobId=queue.id,class=queue.entry.class,count=queue.count or 1,cost=queue.estimate.cost,refundedCP=0,
+            reason='GLOBAL_RESULT',queuedAt=queue.queuedAt},mn.getMissionTime()) end
+        state.queue=nil; state.AutoBuildRequest=nil
     end
-    self.AttritionScores=scored
-    self.BattleSummary=self:BuildBattleSummary()
-    if self.BattleSummary~=nil then self.BattleSummary.decidedBy="TIME BOX // ATTRITION"; self.BattleSummary.attrition=scored end
-    -- A draw is a real outcome, not a failure to decide. Before this, a
-    -- non-VICTORY status rendered as DEFEAT everywhere in the HUD, so a drawn
-    -- match would have been reported to the player as a loss.
-    if bestKind=="BLUE" then
-        self.BattleVictor="BLUE"; self.GameStatus="VICTORY"; self.StatusMessage="TIME BOX // BLUE FLEET HOLDS THE FIELD"; self.StatusUntil=math.huge
-        self:ShowAnnouncement("BLUE FLEET VICTORIOUS",8,"BLUE")
-        self:OpenPostBattle("TIME BOX REACHED // BLUE FLEET WINS ON ATTRITION")
-    else
-        self.BattleVictor=bestKind; self.GameStatus="DRAW"; self.StatusMessage="TIME BOX // BLUE FLEET OUTMATCHED"; self.StatusUntil=math.huge
-        self:ShowAnnouncement("STALEMATE",8,nil)
-        self:OpenPostBattle("TIME BOX REACHED // "..bestKind.." OUTMATCHED THE BLUE FLEET")
-    end
+    self:EmitAIFinalBalance(self.BattleVictor,mn.getMissionTime())
 end
 
 -- Only scripts change the button control mode, so it is set on transitions
@@ -213,6 +205,7 @@ function RTS:DisarmObserverWeapons()
     if not shipValid(observer) then return end
     observer.PrimaryTriggerDown = false
     observer:setFlag(true,"primaries-locked","secondaries-locked")
+    self:DisarmObserverTurrets(observer)
     if observer.PrimaryBanks ~= nil then
         -- Armed=false selects bank -1; the native HUD still evaluates the
         -- observer and asserts. Lock firing without invalidating its selection.
@@ -231,29 +224,57 @@ function RTS:DisarmObserverWeapons()
     end
 end
 
+function RTS:DisarmObserverTurrets(observer)
+    -- Ship bank locks do not stop turret AI. A mirrored capital proxy must
+    -- never add a second autonomous battery inside the controlled hull.
+    if not shipValid(observer) then return end
+    for i=1,#observer do
+        local subsystem=observer[i]
+        if subsystem:isValid() and subsystem:isTurret() then subsystem.TurretLocked=true end
+    end
+end
+
+function RTS:SpawnFactionStations()
+    for _,kind in ipairs(self:GetFactionKeys()) do
+        local def=self:GetFactionDefinition(kind)
+        local species=self.Config.Species[self:GetFactionSpecies(kind)]
+        local class=species and tb.ShipClasses[species.stationClass]
+        local team=def and mn.Teams[def.team]
+        if not def or not class or not class:isValid() or not team or not team:isValid() then
+            self:Log("FACTION STATION SETUP FAILED: "..tostring(kind))
+            return false
+        end
+        local station=mn.Ships[def.station]
+        if shipValid(station) then
+            if station.Class.Name~=class.Name then station.Class=class end
+            station.Team=team
+        else
+            local p=self:GetScenarioBasePosition(kind)
+            local orient=vec(-p.x,-p.y,-p.z):getOrientation()
+            station=mn.createShip(def.station,class,orient,vec(p.x,p.y,p.z),team,true)
+            self:InvalidateShipList()
+            if not shipValid(station) then self:Log("FACTION STATION SPAWN FAILED: "..def.station); return false end
+            -- The mission-placed bases were no-shields; every base now carries it.
+            station:setFlag(true,"no-shields")
+        end
+        local p=self:GetScenarioBasePosition(kind)
+        station.Orientation=(self:GetFactionBattleFacingPoint(kind)-p):getOrientation()
+        station:setFlag(true,"immobile")
+        self:ApplyFactionVisual(station,kind)
+        self:EnableFullArsenal(station)
+    end
+    return true
+end
+
 function RTS:SpawnGoldFaction()
-    if not self:IsFactionEnabled("GOLD") then return end
-    local stationClassName=(self.Config.StationClasses and self.Config.StationClasses.GOLD) or self.Config.StationClass
-    local stationClass=tb.ShipClasses[stationClassName]; local team=mn.Teams[self.Config.ThirdTeam]
-    if not stationClass or not stationClass:isValid() or not team or not team:isValid() then return end
-    local p=self:GetScenarioBasePosition("GOLD"); local towardCenter=vec(-p.x,-p.y,-p.z); local orient=towardCenter:getOrientation()
-    local station=mn.createShip(self.Config.ThirdCommandShip,stationClass,orient,vec(p.x,p.y,p.z),team,true)
-    self:InvalidateShipList()
-    if not shipValid(station) then return end
-    -- Command installations are part of the battlefield from frame zero.  They are
-    -- created directly at their configured position and must never perform a ship
-    -- arrival/warp effect. Blue/Red get "immobile" from the mission file's own
-    -- +Flags: (they're pre-placed there); Gold only exists via this runtime
-    -- mn.createShip call, so it needs the same object flag set here instead.
-    station:setFlag(true,"immobile")
-    self:EnableFullArsenal(station)
+    return self:SpawnFactionStations()
 end
 
 function RTS:SpawnSentryDefenses()
     self.StaticDefenseSignatures={}
 
     local spawned=0
-    for _,kind in ipairs({"BLUE","RED","GOLD"}) do
+    for _,kind in ipairs(self:GetFactionKeys()) do
         if self:IsFactionEnabled(kind) then
             local entry=self:GetSentryOptions(kind)[1]
             local position=entry and self:FindSentrySpot(kind)
@@ -281,32 +302,23 @@ function RTS:CreateOptionalAsteroidField()
 end
 
 
-function RTS:EliminateFaction(kind)
-    local teamKey = nil
-    if kind == "BLUE" then
-        if self.BlueEliminated then return end
-        self.BlueEliminated = true
-        teamKey = self.Config.FriendlyTeam
-    elseif kind == "RED" then
-        if self.RedEliminated then return end
-        self.RedEliminated = true
-        teamKey = self.Config.HostileTeam
-    elseif kind == "GOLD" then
-        if self.GoldEliminated then return end
-        self.GoldEliminated = true
-        teamKey = self.Config.ThirdTeam
-    else return end
+function RTS:EliminateFaction(kind,killerFaction)
+    if not self:IsFactionEnabled(kind) or self:IsFactionEliminated(kind) then return end
+    self:SetFactionEliminated(kind,true)
+    if kind=='BLUE' then self.PlayerStationLostAt=self.PlayerStationLostAt or mn.getMissionTime() end
 
+    self.FactionDefeatedBy=self.FactionDefeatedBy or {}
+    if killerFaction~=kind and self:GetFactionDefinition(killerFaction) then self.FactionDefeatedBy[kind]=killerFaction end
     local def = self:GetFactionDefinition(kind)
-    local label = def and def.name or kind
+    local label = self:GetFactionDisplayName(kind)
     if self.CombatTelemetryEnabled then self:EmitOutcomeCause(kind, mn.getMissionTime()) end
     self:ShowAnnouncement(label .. " HAS BEEN DEFEATED", 7, kind)
-    self:SetStatus(label .. " defeated - surviving units are withdrawing", 6)
+    self:SetStatus(label .. " station lost - surviving units remain in combat", 6)
     if self.AIStates[kind] then
         local queued=self.AIStates[kind].queue
         if queued then
             self:EmitAIEvent("PRODUCTION",{action="QUEUE_CANCELLED",producer="AI",faction=kind,
-                class=queued.entry and queued.entry.class or "UNKNOWN",count=queued.count or 1,
+                jobId=queued.id,class=queued.entry and queued.entry.class or "UNKNOWN",count=queued.count or 1,
                 cost=queued.estimate and queued.estimate.cost or 0,refundedCP=0,
                 reason="FACTION_ELIMINATED",queuedAt=queued.queuedAt},mn.getMissionTime())
         end
@@ -332,7 +344,7 @@ function RTS:EliminateFaction(kind)
             if back>0 then self.CommandPoints=self.CommandPoints+back; refunded=refunded+back end
             abandoned=abandoned+1
             self:EmitAIEvent("PRODUCTION",{action="QUEUE_REFUNDED",producer="PLAYER",faction="BLUE",
-                class=option.class or "UNKNOWN",count=option.count or 1,cost=cost,refundedCP=back,
+                jobId=queued.id,class=option.class or "UNKNOWN",count=option.count or 1,cost=cost,refundedCP=back,
                 progress=progress,reason="BASE_DESTROYED",queuedAt=queued.queuedAt},mn.getMissionTime())
         end
         self.BuildQueue={}
@@ -344,13 +356,10 @@ function RTS:EliminateFaction(kind)
     end
     self.FactionPrimaryTargets[kind]=nil
 
-    self:EachShip(function(unit)
-        if shipValid(unit) and unit.Name ~= self.Config.ObserverShip and teamName(unit) == teamKey then
-            local isStation = unit.Name == self.Config.CarrierShip or unit.Name == self.Config.EnemyCommandShip or unit.Name == self.Config.ThirdCommandShip
-            if not isStation and not self:IsStaticDefense(unit) then unit:clearOrders(); unit:giveOrder(ORDER_DEPART, nil, nil, 1.5) end
-        end
-    end)
-    self:EvaluateFactionVictory()
+    -- Station elimination closes production, not the surviving fleet's IFF
+    -- or combat orders. The survivor director handles targets without a base.
+    -- Death hooks may deliver several station losses in one frame. OnFrame
+    -- decides the outcome after collecting all of them.
 end
 
 function RTS:BeginRosterModelWarmup()
@@ -412,39 +421,87 @@ end
 function RTS:StartScenario()
     if not self.SetupActive then return end
     self:UpdateFactionCount(); if self.SetupFactionCount<2 then self:SetStatus("Select at least one enemy faction",3); return end
+    for _,kind in ipairs(self:GetFactionKeys()) do
+        local def=self:GetFactionDefinition(kind); local team=def and mn.Teams[def.team]
+        if not team or not team:isValid() then self:SetStatus("Faction IFF unavailable: "..tostring(def and def.team or kind),5); return end
+    end
+    -- Mission paging invalidates native weapon resources even when the Lua
+    -- module and registered hooks survive a restart.
+    self.FighterBlastVariantsLoaded={}
     self:FinishRosterModelWarmup()
-    local economy=self.Config.Setup.Economies[self.SetupEconomyIndex]; local duration=self:GetDurationProfile(); self.CommandPoints=economy.startCP; self.ActiveIncomePerSecond=economy.income*(duration.playerIncomeScale or 1)
+    self:ResolveRandomFactionSpecies()
+    self:BuildProductionCatalog()
+    local economy=self.Config.Setup.Economies[self.SetupEconomyIndex]; local duration=self:GetEscalationProfile(); self.CommandPoints=economy.startCP; self.ActiveIncomePerSecond=economy.income*(duration.playerIncomeScale or 1)
     self.AutoPlayerMode=self.SetupAutoMode==true
+    for _,kind in ipairs(self.Config.FactionOrder or self:GetFactionKeys()) do
+        if not self:IsFactionEnabled(kind) then self:DisableFactionShips(kind) end
+    end
+    -- The setup backdrop is vanished here so the real bases spawn into empty space.
+    self:ClearSetupBackdrop()
     self:ApplyConfiguredBaseSpacing()
-    self.SetupActive=false; self.GameStatus="ACTIVE"; self.RedEliminated=not self:IsFactionEnabled("RED"); self.GoldEliminated=not self:IsFactionEnabled("GOLD"); self.BlueEliminated=false; self.BattleVictor=nil; self.PostBattleActive=false; self.PostBattleResult=nil
-    self.ScenarioStartTime=mn.getMissionTime(); self.LastIncomeTime=self.ScenarioStartTime; self.StatusUntil=self:UINow()+6; self.StatusMessage=self.AutoPlayerMode and "ESCALATION STARTED // BLUE AUTO MODE" or "ESCALATION STARTED"
-    self.CombatTelemetryEnabled=true; self:RegisterBaseDamageTelemetry(); self:RegisterCombatDamageTelemetry(); self:RegisterStationBeamHitHook(); self:StartAITrace(); self:SetMissionFocusPolicy(true)
-    if not self:IsFactionEnabled("RED") then self:DisableFactionShips("RED") end
-    self:SpawnGoldFaction(); self:ScaleCommandStationsForDuration(); self:CaptureBaseHullBaseline()
+    if not self:SpawnFactionStations() then
+        self:CreateSetupBackdrop()
+        self:SetStatus("Could not initialize every command station",5); return
+    end
+    self.SetupActive=false; self.GameStatus="ACTIVE"; self.FactionEliminated={}; self.BlueEliminated=false; self.RedEliminated=false; self.GoldEliminated=false
+    for _,kind in ipairs(self.Config.FactionOrder or AI_FACTION_ORDER) do self:SetFactionEliminated(kind,not self:IsFactionEnabled(kind)) end
+    self.BattleVictor=nil; self.PostBattleActive=false; self.PostBattleResult=nil
+    self:ResetFleetLife()
+    self.ScenarioStartTime=mn.getMissionTime(); self.LastIncomeTime=self.ScenarioStartTime; self.StatusUntil=self:UINow()+6; self.StatusMessage=self.AutoPlayerMode and ("ESCALATION STARTED // "..self:GetFactionDisplayName("BLUE").." AUTO MODE") or "ESCALATION STARTED"
+    self.CombatTelemetryEnabled=true; self:RegisterBaseDamageProtection(); self:RegisterBaseDamageTelemetry(); self:RegisterCombatDamageTelemetry(); self:RegisterStationBeamHitHook(); self:StartAITrace(); self:SetMissionFocusPolicy(true)
+    self:ScaleCommandStationsForEscalation(); self:CaptureBaseHullBaseline()
     self:CreateOptionalAsteroidField()
     self:ResetStationState()
     if self.SetupSentries then self:SpawnSentryDefenses() end
     self:InitializeAIStates(self.ScenarioStartTime); self:InitializeUnitOrders(); self:SetTimeScale(1)
     self.BattleSummary=nil; self.MusicMuted=false; self:SetMusicMuted(false,true)
+    if ad and ad.playMusic then self:SetEnvironmentMusic(self.SetupMusicChoice or 'RANDOM',true) end
+    if mn.addBackgroundBitmapNew then self:SetNebulaBackdrop(self.SetupBackdropChoice or 'RANDOM',true) end
     self:ShowAnnouncement("TIER 1 // ESCALATION BEGINS",4,"BLUE")
 end
 
 function RTS:CycleSetupValue(kind,delta)
     if kind=="difficulty" then local max=#self.Config.Setup.Difficulties; self.SetupDifficultyIndex=((self.SetupDifficultyIndex-1+delta)%max)+1
     elseif kind=="economy" then local max=#self.Config.Setup.Economies; self.SetupEconomyIndex=((self.SetupEconomyIndex-1+delta)%max)+1
-    elseif kind=="duration" then local max=#self.Config.Setup.Durations; self.SetupDurationIndex=((self.SetupDurationIndex-1+delta)%max)+1
-    elseif kind=="distance" then local max=#(self.Config.Setup.BaseDistances or {}); if max>0 then self.SetupBaseDistanceIndex=((self.SetupBaseDistanceIndex-1+delta)%max)+1 end end
+    elseif kind=="distance" then local max=#(self.Config.Setup.BaseDistances or {}); if max>0 then self.SetupBaseDistanceIndex=((self.SetupBaseDistanceIndex-1+delta)%max)+1 end
+    elseif kind=="layout" then local max=#(self.Config.Setup.BaseLayouts or {}); if max>0 then self.SetupBaseLayoutIndex=(((self.SetupBaseLayoutIndex or 1)-1+delta)%max)+1 end
+    elseif kind=="factions" then
+        local max=self:GetMaxFactionCount()
+        local current=self.SetupFactionCountChoice or self.SetupFactionCount or 2
+        self.SetupFactionCountChoice=2+((current-2+delta)%(max-1))
+        self:UpdateFactionCount()
+        local pages=math.max(1,math.ceil(self.SetupFactionCount/(self.SetupFactionPageSize or 5)))
+        self.SetupFactionPage=math.min(self.SetupFactionPage or 1,pages)
+    end
 end
 
 function RTS:HandleSetupClick(x,y)
+    if self.EnvironmentPicker then return self:HandleFleetLifeClick(x,y) end
+    for index,rect in pairs(self.SetupColorRects or {}) do
+        if self:PointInside(rect,x,y) then
+            if index=="random" then self:RandomizeFactionColors(); self:ApplyFactionVisuals()
+            else self:SetFactionColor(self.SetupColorPicker,tonumber(index)) end
+            self.SetupColorPicker=nil; self.SetupColorRects={}; return true
+        end
+    end
+    if self.SetupColorPicker then self.SetupColorPicker=nil; self.SetupColorRects={}; return true end
     for id,rect in pairs(self.SetupButtonRects or {}) do
         if self:PointInside(rect,x,y) then
             if id=="difficulty" then self:CycleSetupValue("difficulty",1)
             elseif id=="economy" then self:CycleSetupValue("economy",1)
             elseif id=="duration" then self:CycleSetupValue("duration",1)
             elseif id=="distance" then self:CycleSetupValue("distance",1)
+            elseif id=="layout" then self:CycleSetupValue("layout",1)
+            elseif id=="factions" or id=="factions_more" then self:CycleSetupValue("factions",1)
+            elseif id=="factions_less" then self:CycleSetupValue("factions",-1)
+            elseif id=="faction_prev" then self.SetupFactionPage=math.max(1,(self.SetupFactionPage or 1)-1)
+            elseif id=="faction_next" then self.SetupFactionPage=math.min(math.ceil(self.SetupFactionCount/(self.SetupFactionPageSize or 5)),(self.SetupFactionPage or 1)+1)
+            elseif id:sub(1,6)=="color_" then self.SetupColorPicker=id:sub(7)
+            elseif id:sub(1,8)=="faction_" and id~="faction_prev" and id~="faction_next" then self:CycleFactionChoice(id:sub(9))
+            elseif id:sub(1,8)=="species_" then self:CycleFactionSpecies(id:sub(9))
             elseif id=="red" then self.SetupOpponents.RED=not self.SetupOpponents.RED; self:UpdateFactionCount()
             elseif id=="gold" then self.SetupOpponents.GOLD=not self.SetupOpponents.GOLD; self:UpdateFactionCount()
+            elseif id=="environment" then self.EnvironmentPicker=true
             elseif id=="start" then self:StartScenario() end
             return true
         end
@@ -477,8 +534,11 @@ function RTS:OnGameplayStart()
     -- finishes. Calling them synchronously would page all 63 POFs in this frame.
     self:BeginRosterModelWarmup()
     self:InitializeSetupHold()
+    self:RegisterCrewProjectileEvidence()
     self:DisarmObserverWeapons()
     self:StartIntroCinematic()
+    self:CreateSetupBackdrop()
+    self:SetMissionFocusPolicy(self:ShouldDisableUnfocusedPause())
     self.LastIncomeTime = mn.getMissionTime()
     self:Log("RTS setup mode enabled; cost map contains " .. tostring(#tb.ShipClasses) .. " loaded classes")
 end
@@ -500,6 +560,8 @@ end
 -- $State: condition there would be compared against stale stack data on every
 -- pushed transition, which is exactly the class of bug this table replaces.
 local TRANSIENT_GAME_STATES = {
+    -- A native menu pop resumes this mission; it is not a terminal transition.
+    GS_STATE_GAME_PLAY = true,
     GS_STATE_GAME_PAUSED = true,
     GS_STATE_DEBUG_PAUSED = true,
     GS_STATE_MULTI_PAUSED = true,
@@ -521,6 +583,9 @@ local TRANSIENT_GAME_STATES = {
 function RTS:OnStateEnd(oldState, newState)
     local newName = newState and newState.Name or nil
     if newName == nil then return end
+    -- Input hooks are scoped to gameplay. A native menu consumes releases, so
+    -- retaining held keys or mouse drags would resume a gesture that already ended.
+    if oldState and oldState.Name=='GS_STATE_GAME_PLAY' and newName~='GS_STATE_GAME_PLAY' then self:ClearInputGestures() end
     if TRANSIENT_GAME_STATES[newName] then return end
     self:Shutdown()
 end
@@ -531,6 +596,7 @@ function RTS:Shutdown()
     -- through must never leave a half-torn-down session looking live.
     if self.Enabled ~= true then return end
     self.Enabled = false
+    self.CombatTelemetryEnabled=false
     self.Paused = false
     self:CloseAITrace()
     self:SetMissionFocusPolicy(false)
@@ -552,48 +618,34 @@ function RTS:Shutdown()
     self:ReleaseObjectHandles()
 end
 
--- Drop every object handle the mod is holding, at mission end.
---
--- FSO never tears the scripting state down between missions: code\scripting\lua.cpp
--- calls luaL_openlibs at startup and has NO lua_close anywhere, and the global
--- hook table (code\scripting\global_hooks.cpp) exposes no mission-cleanup hook
--- either. So the same lua_State - and therefore the same table registry - lives
--- across every mission in a session.
---
--- The mod keys many tables by ship signature and some hold the ship itself
--- (UserOrders, FleetServices, AIOrderState, PolicyApplied, SentryCosts,
--- StaticDefenseSignatures, SurgedShips, MoveWaypoints, and the pooled
--- FreeMoveWaypoints). FSO recycles object signatures, so on the next mission a
--- freed hull can be handed the same signature - and anything still reachable
--- from Lua is a handle into memory the engine no longer owns. Touching one is a
--- use-after-free, which is what a hard crash at teardown with no Lua error and no
--- console output looks like.
---
--- Every step is individually guarded: this runs at shutdown, where an exception
--- is caught and only logged, so a raise here would abort the remaining steps and
--- leave exactly the state we are trying to clear.
+-- The shared Lua state outlives a mission. Drop handles and per-hull state at
+-- shutdown/reset so caches, gestures and plans cannot reference the previous world.
 function RTS:ReleaseObjectHandles()
+    self.CrewProjectileBefore=nil
+    if self.ClearIntroScene then self:ClearIntroScene() end
+    if self.StopEnvironment then self:StopEnvironment() end
+    for _,ship in ipairs(self:GetShipList()) do
+        local withdrawal=self.Withdrawals and self.Withdrawals[ship:getSignature()]
+        if withdrawal and shipValid(ship) then ship.Team=withdrawal.originalTeam end
+        if (self.PassageTurretOverrides or {})[ship:getSignature()] then
+            for i=1,#ship do if ship[i]:isTurret() then ship[i]:targetingOverride(false) end end
+        end
+    end
+    for _,saved in pairs(self.CommandDiscipline or {}) do
+        if shipValid(saved.ship) then self:SetShipCommandDiscipline(saved.ship,false) end
+    end
     local function wipe(name)
         if self[name]==nil then return end
         pcall(function() self[name]={} end)
     end
     -- Signature-keyed tables holding handles or per-hull state.
     for _,name in ipairs({
-        "UserOrders","PolicyApplied","AIOrderState","FleetServices","FleetServiceCooldown",
+        "UserOrders","PolicyApplied","AIOrderState","FleetServices","FleetServiceCooldown","MoveTurretLocks","CommandDiscipline",
         "SurvivalDangerSince","StaticDefenseSignatures","SentryCosts","SentryHullBoosted",
         "SentryNames","SentryHulls","DefenseRateBoosted","MjolnirRangeLocks","SurgedShips",
-        "EngageTargets","Selected","ControlGroups","AIStats","AIEconomyFlow",
-    -- Two HUD-side tables were missing here and hold live object handles, not
-    -- just data. HoverReadout is read by fs2rts_ui_text.lua:389 and holds
-    -- `ship`/`target`; OrderPing holds signatures plus a vector and was
-    -- previously cleared only if the HUD happened to draw that branch
-    -- (fs2rts_hud.lua:941). Neither was reachable from ResetState, so a mission
-    -- restart inside the 2 s ping window left OrderPing alive against a
-    -- UIClock reset to 0: `left = untilTime - 0` stayed positive, and
-    -- `pulse = 4 + (2-left)*8` went strongly negative, reaching gr.drawCircle
-    -- with a negative radius every frame. ProjectionAmbient was in this list
-    -- and exists nowhere in the mod; the list had drifted from the code.
-    "HoverReadout","OrderPing",
+        "EngageTargets","Selected","ControlGroups","AIStats","AIEconomyFlow","SurvivorTargets",
+    -- HUD samples also hold handles and deadlines relative to the mission UI clock.
+    "HoverReadout","OrderPing","PilotWeaponCycleReadout",
     }) do wipe(name) end
     -- Pooled waypoint handles: FSO exposes no Lua call to delete a waypoint list,
     -- so these must at least stop being reachable from the mod.
@@ -602,12 +654,16 @@ function RTS:ReleaseObjectHandles()
     -- Pending work records can hold ships too.
     for _,name in ipairs({"PendingSentries","PendingStrikes","AIOperations","LogicalWings","WingNameCounters"}) do wipe(name) end
     -- The ship list cache holds live handles.
-    pcall(function() self.ShipCache=nil end)
+    pcall(function() self.ShipCache=nil; self.ShipSignatureIndex=nil end)
     -- Cached projections are keyed by signature and are per-frame; drop them so a
     -- stale handle cannot survive into the next mission.
     for _,name in ipairs({"ProjectionX","ProjectionY","ProjectionOwner","ProjectionEpoch"}) do
         if self[name]~=nil then pcall(function() self[name]=nil end) end
     end
+    for _,name in ipairs({"StrategicThreatSnapshot","AISpatialGrid","AILocalCache","AISpatialCellSize",
+        "AIShipIndex","AIProfileIndex","AITargetedBy","AIStrategicPlanQueue","RTSWings","WingBySignature",
+        "PilotTurretGroups","PilotBatteryCandidates","PilotFlakCandidates","PilotFlakPendingShots","PilotNativeWing","PilotPreviousUserOrder","PilotAIObjective","PilotSuggestedTarget","PilotSuggestedAt","PilotCommOrders","PilotCommWarningUntil","ControlInfo",
+        "Camera","FollowCamera","PilotCamera"}) do self[name]=nil end
 end
 
 function RTS:OnFrame()
@@ -646,7 +702,7 @@ function RTS:OnFrame()
         self:DisarmObserverWeapons()
     end
 
-    if self.PostBattleActive then return end
+    if self.PostBattleActive or self.ExitMenuActive then return end
     -- The mod's own pause owns the whole simulation. The engine clock is
     -- already stopped by SetPaused, so gating here keeps mission-time driven
     -- systems (economy, queues, AI) from drifting on the frames that still run
@@ -662,9 +718,13 @@ function RTS:OnFrame()
     if not self.SetupActive and self.ScenarioStartTime ~= nil then self:UpdateFleetServices(now) end
     self:UpdateMoveFacings()
     self:ReconcileMoveOrders(now)
+    self:UpdateAttackFormations(now)
+    self:UpdateAIPursuitGoals(now)
     self:UpdateAIStrategicObjectives(now)
+    self:UpdateSurvivorCombat(now)
+    self:UpdateFleetLife(now)
     self:AuditWorldPositions(now)
-    if not self.SetupActive and self.ScenarioStartTime ~= nil then
+    if not self.AftermathActive and not self.SetupActive and self.ScenarioStartTime ~= nil then
         local tier = self:GetCurrentEscalationTier(now)
         if tier > (self.LastEscalationTier or 1) then
             self.LastEscalationTier = tier
@@ -672,18 +732,14 @@ function RTS:OnFrame()
             self:SetStatus("Tier "..tier.." production unlocked for all surviving factions", 5)
         end
     end
-    if not self.SetupActive and not self.BlueEliminated then self:UpdateDefaultPolicy(now) end
+    if not self.AftermathActive and not self.SetupActive and not self.BlueEliminated then self:UpdateDefaultPolicy(now) end
 
-    if self.SetupActive or self.BattleVictor ~= nil then return end
-    -- BLUE is checked LAST. EliminateFaction ends with EvaluateFactionVictory,
-    -- which snapshots the after-action report, and that snapshot is final: once
-    -- the first loss of the frame has opened the post-battle screen,
-    -- BattleVictor is set and the remaining stations are never recorded. In a
-    -- mutual kill that reported the opponent as SURVIVING on the screen while
-    -- the result line above it said the battle was over.
-    if self:IsFactionEnabled("RED") and not shipValid(self:GetEnemyCommand()) and not self.RedEliminated then self:EliminateFaction("RED") end
-    if self:IsFactionEnabled("GOLD") and not shipValid(self:GetThirdCommand()) and not self.GoldEliminated then self:EliminateFaction("GOLD") end
-    if not shipValid(self:GetCarrier()) and not self.BlueEliminated then self:EliminateFaction("BLUE") end
+    if self.SetupActive then return end
+    -- Collect every loss before the single report snapshot. Death callbacks
+    -- mark elimination but cannot decide a partially processed frame.
+    for _,kind in ipairs(self:GetFactionKeys()) do
+        if not shipValid(self:GetFactionCommandShip(kind)) and not self:IsFactionEliminated(kind) then self:EliminateFaction(kind) end
+    end
     self:EvaluateFactionVictory()
 end
 
@@ -721,6 +777,11 @@ end
 function RTS:OnShipDeath(ship,killer)
     if not self.Enabled or not shipValid(ship) then return end
     local deadSignature=ship:getSignature()
+    self.BountyProcessed=self.BountyProcessed or {}
+    if self.BountyProcessed[deadSignature] then return end
+    self.BountyProcessed[deadSignature]=true
+    if self.RecordUnitFate then self:RecordUnitFate(ship,'LOST','DESTROYED') end
+    if self.ClearFleetLifeReferences then self:ClearFleetLifeReferences(ship) end
     if self.FleetServices then self.FleetServices[deadSignature]=nil end
     if self.FleetServiceCooldown then self.FleetServiceCooldown[deadSignature]=nil end
     if self.SurvivalDangerSince then self.SurvivalDangerSince[deadSignature]=nil end
@@ -734,25 +795,47 @@ function RTS:OnShipDeath(ship,killer)
     local baseUnitCost=mapped and mapped.cost or 100
     local bounty=0
     local rewardShip=self:ResolveKillRewardShip(killer)
+    self:RecordFleetCombatKill(rewardShip,ship)
     local rewardFaction=shipValid(rewardShip) and self:GetFactionKey(rewardShip) or nil
-    self.BountyProcessed=self.BountyProcessed or {}
-    local firstDeath=not self.BountyProcessed[deadSignature]
-    self.BountyProcessed[deadSignature]=true
-    if firstDeath and rewardFaction and rewardShip:getSignature()~=deadSignature
-        and self:AreEnemies(rewardShip,ship) and self:IsFactionEnabled(rewardFaction)
+    local hostileKill=rewardFaction and rewardShip:getSignature()~=deadSignature and self:AreEnemies(rewardShip,ship)
+    if hostileKill
+        and self:IsFactionEnabled(rewardFaction)
         and shipAlive(self:GetFactionCommandShip(rewardFaction))
         and (rewardFaction=='BLUE' or self.AIStates and self.AIStates[rewardFaction]) then
         bounty=math.max(self.Config.Bounties.Minimum or 25,math.floor(baseUnitCost*(self.Config.Bounties.DefaultFractionOfCost or .24)))
     end
     if self.AIStats then
         if kind then local losses=self.AIStats.losses[kind] or {}; self.AIStats.losses[kind]=losses; losses[ship.Class.Name]=(losses[ship.Class.Name] or 0)+1 end
+        if hostileKill then
+            self.AIStats.kills=self.AIStats.kills or {}
+            local kills=self.AIStats.kills[rewardFaction] or {}; self.AIStats.kills[rewardFaction]=kills
+            kills[ship.Class.Name]=(kills[ship.Class.Name] or 0)+1
+        end
         self:EmitAIEvent("LOSS",{ship=deadSignature,class=ship.Class.Name,faction=kind,
             baseUnitCost=baseUnitCost,replacementCost=replacement,bountyCP=bounty,rewardFaction=rewardFaction,
             objective=self.AIOrderState[deadSignature],lethalHit=lethalHit})
         self.AIObservations[deadSignature]=nil; self.AIStats.hits[deadSignature]=nil
     end
+    if hostileKill and self.PossessedSignature==rewardShip:getSignature() then
+        local player=ba.getCurrentPlayer()
+        if player:isValid() then
+            local stats=player.Stats
+            stats.MissionTotalKills=(stats.MissionTotalKills or 0)+1
+            local classKills=stats:getMissionShipclassKills(ship.Class)
+            if classKills>=0 then stats:setMissionShipclassKills(ship.Class,classKills+1) end
+        end
+    end
     if self.AILethalDamageByShip then self.AILethalDamageByShip[deadSignature]=nil end
+    local wingId=self.WingBySignature[deadSignature]
+    local wing=wingId and self.RTSWings[wingId]
+    if wing then
+        for i=#wing.signatures,1,-1 do
+            if wing.signatures[i]==deadSignature then table.remove(wing.signatures,i) end
+        end
+        if #wing.signatures==0 then self.RTSWings[wingId]=nil end
+    end
     self.UserOrders[deadSignature]=nil; self.PolicyApplied[deadSignature]=nil; self.PolicyDefend[deadSignature]=nil; self.AIOrderState[deadSignature]=nil; self.WingBySignature[deadSignature]=nil; self:ReleaseMoveWaypoint(deadSignature); self.WorldBoundsWarnings[deadSignature]=nil
+    if self.CommandDiscipline then self.CommandDiscipline[deadSignature]=nil end
     -- Any living ship still holding a native ORDER_ATTACK on this signature
     -- keeps a raw object-index reference until its next strategic tick
     -- (up to StrategicOrderInterval seconds away). FSO can reuse a freed
@@ -796,7 +879,7 @@ function RTS:OnShipDeath(ship,killer)
     if self.PossessedSignature~=nil and deadSignature==self.PossessedSignature then
         self:BeginPilotEject(ship)
     end
-    if bounty>0 then
+    if bounty>0 and not self.AftermathActive then
         local before=self:GetFactionCP(rewardFaction)
         if rewardFaction=='BLUE' then self.CommandPoints=before+bounty
         else self.AIStates[rewardFaction].cp=before+bounty end
@@ -806,26 +889,25 @@ function RTS:OnShipDeath(ship,killer)
             killerShip=rewardShip:getSignature(),bountyCP=bounty,cpBefore=before,cpAfter=self:GetFactionCP(rewardFaction)},mn.getMissionTime())
         if rewardFaction=='BLUE' then self:SetStatus("+"..tostring(bounty).." CP - "..ship.Name.." destroyed",2.5) end
     end
-    if ship.Name==self.Config.CarrierShip then self:EliminateFaction("BLUE")
-    elseif ship.Name==self.Config.EnemyCommandShip then self:EliminateFaction("RED")
-    elseif ship.Name==self.Config.ThirdCommandShip then self:EliminateFaction("GOLD") end
+    local responsible=hostileKill and rewardFaction or nil
+    if self:IsCommandStation(ship) then self:EliminateFaction(self:GetFactionKey(ship),responsible) end
+    if self.Withdrawals then self.Withdrawals[deadSignature]=nil end
+    for _,area in pairs(self.ExtractionAreas or {}) do area.slots[deadSignature]=nil end
 end
 
 function RTS:OnWaypointsDone(ship)
+    if self:IsShipWithdrawing(ship) then return end
     if shipValid(ship) and self.FleetServices and self.FleetServices[ship:getSignature()] then return end
     if not self.Enabled or not self:IsFriendly(ship) then return end
     local sig=ship:getSignature(); local order=self.UserOrders[sig]
+    if order and order.approaching and (order.kind=="attack" or order.kind=="attack_wing") then
+        order.approaching=nil
+        self:ReissueUserOrder(ship,order)
+        return
+    end
     if order~=nil and order.kind=="move" then
-        -- A right-drag move carries a facing point, which is a directional
-        -- command: the player is asking the hull to travel there AND arrive
-        -- pointing a specific way. OnWaypointsDone used to collapse both cases
-        -- into one "move finished" branch, so a drag-move silently became a
-        -- plain hold and then fell back to the default policy, handing the ship
-        -- straight back to the AI the moment it stopped moving. Keep manual
-        -- control for the facing case: hold position, keep the commanded
-        -- heading, and stay out of the AI's pool until the player says
-        -- otherwise. A tap-to-move has no facing and keeps the old behaviour,
-        -- which is what makes tap correct today.
+        -- Explicit moves hold on arrival until released. Nonmanual waypoint
+        -- users retain the existing automatic hand-back behavior below.
         if order.manual==true or (order.facing~=nil and self:IsFiniteVector(order.facing)) then
             -- copyVec(order.facing) unguarded crashed here: the branch is entered
             -- when order.manual==true OR the facing is finite, but a MANUAL
@@ -834,7 +916,7 @@ function RTS:OnWaypointsDone(ship)
             -- manual move, on the player's own input.
             local facing=nil
             if order.facing~=nil and self:IsFiniteVector(order.facing) then facing=copyVec(order.facing) end
-            self:SetUserOrder(ship,{kind="hold",facing=facing,manual=true})
+            self:SetUserOrder(ship,{kind="hold",facing=facing,heading=order.heading and copyVec(order.heading) or nil,manual=true})
             self:HoldShip(ship,0.95)
             return
         end
@@ -859,9 +941,9 @@ function RTS:AuditWorldPositions(now)
     if self.SetupActive or self.CinematicActive or self.PostBattleActive then return end
     if now-(self.LastWorldBoundsAudit or -100)<1.0 then return end
     self.LastWorldBoundsAudit=now
-    local warningBound=self:GetCommandArenaHalfExtent()*(self.Config.Formation.WorldWarningMultiplier or 1.60)
+    local warningBound=self:GetBattleMapHalfExtent()
     self:EachShip(function(ship)
-        if ship.Name~=self.Config.ObserverShip and not self:IsCommandStation(ship) then
+        if ship.Name~=self.Config.ObserverShip and not self:IsCommandStation(ship) and not self:IsShipWithdrawing(ship) then
             local p=ship.Position
             if self:IsFiniteVector(p) and (math.abs(p.x)>warningBound or math.abs(p.z)>warningBound) then
                 local sig=ship:getSignature()
@@ -876,6 +958,22 @@ function RTS:AuditWorldPositions(now)
                     if recovery~=nil then
                         order.destination=copyVec(recovery)
                         self:MoveShipTo(ship,recovery,0.98)
+                    end
+                elseif order==nil and self.PossessedSignature~=sig and not self:IsShipWithdrawing(ship)
+                    and not (self.FleetServices and self.FleetServices[sig]) then
+                    local kind=self:GetFactionKey(ship)
+                    local automatic=kind~=nil and (kind~='BLUE' or self.AutoPlayerMode)
+                        and not self:IsFactionEliminated(kind)
+                    if automatic then
+                        local state=self.AIOrderState and self.AIOrderState[sig]
+                        local target=state and self:FindShipBySignature(state.targetSignature)
+                        local outsideTarget=shipAlive(target) and (math.abs(target.Position.x)>warningBound or math.abs(target.Position.z)>warningBound)
+                        local destination=state and state.destination
+                        local outsideDestination=self:IsFiniteVector(destination)
+                            and (math.abs(destination.x)>warningBound or math.abs(destination.z)>warningBound)
+                        if state==nil or not shipAlive(target) or outsideTarget or outsideDestination then
+                            self:AssignAIStrategicOrder(ship,kind,true)
+                        end
                     end
                 end
             end

@@ -16,15 +16,13 @@ end
 
 function RTS:GetNextWingCallsign(kind)
     local names={"Alpha","Beta","Gamma","Delta","Epsilon","Zeta","Eta","Theta","Iota","Kappa","Lambda","Mu","Nu","Xi","Omicron","Pi","Rho","Sigma","Tau","Upsilon","Phi","Chi","Psi","Omega"}
-    self.WingNameCounters=self.WingNameCounters or {BLUE=0,RED=0,GOLD=0}
+    self.WingNameCounters=self.WingNameCounters or {}
     self.WingNameCounters[kind]=(self.WingNameCounters[kind] or 0)+1
     local n=self.WingNameCounters[kind]
     local base=names[((n-1)%#names)+1]
     local cycle=math.floor((n-1)/#names)+1
     if cycle>1 then base=base.."-"..tostring(cycle) end
-    if kind=="RED" then return "Red "..base end
-    if kind=="GOLD" then return "Gold "..base end
-    return "Blue "..base
+    return self:GetFactionDisplayName(kind).." "..base
 end
 
 function RTS:SelectWingForShip(ship, additive)
@@ -78,12 +76,14 @@ function RTS:SelectSameClass(reference, allVisibleMap)
     self:SetStatus("Selected " .. tostring(#result) .. " " .. className, 1.3)
 end
 
-function RTS:HandleDoubleClick(mouseX, mouseY)
-    local now=self:UINow(); local ship=self:GetShipAtScreen(mouseX,mouseY,true,true); local clickKey=shipValid(ship) and ship:getSignature() or 0
+function RTS:HandleDoubleClick(mouseX, mouseY, tacticalMap)
+    local now=self:UINow(); local ship
+    if tacticalMap then ship=self:GetMapShipAt(mouseX,mouseY) else ship=self:GetShipAtScreen(mouseX,mouseY,true,true) end
+    local clickKey=shipValid(ship) and ship:getSignature() or 0
     local cfg=self.Config.Selection; local maxDelay=cfg.DoubleClickSeconds or .32; local maxDist=cfg.DoubleClickMaxDistancePixels or 12
     local isDouble=self.LastLeftClickKey==clickKey and now-self.LastLeftClickTime<=maxDelay and distance2(mouseX,mouseY,self.LastLeftClickX,self.LastLeftClickY)<=maxDist*maxDist
     self.LastLeftClickTime=now; self.LastLeftClickX=mouseX; self.LastLeftClickY=mouseY; self.LastLeftClickKey=clickKey
-    if not isDouble then return false end
+    if not isDouble or not shipValid(ship) then return false end
     self.LastLeftClickTime=-100; self.LastLeftClickKey=nil
     if shipValid(ship) then
         if self.AltDown then
@@ -99,6 +99,8 @@ end
 function RTS:FocusOnSelection()
     local ships = self:GetSelectedShips()
     if #ships == 0 then return end
+    if self.BattleCamActive then self:StopBattleCam() end
+    self:ExitFollowMode()
 
     local x, y, z = 0, 0, 0
     for _, ship in ipairs(ships) do
@@ -116,7 +118,7 @@ function RTS:SelectAll()
         -- shipAlive, not just IsFriendly: a hull in its death roll is still a
         -- valid object, so it was being counted, selected, and then silently
         -- dropped when an order was issued to it.
-        if self:IsFriendly(ship) and shipAlive(ship) and ship.Name ~= self.Config.CarrierShip then
+        if self:IsFriendly(ship) and shipAlive(ship) and not self:IsCommandStation(ship) then
             self.Selected[#self.Selected + 1] = ship:getSignature()
         end
     end)
@@ -124,19 +126,31 @@ function RTS:SelectAll()
     self:SetStatus("Selected all combat units", 2)
 end
 
+function RTS:SelectNewUnitPopup()
+    local selected={}
+    for _,signature in ipairs(self.NewUnitPopup and self.NewUnitPopup.signatures or {}) do
+        local ship=self:FindShipBySignature(signature)
+        if shipAlive(ship) and self:IsMovableFriendly(ship) then selected[#selected+1]=signature end
+    end
+    self.NewUnitPopup=nil
+    if #selected==0 then self:SetStatus("NEW UNITS ARE NO LONGER AVAILABLE",2); return end
+    self.Selected=selected; self.PrimarySelectionSignature=selected[1]
+    self:SetStatus("Selected "..#selected.." newly deployed unit"..(#selected==1 and "" or "s"),2)
+end
+
 
 -- Read-only: drawn every frame. Dead members are pruned by OnShipDeath and
 -- RecallControlGroup, so a draw call no longer rewrites the groups.
 function RTS:GetControlGroupCount(group)
     local count=0
-    for _,sig in ipairs(self.ControlGroups[group] or {}) do if self:IsFriendly(self:FindShipBySignature(sig)) then count=count+1 end end
+    for _,sig in ipairs(self.ControlGroups[group] or {}) do if self:IsMovableFriendly(self:FindShipBySignature(sig)) then count=count+1 end end
     return count
 end
 
 function RTS:AssignControlGroup(group)
     if group<1 or group>4 then return end
     self.ControlGroups[group]={}
-    for _,sig in ipairs(self.Selected) do local ship=self:FindShipBySignature(sig); if self:IsFriendly(ship) then self.ControlGroups[group][#self.ControlGroups[group]+1]=sig end end
+    for _,sig in ipairs(self.Selected) do local ship=self:FindShipBySignature(sig); if self:IsMovableFriendly(ship) then self.ControlGroups[group][#self.ControlGroups[group]+1]=sig end end
     self:SetStatus("Control group "..group.." assigned ("..#self.ControlGroups[group]..")",2)
 end
 
@@ -146,7 +160,7 @@ function RTS:RecallControlGroup(group)
     local recalled={}
     for _,sig in ipairs(source) do
         local ship=self:FindShipBySignature(sig)
-        if self:IsFriendly(ship) and shipAlive(ship) then recalled[#recalled+1]=sig end
+        if self:IsMovableFriendly(ship) and shipAlive(ship) then recalled[#recalled+1]=sig end
     end
     self.Selected=recalled
     -- The group must be a SEPARATE table. Assigning self.Selected here made the

@@ -7,6 +7,7 @@ local clamp, lower, vec, copyVec, distance2, objectValid, shipValid, shipAlive, 
     = U.clamp, U.lower, U.vec, U.copyVec, U.distance2, U.objectValid, U.shipValid, U.shipAlive, U.teamName, U.tableContainsSignature
 
 function RTS:SetupCamera()
+    self.IntroFadeInUntil=nil
     local c = self.Config.Camera
     self.CameraFocus = vec(c.Focus.x, c.Focus.y, c.Focus.z)
     self.CameraDistance = c.Distance
@@ -88,12 +89,144 @@ function RTS:CinematicNextShot(delta, restart)
     self.CinematicShotIndex = index
     self.CinematicElapsed = self:GetCinematicShotStart(index)
     self.CinematicTailHold = nil
+    self.IntroFadeInUntil=nil
     self:SetStatus(string.format("CINEMATIC SHOT %d/%d", index, count), 1.2)
     return true
 end
 
 function RTS:CinematicRestartShot()
     return self:CinematicNextShot(0, true)
+end
+
+-- Vanishes a group of ships together with the weapons they fired. Shared by the
+-- intro tableau and the setup backdrop.
+function RTS:VanishShipGroup(group)
+    local signatures={}
+    for _,ship in ipairs(group or {}) do
+        if shipValid(ship) then signatures[ship:getSignature()]=true end
+    end
+    local weapons={}
+    for i=1,#(mn.Weapons or {}) do
+        local weapon=mn.Weapons[i]
+        if objectValid(weapon) and shipValid(weapon.Parent) and signatures[weapon.Parent:getSignature()] then weapons[#weapons+1]=weapon end
+    end
+    for _,weapon in ipairs(weapons) do weapon:vanish() end
+    for _,ship in ipairs(group or {}) do
+        if shipValid(ship) then
+            self:ReleaseMoveWaypoint(ship:getSignature())
+            ship:vanish()
+        end
+    end
+end
+
+function RTS:ClearIntroScene()
+    self:VanishShipGroup(self.IntroShips)
+    self.IntroShips=nil
+    self.IntroRetreatStarted=nil
+    self:InvalidateShipList()
+end
+
+function RTS:CreateIntroScene()
+    self:ClearIntroScene()
+    self.IntroShips={}
+    -- A separate, invulnerable tableau keeps the briefing fight out of the
+    -- real stations, economy, losses and commissioned fleet histories.
+    local cast={
+        {'GTC Fenris',-900,0,0,mn.Teams.friendly},
+        {'SC Lilith',900,0,0,mn.Teams.hostile},
+        {'GTF Hercules',-450,150,-450,mn.Teams.friendly},
+        {'SF Mara',450,150,450,mn.Teams.hostile},
+        {'GTB Medusa',-1100,-180,300,mn.Teams.friendly},
+        {'SB Nephilim',1100,-180,-300,mn.Teams.hostile},
+    }
+    for i,item in ipairs(cast) do
+        local ship=mn.createShip('RTS Intro '..i,tb.ShipClasses[item[1]],nil,
+            vec(item[2],45000+item[3],item[4]),item[5],true)
+        if not shipAlive(ship) then self:ClearIntroScene(); assert(false,'Intro ship creation failed: '..item[1]) end
+        self.IntroShips[i]=ship
+        ship:setFlag(true,'invulnerable','no-shields')
+        ship.Orientation=vec(i%2==1 and 1 or -1,0,0):getOrientation()
+        self:EnableFullArsenal(ship)
+        ship:clearOrders()
+    end
+    for i,ship in ipairs(self.IntroShips) do
+        local target=self.IntroShips[i%2==1 and 2 or 1]
+        ship.Target=target
+        if ship:giveOrder(ORDER_ATTACK,target,nil,.95)~=true then
+            self:ClearIntroScene()
+            assert(false,'Intro attack order refused')
+        end
+    end
+    self:InvalidateShipList()
+end
+
+-- Random skirmish shown behind the escalation setup panel. It is a separate,
+-- invulnerable group on the map: START vanishes it before the real bases and
+-- fleets spawn, so none of it counts as a faction, base or loss.
+local SETUP_BACKDROP_PAIRS=3
+local SETUP_BACKDROP_CLASSES={
+    friendly={'GTC Fenris','GTF Hercules','GTB Medusa'},
+    hostile={'SC Lilith','SF Mara','SB Nephilim'},
+}
+
+-- A private generator: the global math.random stream drives the seeded headless
+-- runs, and the backdrop must not shift their draws.
+local function backdropRandom(seed)
+    local state=seed%2147483647
+    if state<=0 then state=1 end
+    return function(lo,hi)
+        state=(state*48271)%2147483647
+        return lo+(state/2147483647)*(hi-lo)
+    end
+end
+
+function RTS:CreateSetupBackdrop()
+    self:ClearSetupBackdrop()
+    self.SetupBackdropSeed=((self.SetupBackdropSeed or 0)+os.time()*1000+math.floor(os.clock()*1000))%2147483647
+    local rand=backdropRandom(self.SetupBackdropSeed)
+    local half=self:GetTacticalMapHalfExtent()*0.5
+    local ships={}
+    for pair=1,SETUP_BACKDROP_PAIRS do
+        local angle=rand(0,2*math.pi)
+        local radius=rand(0.2,0.8)*half
+        local cx,cz=math.cos(angle)*radius,math.sin(angle)*radius
+        local dir=rand(0,2*math.pi)
+        local ox,oz=math.cos(dir)*500,math.sin(dir)*500
+        local sides={
+            {kind='friendly',team=mn.Teams.friendly,x=cx-ox,z=cz-oz},
+            {kind='hostile',team=mn.Teams.hostile,x=cx+ox,z=cz+oz},
+        }
+        for side,item in ipairs(sides) do
+            local pool=SETUP_BACKDROP_CLASSES[item.kind]
+            local className=pool[math.floor(rand(1,#pool+1))]
+            local ship=mn.createShip('RTS Setup '..pair..'-'..side,tb.ShipClasses[className],nil,
+                vec(item.x,0,item.z),item.team,true)
+            if not shipAlive(ship) then self:VanishShipGroup(ships); assert(false,'Setup backdrop ship creation failed: '..className) end
+            ships[#ships+1]=ship
+            ship:setFlag(true,'invulnerable','no-shields')
+            self:EnableFullArsenal(ship)
+            ship:clearOrders()
+        end
+    end
+    -- Ships are created in opposing pairs, so each pair is (ships[i], ships[i+1]).
+    for i=1,#ships,2 do
+        local a,b=ships[i],ships[i+1]
+        a.Orientation=(b.Position-a.Position):getOrientation()
+        b.Orientation=(a.Position-b.Position):getOrientation()
+        a.Target=b; b.Target=a
+        if a:giveOrder(ORDER_ATTACK,b,nil,.95)~=true or b:giveOrder(ORDER_ATTACK,a,nil,.95)~=true then
+            self:VanishShipGroup(ships)
+            assert(false,'Setup backdrop attack order refused')
+        end
+    end
+    self.SetupBackdropShips=ships
+    self:InvalidateShipList()
+end
+
+function RTS:ClearSetupBackdrop()
+    self:VanishShipGroup(self.SetupBackdropShips)
+    self.SetupBackdropShips=nil
+    self:InvalidateShipList()
 end
 
 function RTS:StartIntroCinematic()
@@ -103,10 +236,10 @@ function RTS:StartIntroCinematic()
         return
     end
 
+    self:CreateIntroScene()
     self.CinematicActive = true
     self.CinematicElapsed = 0
     self.CinematicShotIndex = 1
-    self.CinematicShotProgress = 0
     self.CinematicTailHold = nil
     self.CinematicCaption = nil
     self.CinematicSubcaption = nil
@@ -121,11 +254,13 @@ end
 
 function RTS:EndIntroCinematic(skipped)
     if not self.CinematicActive then return end
+    self:ClearIntroScene()
     self.CinematicActive = false
     self.CinematicCaption = nil
     self.CinematicSubcaption = nil
     self.CinematicFaction = nil
     self.CinematicCaptionAlpha = 0
+    self.IntroFadeInUntil=not skipped and self:UINow()+1 or nil
     io.setCursorHidden(false)
 
     local c = self.Config.Camera
@@ -173,7 +308,7 @@ function RTS:UpdateIntroCinematic(dt)
             local tail = math.max(0, (cfg.EndHoldSeconds) or 0)
             if tail <= 0 then self:EndIntroCinematic(false) return end
             hold = { position = self.Camera.Position, orientation = self.Camera.Orientation:copy(), time = 0, duration = tail }
-            if last ~= nil and last.to ~= nil then
+            if last ~= nil and last.to ~= nil and not last.subject then
                 local look = last.target or last.targetTo or last.targetFrom
                 if look ~= nil then
                     hold.direction = vec(look.x-last.to.x, look.y-last.to.y, look.z-last.to.z):getOrientation()
@@ -182,29 +317,43 @@ function RTS:UpdateIntroCinematic(dt)
             self.CinematicTailHold = hold
         end
         hold.time = hold.time + math.max(0, dt or 0)
-        -- Slow lateral drift through the final framing while it resolves.
-        local drift = math.min(1, hold.time / math.max(0.001, hold.duration))
-        local base = hold.position
-        local swing = math.sin(drift * math.pi) * (base.x * 0.02 + 400)
-        local position = vec(base.x + swing, base.y, base.z)
+        -- Hold the final pose while fading out; moving it again made the cut lurch.
+        local fade = math.min(1, hold.time / math.max(0.001, hold.duration))
         local orientation = hold.direction or hold.orientation
-        self.Camera.Position = position
+        self.Camera.Position = hold.position
         self.Camera.Orientation = orientation:copy()
         gr.setCamera(self.Camera)
         self.CinematicShotIndex = #shots
-        self.CinematicShotProgress = 1
-        self.CinematicCaptionAlpha = 255
+        self.CinematicCaptionAlpha = math.floor(255*(1-fade))
         if hold.time >= hold.duration then self:EndIntroCinematic(false) end
         return
     end
 
     self.CinematicTailHold = nil
     self.CinematicShotIndex = shotIndex
+    if shotIndex>=5 and not self.IntroRetreatStarted and shipAlive((self.IntroShips or {})[5]) then
+        local bomber=self.IntroShips[5]
+        bomber.HitpointsLeft=bomber.HitpointsMax*.3
+        local waypoint=self:GetOrCreateMoveWaypoint(bomber)
+        assert(objectValid(waypoint),'Intro withdrawal waypoint creation failed')
+        waypoint.Position=vec(-4000,45000,1200)
+        bomber:clearOrders()
+        assert(bomber:giveOrder(ORDER_WAYPOINTS_ONCE,waypoint,nil,.98)==true,'Intro withdrawal order refused')
+        self.IntroRetreatStarted=true
+    end
     local p1 = shot.from
     if p1 == nil then self:EndIntroCinematic(false) return end
     local p2 = shot.to or p1
     local target1 = shot.targetFrom or shot.target or p2
     local target2 = shot.targetTo or shot.target or target1
+    local subject=(self.IntroShips or {})[shot.subject or 0]
+    if shipAlive(subject) then
+        local anchor=subject.Position
+        p1={x=anchor.x+p1.x,y=anchor.y+p1.y,z=anchor.z+p1.z}
+        p2={x=anchor.x+p2.x,y=anchor.y+p2.y,z=anchor.z+p2.z}
+        target1={x=anchor.x+target1.x,y=anchor.y+target1.y,z=anchor.z+target1.z}
+        target2={x=anchor.x+target2.x,y=anchor.y+target2.y,z=anchor.z+target2.z}
+    end
 
     local hold = math.max(0, shot.hold or 0)
     local moveDuration = math.max(0.001, shotDuration - hold)
@@ -235,7 +384,6 @@ function RTS:UpdateIntroCinematic(dt)
     self.CinematicSubcaption = shot.subcaption
     -- Keep the caption up through the hold beat, then fade with the move.
     local t = clamp((self.CinematicElapsed - shotStart) / math.max(0.001, shotDuration), 0, 1)
-    self.CinematicShotProgress = t
     local fade = math.min(1, t / 0.14, (1 - t) / 0.14)
     self.CinematicCaptionAlpha = math.floor(255 * clamp(fade, 0, 1))
 end
@@ -244,34 +392,12 @@ function RTS:DrawCinematicOverlay(sw, sh)
     local cfg = self.Config.Cinematic or {}
     local m = self:GetUIMetrics(sw, sh)
     local edge = m.pad(40)
-    local bar = math.max(78, math.floor(sh * 0.13))
+    local lines=self:WrapTextLinesToWidth(self.CinematicSubcaption or '',sw-2*m.pad(80),3)
+    -- Reserve the persistent hints-key footer beneath every wrapped caption.
+    local bar = math.max(78, math.floor(sh * 0.13),m.pad(40)+(2+#lines)*m.lineHeight)
     gr.setColor(0, 0, 0, 255)
     gr.drawRectangle(0, 0, sw, bar, true)
     gr.drawRectangle(0, sh - bar, sw, sh, true)
-
-    local count = #((cfg.Shots) or {})
-    if count > 0 then
-        local index = self.CinematicShotIndex or 1
-        local progress = clamp(self.CinematicShotProgress or 0, 0, 1)
-        -- The progress track is sized from the screen rather than left at a
-        -- fixed 260px, which on a 4K panel left the shot counter stranded in
-        -- the left eighth of the bar.
-        local trackW = clamp(math.floor(sw * 0.22), m.pad(260), m.pad(900))
-        local tx1 = edge
-        local ty1 = bar - 20
-        gr.setColor(70, 92, 104, 220)
-        gr.drawRectangle(tx1, ty1, tx1 + trackW, ty1 + 4, true)
-        gr.setColor(120, 220, 245, 235)
-        gr.drawRectangle(tx1, ty1, tx1 + math.max(2, math.floor(trackW * progress)), ty1 + 4, true)
-        for i = 1, count do
-            local cx = tx1 + math.floor(((i - 1) / math.max(1, count - 1)) * trackW)
-            local active = i == index
-            gr.setColor(active and 245 or 90, active and 235 or 105, active and 160 or 120, active and 255 or 190)
-            gr.drawRectangle(cx - 1, ty1 - 3, cx + 1, ty1 + 7, true)
-        end
-        gr.setColor(160, 200, 215, 220)
-        self:DrawCenteredTextClipped(string.format("SHOT %d/%d", index, count), tx1 + trackW + 12, sw - edge, ty1 - 6)
-    end
 
     local alpha = self.CinematicCaptionAlpha or 255
     if self.CinematicFaction ~= nil then
@@ -286,13 +412,16 @@ function RTS:DrawCinematicOverlay(sw, sh)
     end
     if self.CinematicCaption ~= nil then
         gr.setColor(220, 238, 245, alpha)
-        self:DrawCenteredTextClipped(self.CinematicCaption, edge, sw - edge, sh - bar + 16)
+        self:DrawCenteredTextClipped(self.CinematicCaption, edge, sw - edge, sh - bar + m.pad(16))
     end
     if self.CinematicSubcaption ~= nil then
         gr.setColor(120, 205, 225, alpha)
-        self:DrawCenteredWrappedText(self.CinematicSubcaption, m.pad(80), sw - m.pad(80), sh - bar + 43, 104, 18, 3)
+        for i,line in ipairs(lines) do
+            self:DrawCenteredTextClipped(line,m.pad(80),sw-m.pad(80),sh-bar+m.pad(24)+i*m.lineHeight)
+        end
     end
 
+    if self.ShowHotkeyHints==false then return end
     local switchHint = ""
     if cfg.AllowSkip ~= false then
         local parts = { "PRESS ANY KEY OR MOUSE BUTTON TO SKIP" }

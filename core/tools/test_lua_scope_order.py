@@ -68,6 +68,21 @@ class ShippedRegressionTests(unittest.TestCase):
         # the report must name the declaration line, or it is not actionable
         self.assertIn("5", found[0].detail)
 
+    def test_a_name_in_a_multi_name_local_declaration_is_not_a_global(self):
+        """`local a, b = ...` declares b too. The name after a comma used to be
+        taken for a module global, so an early read of it passed as harmless
+        shadowing (info) instead of the nil read it is. The split HUD imports its
+        shared colour tables through exactly this kind of declaration."""
+        src = (
+            "function RTS:DrawTacticalMap()\n"
+            "    return RETICLE_COLORS.friendly\n"              # line 2: too early
+            "end\n"
+            "local RTS, clamp, RETICLE_COLORS = {}, 1, {}\n"   # line 4
+        )
+        found = errors(src)
+        self.assertEqual([f.name for f in found], ["RETICLE_COLORS"])
+        self.assertEqual(found[0].kind, "out-of-scope-local")
+
     def test_the_hud_hoist_fix_is_what_makes_it_clean(self):
         """The shipped fix (hoisting the block above its first use) must clear
         it. If this fails, the fix was reverted."""
@@ -306,8 +321,6 @@ class ShippedModTests(unittest.TestCase):
     """The mod itself must be clean, and the checker must be proven to notice
     when it is not."""
 
-    FILES = 24
-
     def test_no_shipped_script_has_an_out_of_scope_read(self):
         problems = [f.format() for f in checker.check() if f.level == "error"]
         self.assertEqual(
@@ -315,12 +328,10 @@ class ShippedModTests(unittest.TestCase):
             "reads that resolve to a nil global:\n  " + "\n  ".join(problems))
 
     def test_the_checker_still_scans_every_shipped_script(self):
-        """A checker that silently scans zero files passes everything. Pin the
-        count so deleting or renaming a module cannot disable it."""
-        names = {p.name for p in SCRIPTS.glob("*.lua")}
-        self.assertEqual(len(names), self.FILES,
-                         f"expected {self.FILES} scripts, found {len(names)}: "
-                         f"{sorted(names)}")
+        """Do not accept an empty tree; required-module closure is checked separately."""
+        names = {p.name for p in SCRIPTS.rglob("*.lua")}
+        self.assertTrue(names,'no scripts were inspected')
+        self.assertIn('fs2rts.lua',names,'mission scripting entrypoint is missing')
 
     def test_every_script_is_actually_analysed(self):
         """A parse failure must be loud. Silently skipping a file that the
@@ -328,7 +339,7 @@ class ShippedModTests(unittest.TestCase):
         whose blocks do not balance makes every scope decision below the
         imbalance wrong."""
         smallest = None
-        for path in sorted(SCRIPTS.glob("*.lua")):
+        for path in sorted(SCRIPTS.rglob("*.lua")):
             text = path.read_text(encoding="utf-8", errors="replace")
             tokens = checker.tokenize(text)
             self.assertGreater(
@@ -362,8 +373,10 @@ class ShippedModTests(unittest.TestCase):
         above. Inject the real defect into a real file and require it to fire."""
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            for p in SCRIPTS.glob("*.lua"):
-                shutil.copy(p, root / p.name)
+            for p in SCRIPTS.rglob("*.lua"):
+                target = root / p.relative_to(SCRIPTS)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(p, target)
             clean = checker.check(root)
             self.assertEqual([f for f in clean if f.level == "error"], [],
                              "the copied tree should start clean")
@@ -427,7 +440,7 @@ class EngineAllowlistTests(unittest.TestCase):
         generated = set(gen.FSO_LUA_GLOBALS)
         only_extra = set(checker.ENGINE_EXTRA_GLOBALS) - generated
         offenders = set()
-        for path in sorted(SCRIPTS.glob("*.lua")):
+        for path in sorted(SCRIPTS.rglob("*.lua")):
             text = path.read_text(encoding="utf-8", errors="replace")
             # restrict to what the EXTRA list alone would rescue
             rescued = checker.analyze(

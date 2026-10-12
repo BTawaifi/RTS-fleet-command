@@ -1,0 +1,206 @@
+#Ship Classes
+; Compact FS1 models from FSPort 3.7.3, rebuilt as standalone FS2 ship entries.
+; Default/allowed weapons intentionally use retail FS2 classes only.
+; Physics, reactor and countermeasure values retain the FSPort FS1 profiles.
+; Standalone entries must declare these: upstream defaults are zero.
+$Name: GTF Apollo
+$Short name: TFight4
+$Species: Terran
+$POF file: fighter04.pof
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Density: 1
+$Damp: 0.2
+$Rotdamp: 0.35
+$Max Velocity: 0.0, 0.0, 60.0
+$Rotation Time: 3.2, 3.2, 6.0
+$Rear Velocity: 0.0
+$Forward accel: 3.0
+$Forward decel: 1.5
+$Slide accel: 0.0
+$Slide decel: 0.0
+$Allowed PBanks: ( "Subach HL-7" "Prometheus R" "Vasudan Light Laser" )
+$Default PBanks: ( "Subach HL-7" "Prometheus R" )
+$Allowed SBanks: ( "Hornet" "Rockeye" "Tempest" )
+$Default SBanks: ( "Hornet" "Hornet" )
+$SBank Capacity: ( 40, 40 )
+$Shields: 350
+$Power Output: 2.0
+$Max Oclk Speed: 82.0
+$Max Weapon Eng: 100.0
+$Hitpoints: 240
+$Flags: ( "fighter" "in tech database" "generate icon" )
+$AI Class: Captain
+$Afterburner: YES
+ +Aburn Max Vel: 0.0, 0.0, 140.0
+ +Aburn For accel: 0.7
+ +Aburn Fuel: 300.0
+ +Aburn Burn Rate: 50.0
+ +Aburn Rec Rate: 25.0
+$Countermeasures: 25
+$Score: 10
+$Subsystem: sensors, 10, 0.0
+$Subsystem: communications, 10, 0.0
+$Subsystem: engine, 35, 0.0
+$Subsystem: weapons, 20, 0.0
+$Subsystem: navigation, 10, 0.0
+
+$Name: GTF Valkyrie
+$Short name: TFight5
+$Species: Terran
+$POF file: fighter05.pof
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Density: 1
+$Damp: 0.3
+$Rotdamp: 0.27
+$Max Velocity: 0.0, 0.0, 85.0
+$Rotation Time: 3.5, 3.5, 3.5
+$Rear Velocity: 0.0
+$Forward accel: 1.0
+$Forward decel: 0.5
+$Slide accel: 0.0
+$Slide decel: 0.0
+$Allowed PBanks: ( "Subach HL-7" "Prometheus R" "Vasudan Light Laser" )
+$Default PBanks: ( "Subach HL-7" "Prometheus R" )
+$Allowed SBanks: ( "Hornet" "Rockeye" "Tempest" "Tornado" )
+$Default SBanks: ( "Hornet" )
+$SBank Capacity: ( 60 )
+$Shields: 200
+$Power Output: 2.0
+$Max Oclk Speed: 100.0
+$Max Weapon Eng: 100.0
+$Hitpoints: 200
+$Flags: ( "fighter" "in tech database" "generate icon" )
+$AI Class: Captain
+$Afterburner: YES
+ +Aburn Max Vel: 0.0, 0.0, 165.0
+ +Aburn For accel: 0.7
+ +Aburn Fuel: 400.0
+ +Aburn Burn Rate: 40.0
+ +Aburn Rec Rate: 25.0
+$Countermeasures: 20
+$Score: 10
+$Subsystem: sensors, 10, 0.0
+$Subsystem: communication, 10, 0.0
+$Subsystem: engine, 35, 0.0
+$Subsystem: weapons, 20, 0.0
+$Subsystem: navigation, 10, 0.0
+
+$Name: GTB Athena
+$Short name: TBomb1
+$Species: Terran
+$POF file: bomber01.pof
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Density: 1
+$Damp: 0.2
+$Rotdamp: 0.55
+$Max Velocity: 0.0, 0.0, 60.0
+$Rotation Time: 4.5, 4.5, 5.0
+$Rear Velocity: 0.0
+$Forward accel: 4.0
+$Forward decel: 2.0
+$Slide accel: 0.0
+$Slide decel: 0.0
+$Allowed PBanks: ( "Subach HL-7" "Prometheus R" )
+$Default PBanks: ( "Subach HL-7" "Prometheus R" )
+$Allowed SBanks: ( "Hornet" "Rockeye" "Cyclops" )
+$Default SBanks: ( "Rockeye" "Cyclops" )
+$SBank Capacity: ( 80, 80 )
+$Shields: 500
+$Power Output: 3.0
+$Max Oclk Speed: 75.0
+$Max Weapon Eng: 100.0
+$Hitpoints: 250
+$Flags: ( "bomber" "in tech database" "generate icon" )
+$AI Class: Captain
+$Afterburner: YES
+ +Aburn Max Vel: 0.0, 0.0, 120.0
+ +Aburn For accel: 0.7
+ +Aburn Fuel: 400.0
+ +Aburn Burn Rate: 50.0
+ +Aburn Rec Rate: 25.0
+$Countermeasures: 30
+$Score: 15
+$Subsystem: sensors, 10, 0.0
+$Subsystem: communications, 10, 0.0
+$Subsystem: engine 1, 15, 0.0
+$Subsystem: engine 2, 15, 0.0
+$Subsystem: weapons, 20, 0.0
+$Subsystem: navigation, 10, 0.0
+
+$Name: PVF Anubis
+$Short name: VFight
+$Species: Vasudan
+$POF file: fighter02.pof
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Density: 1
+$Damp: 0.2
+$Rotdamp: 0.4
+$Max Velocity: 0.0, 0.0, 75.0
+$Rotation Time: 3.0, 3.0, 2.5
+$Rear Velocity: 0.0
+$Forward accel: 3.0
+$Forward decel: 1.5
+$Slide accel: 0.0
+$Slide decel: 0.0
+$Allowed PBanks: ( "Vasudan Light Laser" "Subach HL-7" "Prometheus R" )
+$Default PBanks: ( "Vasudan Light Laser" )
+$Allowed SBanks: ( "Hornet" "Rockeye" "Tempest" )
+$Default SBanks: ( "Hornet" )
+$SBank Capacity: ( 60 )
+$Shields: 200
+$Power Output: 2.0
+$Max Oclk Speed: 90.0
+$Max Weapon Eng: 100.0
+$Hitpoints: 160
+$Flags: ( "fighter" "in tech database" "generate icon" )
+$AI Class: Captain
+$Afterburner: NO
+$Countermeasures: 20
+$Score: 6
+$Subsystem: sensors, 5, 0.0
+$Subsystem: communication, 10, 0.0
+$Subsystem: engine, 35, 0.0
+$Subsystem: weapons, 25, 0.0
+$Subsystem: navigation, 5, 0.0
+
+$Name: SB Shaitan
+$Short name: SBomb1
+$Species: Shivan
+$POF file: bomber03.pof
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Density: 1
+$Damp: 0.2
+$Rotdamp: 0.5
+$Max Velocity: 15.0, 15.0, 60.0
+$Rotation Time: 4.0, 3.0, 10.0
+$Rear Velocity: 15.0
+$Forward accel: 4.0
+$Forward decel: 2.0
+$Slide accel: 2.0
+$Slide decel: 2.0
+$Allowed PBanks: ( "Shivan Light Laser" "Shivan Heavy Laser" )
+$Default PBanks: ( "Shivan Light Laser" "Shivan Heavy Laser" )
+$Allowed SBanks: ( "Hornet" "Rockeye" "Shivan Cluster" )
+$Default SBanks: ( "Rockeye" )
+$SBank Capacity: ( 40 )
+$Shields: 1000
+$Power Output: 3.0
+$Max Oclk Speed: 72.0
+$Max Weapon Eng: 100.0
+$Hitpoints: 400
+$Flags: ( "bomber" "in tech database" "generate icon" )
+$AI Class: Captain
+$Afterburner: NO
+$Countermeasures: 0
+$Score: 15
+$Subsystem: sensors, 10, 0.0
+$Subsystem: communication, 10, 0.0
+$Subsystem: engine, 35, 0.0
+$Subsystem: weapons, 15, 0.0
+$Subsystem: navigation, 5, 0.0
+#End

@@ -5,10 +5,10 @@
   "title": "FreeSpace RTS: Fleet Command",
   "type": "mod",
   "parent": "FS2",
-  "version": "1.4.1",
+  "version": "1.4.5",
   "private": false,
   "stability": null,
-  "description": "Turn FreeSpace 2 into a real-time fleet-command battle. Set up a two- or three-faction skirmish, build fighters, bombers, cruisers and capital ships, and direct your fleet from an RTS camera and interactive minimap. Issue move, attack, guard, hold and engage orders, manage command points and reinforcements, then possess a fighter or bomber and fly with FreeSpace Open's native HUD and controls. Includes the one-mission FS2 RTS - Escalation campaign. Requires retail FreeSpace 2 assets and FreeSpace Open 26.0.1; MediaVPs are optional.",
+  "description": "Command up to twelve independent fleets from FreeSpace 1, Silent Threat and FreeSpace 2. Choose GTA, PVN, GTVA, the Vasudan Empire, NTF, loyal or rogue GTI, Hammer of Light or Shivans, with faction rosters, command abilities, insignias and unique selectable colors. Build and direct fighters, bombers, escorts and capital ships from an RTS camera, or pilot them with native FSO controls. Includes the FS2 RTS - Escalation campaign. Requires retail FreeSpace 2 assets and upstream FreeSpace Open; MediaVPs are optional.",
   "notes": null,
   "logo": "artwork/logo.jpg",
   "tile": "artwork/tile.jpg",
@@ -18,8 +18,8 @@
   "screenshots": null,
   "attachments": [],
   "first_release": "2026-09-23",
-  "last_update": "2026-09-26",
-  "cmdline": "-no_unfocused_pause -campaign FS2_RTS_Escalation -start_mission FS2_RTS_Escalation",
+  "last_update": "2026-10-08",
+  "cmdline": "-window -render_res 1280x720 -nomovies -no_unfocused_pause -campaign FS2_RTS_Escalation -start_mission FS2_RTS_Escalation",
   "mod_flag": [
     "RTS-fleet-command",
     "MVPS"
@@ -48,9 +48,9 @@
           "dest": "",
           "checksum": [
             "sha256",
-            "920cceaa7dfb48b9979c9a94eeb4f2e8dd461a58e514106b0a17e1c3c2de9ae5"
+            "0f5addef0d9641dd87f80be7ea5071aca56ffb008ea1868726ee24586708450a"
           ],
-          "filesize": 10836769
+          "filesize": 11706882
         }
       ],
       "filelist": [
@@ -60,7 +60,7 @@
           "orig_name": "core.vp",
           "checksum": [
             "sha256",
-            "a7f92e8b5d976694fd9215a330145bbd4e8a3e4777964d2720ad66dca6c6a848"
+            "f0fb649ff3aaea3cc85d9573d74c3339752dd77c7fefa2dcd5d79b324dba772b"
           ]
         }
       ],

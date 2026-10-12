@@ -6,13 +6,10 @@ Answers one question per requested change, and for a finished battle it says who
 killed which base, with what, and from what state, using the OUTCOME_CAUSE record
 the mod emits the instant a command station dies.
 
-A missing engine-result.json is NOT a crash. A 3,000 s headless match reaches the
-simulation cap and then dies at mission teardown with no Lua error and no engine
-output, so the runner never gets to write engine-result.json while the telemetry
-on disk is complete and well formed. This tool therefore classifies the run by
-what the telemetry itself proves -- records read, last simulated second, cap
-progress, BATTLE_END, OUTCOME_CAUSE -- and only calls a match crashed when there
-is no usable telemetry at all or the engine result itself says it crashed.
+Missing telemetry/result means unknown completion, not a crash or a cap.
+Only explicit native results establish caps; only globalResolved BATTLE_END
+establishes a strategic outcome. Personal reports remain separate. Frozen run
+evidence is included; descriptive statistics are not gameplay acceptance.
 
     python tools/analyze_batch.py <batch-output-dir> [--baseline <other-output-dir>]
 
@@ -60,6 +57,7 @@ import math
 import re
 import sys
 from pathlib import Path
+from run_evidence import inspect_run, valid_record
 
 CAPITAL_ROLES = {"capital", "heavy", "juggernaut"}
 MIN_ENEMY_SEPARATION = 12000.0
@@ -70,7 +68,30 @@ ERROR_PATTERNS = re.compile(
     r"is not valid|not found!|Script error|error loading|unpack_loop|nil value)",
     re.IGNORECASE,
 )
-FACTIONS = ("BLUE", "RED", "GOLD")
+BASE_FACTIONS = ("BLUE", "RED", "GOLD")
+FACTIONS = BASE_FACTIONS
+
+
+def faction_order_key(key: str):
+    if key in BASE_FACTIONS:
+        return (0, BASE_FACTIONS.index(key))
+    match = re.fullmatch(r"FACTION_(\d+)", str(key))
+    return (1, int(match.group(1))) if match else (2, str(key))
+
+
+def observed_factions(matches) -> tuple[str, ...]:
+    keys=set(BASE_FACTIONS)
+    maps=("stations","battle","build","execution","contest","flow","flow_cumulative",
+          "units_spawned","cp_spent","cp_queued","cp_sentry","cp_service","upgrade_spend",
+          "repair_unlocked","repair_gate_known","damage","base_damage_by_faction","friendly",
+          "service","repair","losses","received")
+    for match in matches:
+        for name in maps:
+            value=match.get(name)
+            if isinstance(value,dict): keys.update(key for key in value if isinstance(key,str))
+        cause=match.get("outcome_cause") or {}
+        keys.update((cause.get("snapshot") or {}).keys())
+    return tuple(sorted(keys,key=faction_order_key))
 
 # A match that reached this fraction of the planned simulation cap was stopped by
 # the cap, not by a defect. Below it, the run was killed and we say so.
@@ -177,7 +198,8 @@ def new_match():
         "records": 0, "malformed_lines": 0, "truncated_tail": False,
         "telemetry": None, "telemetry_state": "absent", "result_present": False,
         "first_time": None, "last_time": None,
-        "battle_end": False, "outcome": None, "crashed": False, "log_errors": [],
+        "battle_end": False, "outcome": None, "global_resolved": False,
+        "personal_report": None, "crashed": False, "log_errors": [],
         "events": collections.Counter(),
         "unhandled_events": collections.Counter(),
         "capital_spawns": [], "cp_spent": collections.Counter(), "cp_queued": collections.Counter(),
@@ -221,6 +243,7 @@ def new_match():
         }),
         "cp_service": collections.defaultdict(float),
         "cp_spend_ledger": collections.defaultdict(float),
+        "cp_spend_at_snapshot": {},
         "cp_spend_entries": 0,
         "upgrade_spend": collections.defaultdict(float),
         "flow_cumulative": collections.defaultdict(collections.Counter),
@@ -242,7 +265,7 @@ def _scan_line(line: str, out) -> bool:
     not parse -- a killed run can leave the last record half written."""
     try:
         record = json.loads(line)
-        if not isinstance(record, dict):
+        if not valid_record(record):
             raise ValueError("record is not a JSON object")
     except ValueError:
         out["malformed_lines"] += 1
@@ -350,7 +373,11 @@ def accumulate(out, record) -> None:
         })
     elif event == "BATTLE_END":
         out["battle_end"] = True
-        out["outcome"] = data.get("result")
+        out['global_resolved'] = data.get('globalResolved') is True
+        if out['global_resolved']:
+            out['outcome'] = data.get('victorFaction')
+        else:
+            out['personal_report'] = data.get('result')
     elif event == "OUTCOME_CAUSE":
         out["outcome_cause"] = data
     elif event == "ACCEPTANCE_SETUP":
@@ -466,11 +493,12 @@ def _faction(out, data, when) -> None:
     upgrade_spend = _number(economy.get("upgradeSpend"))
     if upgrade_spend is not None:
         out["upgrade_spend"][kind] = max(out["upgrade_spend"][kind], upgrade_spend)
-    # flowCumulative is the running total behind economy.flow, so it accounts for
-    # spend made after the final FACTION record - the trailing tail that makes
-    # the summed intervals disagree with the event stream on every run. Another
-    # cumulative gauge, so last value wins, not a sum of the series.
+    # The producer writes chronological records. Capture the ledger prefix at
+    # this snapshot, including same-time records before it but not later ones.
+    # Cumulative gauges still cannot observe spend after their last publication.
     cumulative_flow = economy.get("flowCumulative") or {}
+    if _number(cumulative_flow.get('productionSpend')) is not None:
+        out['cp_spend_at_snapshot'][kind] = out['cp_spend_ledger'].get(kind, 0.0)
     for name, total in cumulative_flow.items():
         number = _number(total)
         if number is not None:
@@ -587,16 +615,13 @@ def classify(out) -> None:
     """Decide what actually ended the match, from the evidence on disk, and set
     `crashed` only when nothing usable came out of the run."""
     plan_cap = out["cap_seconds"]
-    reached = (out["records"] > 0 and plan_cap > 0
-               and out["last_time"] is not None
-               and out["last_time"] >= CAP_REACHED_FRACTION * plan_cap)
 
     if out["records"] == 0:
         out["termination"] = "no_telemetry"
         out["termination_detail"] = (
             "telemetry file is empty" if out["telemetry_state"].startswith("empty")
             else "no telemetry JSONL found")
-        out["crashed"] = True
+        out["crashed"] = False
         return
 
     reported = (out["result_termination"] or "").lower()
@@ -607,16 +632,16 @@ def classify(out) -> None:
     elif reported in ("mission_exit", "battle_end", "victory", "defeat", "complete"):
         out["termination"] = "mission_exit"
         out["termination_detail"] = f"engine-result termination={out['result_termination']!r}"
-    elif out["battle_end"]:
+    elif out["global_resolved"]:
         out["termination"] = "battle_end"
         out["termination_detail"] = f"BATTLE_END result={out['outcome']!r}"
     elif out["outcome_cause"]:
         out["termination"] = "station_destroyed"
         out["termination_detail"] = ("OUTCOME_CAUSE emitted but no BATTLE_END; "
                                      "mission did not return a result")
-    elif out["result_time_limit"] or "time" in reported or reached:
+    elif out["result_time_limit"]:
         out["termination"] = "simulation_cap"
-        out["cap_inferred"] = bool(reached and not out["result_time_limit"])
+        out["cap_inferred"] = False
         progress = pct(out["last_time"], plan_cap) if plan_cap else 0.0
         out["termination_detail"] = (
             f"stopped at t={out['last_time']:.0f}s of the {plan_cap:.0f}s cap ({progress:.1f}%)"
@@ -627,13 +652,11 @@ def classify(out) -> None:
         out["termination"] = out["result_termination"]
         out["termination_detail"] = f"engine-result termination={out['result_termination']!r}"
     else:
-        out["termination"] = "killed_without_result"
+        out["termination"] = "unknown_without_result"
         out["termination_detail"] = (
             f"telemetry ends at t={out['last_time']:.0f}s, "
             f"{pct(out['last_time'], plan_cap):.1f}% of the {plan_cap:.0f}s cap, "
-            "and the runner wrote no engine-result.json: stopped before the cap, "
-            "killed mid-match (a wall-clock runner timeout and an engine teardown "
-            "crash look identical without wall_seconds)"
+            "and the runner wrote no engine-result.json: termination is unknown"
             if plan_cap else
             "telemetry ends mid-match and the runner wrote no engine-result.json")
 
@@ -644,6 +667,7 @@ def classify(out) -> None:
 def analyze(run: Path, telemetry: Path | None = None) -> dict:
     out = new_match()
     out["run"] = str(run)
+    out['evidence'] = inspect_run(run)
 
     result_path = run / "engine-result.json"
     out["result_present"] = result_path.is_file()
@@ -663,12 +687,10 @@ def analyze(run: Path, telemetry: Path | None = None) -> dict:
                 out["wall_seconds"] = float(result.get("wall_seconds") or 0.0)
                 out["result_time_limit"] = bool(result.get("time_limit_reached"))
                 out["result_crashed"] = bool(result.get("crashed"))
-    # Missing engine-result.json is normal for a cap-terminated match; only say
-    # so when there is nothing else to go on.
+    # A healthy trace cannot identify why the process stopped.
     if not out["result_present"] and not out["log_errors"]:
         out["log_errors"].append(
-            "no engine-result.json (normal for a cap-terminated headless run; "
-            "termination inferred from telemetry)")
+            "no engine-result.json (completion unverified)")
     if out["seed"] is None:
         # engine-result.json carries `seed`, but the engine only flushes it when
         # it exits on its own. results/results.jsonl records the same seed per
@@ -695,7 +717,7 @@ def analyze(run: Path, telemetry: Path | None = None) -> dict:
         out["telemetry_state"] = "absent"
         out["termination"] = "no_telemetry"
         out["termination_detail"] = "no telemetry JSONL under this run folder"
-        out["crashed"] = True
+        out["crashed"] = False
         return out
     out["telemetry"] = path.name
     scan_telemetry(path, out)
@@ -744,14 +766,14 @@ def _build_stats(slot):
 def report(matches, label, verbose):
     print(f"\n{'=' * 78}\n{label}  ({len(matches)} matches)\n{'=' * 78}")
     crashed = [m for m in matches if m["crashed"]]
-    natural = [m for m in matches if m["termination"] in ("mission_exit", "battle_end")]
+    natural = [m for m in matches if m['global_resolved']]
     capped = [m for m in matches if m["time_limit"]]
-    killed = [m for m in matches if m["termination"] == "killed_without_result"]
+    killed = [m for m in matches if m["termination"] == "unknown_without_result"]
     errors = [e for m in matches for e in m["log_errors"] if not e.startswith("no engine-result")]
-    print(f"crashed / no telemetry : {len(crashed)}")
-    print(f"natural terminal       : {len(natural)}  (mission_exit + BATTLE_END)")
+    print(f"crashed / no telemetry : {len(crashed)}  (explicit crashes only; missing telemetry is unknown)")
+    print(f"natural terminal       : {len(natural)}  (explicit global strategic result)")
     print(f"hit simulation cap     : {len(capped)}")
-    print(f"stopped short of cap   : {len(killed)}  (telemetry healthy, no engine-result.json)")
+    print(f"unknown termination   : {len(killed)}  (telemetry alone cannot establish completion)")
     print(f"telemetry records      : {sum(m['records'] for m in matches)}")
     print(f"engine log errors      : {len(errors)}")
     for line in errors[:10]:
@@ -801,6 +823,7 @@ def report(matches, label, verbose):
         running = sum(m["flow_cumulative"][faction].get("productionSpend", 0.0)
                       for m in matches)
         ledger = sum(m["cp_spend_ledger"].get(faction, 0) for m in matches)
+        matched_ledger = sum(m['cp_spend_at_snapshot'].get(faction, 0) for m in matches)
         upgrades = sum(m["upgrade_spend"].get(faction, 0) for m in matches)
         income = sum(m["flow"][faction].get("income", 0.0) for m in matches)
         bounty = sum(m["flow"][faction].get("bounty", 0.0) for m in matches)
@@ -810,34 +833,36 @@ def report(matches, label, verbose):
               f"unattributed {series - queued - sentry - service:8.0f}  income {income:9.0f}  bounty {bounty:8.0f}"
               f"   units spawned {spawned:6}")
         if ledger:
-            print(f"        CP_SPEND ledger {ledger:10.0f} in {sum(m['cp_spend_entries'] for m in matches)}"
-                  f" deductions   economy.flowCumulative {running:10.0f}"
+            print(f"        CP_SPEND ledger {ledger:10.0f}; snapshot prefix {matched_ledger:10.0f}"
+                  f"   economy.flowCumulative {running:10.0f}"
                   f"   station upgrade spend {upgrades:.0f}")
     # The reconciliation assertion, and the two ways it can fail.
     #
     # `unattributed` above is not itself a defect: station upgrades and the
     # faction ability reach the flow without a purchase event. What must hold is
-    # CP_SPEND (one record per CP movement) against economy.flowCumulative (the
-    # running total behind the interval flow). Both are written by the same
-    # chokepoint, so any drift means a CP movement stopped being recorded.
-    ledger_total = sum(sum(m["cp_spend_ledger"].values()) for m in matches)
+    # Compare the ledger prefix covered by each cumulative snapshot. A capped
+    # run can keep emitting deductions after its final FACTION publication.
+    ledger_total = sum(sum(m['cp_spend_at_snapshot'].values()) for m in matches)
+    all_ledger = sum(sum(m['cp_spend_ledger'].values()) for m in matches)
     running_total = sum(sum(m["flow_cumulative"][f].get("productionSpend", 0.0)
                             for f in FACTIONS) for m in matches)
     entries = sum(m["cp_spend_entries"] for m in matches)
-    if entries:
+    snapshots = sum(len(m['cp_spend_at_snapshot']) for m in matches)
+    if entries and not snapshots:
+        print('  reconciliation: no cumulative spend snapshots; verdict unavailable')
+    elif entries:
         drift = ledger_total - running_total
         share = abs(drift) / running_total * 100 if running_total else 0.0
         status = "OK" if share <= 0.5 else "MISMATCH"
-        print(f"  reconciliation: CP_SPEND ledger {ledger_total:.0f} CP over {entries} deductions"
+        print(f"  reconciliation: CP_SPEND ledger at matching snapshots {ledger_total:.0f} CP"
               f" vs economy.flowCumulative {running_total:.0f} CP"
               f" -> drift {drift:+.0f} CP ({share:.2f}%) {status}")
-        tail = running_total - flow_series
+        tail = all_ledger - ledger_total
         if abs(tail) > 0.5:
-            print(f"    summed intervals under-report by {tail:.0f} CP: spend after the final"
-                  f" FACTION record of each match belongs to an interval nobody reports")
+            print(f"    ledger tail not covered by cumulative snapshots: {tail:.0f} CP"
+                  " (unobserved, not an accounting verdict)")
         if status != "OK":
-            print("    a CP movement is not reaching RecordAIEconomyFlow, so the flow total"
-                  " and the per-deduction ledger have diverged")
+            print("    the ledger and cumulative flow disagree within the observed span")
     elif running_total:
         print(f"  reconciliation: no CP_SPEND records, so economy.flowCumulative {running_total:.0f} CP"
               f" has no second view to be checked against")
@@ -873,7 +898,7 @@ def report(matches, label, verbose):
         counts = collections.Counter(str(r["class"]) for r in rows)
         print("  hulls seen: " + ", ".join(f"{k} x{v}" for k, v in counts.most_common()))
 
-    print("\n-- base damage per hit (15% beam cap) --")
+    print("\n-- base damage per hit (observed) --")
     print("  cumulative per-faction totals, last FACTION snapshot of each match")
     hits, damage = collections.Counter(), collections.Counter()
     for match in matches:
@@ -971,23 +996,23 @@ def report(matches, label, verbose):
     for match in matches:
         series = {k: sorted(v) for k, v in match["battle"].items()}
         blue = series.get("BLUE") or []
-        red = series.get("RED") or []
-        gold = series.get("GOLD") or []
-        if not blue or not (red or gold):
+        rivals = [series.get(faction) or [] for faction in FACTIONS if faction!="BLUE"]
+        rivals = [other for other in rivals if other]
+        if not blue or not rivals:
             continue
         comparable += 1
         previous = None
         changes = 0
         for index, (t, state) in enumerate(blue):
             value = state.get("value") or 0
-            rivals = []
-            for other in (red, gold):
+            rival_values = []
+            for other in rivals:
                 if index < len(other):
-                    rivals.append(other[index][1].get("value") or 0)
-            if not rivals:
+                    rival_values.append(other[index][1].get("value") or 0)
+            if not rival_values:
                 continue
             samples_total += 1
-            leader = "BLUE" if value > max(rivals) else "OTHER"
+            leader = "BLUE" if value > max(rival_values) else "OTHER"
             led[leader] += 1
             if previous is not None and leader != previous:
                 changes += 1
@@ -1314,12 +1339,15 @@ def metrics(matches, crashed, natural, capped, errors, rows, flow_queued, flow_s
         "spawned": sum(sum(m["units_spawned"].values()) for m in matches),
         "queued_spend": flow_queued,
         "flow_spend": flow_series,
-        # Per-deduction ledger and its drift against the flow. Drift is the
-        # regression guard: a CP movement that stops reaching RecordAIEconomyFlow
-        # shows up here instead of quietly becoming unattributed spend.
+        # Published-span comparison. A sink bypassing both emitters needs the
+        # independent bank-conservation check in ai_invariants.py.
         "cp_spend_ledger": sum(sum(m["cp_spend_ledger"].values()) for m in matches),
-        "cp_spend_drift": (sum(sum(m["cp_spend_ledger"].values()) for m in matches)
-                           - flow_series),
+        "cp_spend_drift": (sum(sum(m['cp_spend_at_snapshot'].values()) for m in matches)
+                           - sum(sum(m['flow_cumulative'][f].get('productionSpend', 0.0)
+                                     for f in FACTIONS) for m in matches))
+                          if any(m['cp_spend_at_snapshot'] for m in matches) else None,
+        "cp_spend_unobserved_tail": sum(sum(m['cp_spend_ledger'].values())
+                                        - sum(m['cp_spend_at_snapshot'].values()) for m in matches),
         "cap_progress": (sum(m["cap_progress"] for m in matches) / len(matches)) if matches else 0.0,
         "losses": sum(sum(s["count"] for s in m["losses"].values()) for m in matches),
         "friendly": sum(sum(s["count"] for s in m["friendly"].values()) for m in matches),
@@ -1390,7 +1418,15 @@ def compare(current, baseline, current_label, baseline_label):
     and ai_timeline.py supersede this for real A/B work."""
     print("\n-- side-by-side --")
     print(f"  {'metric':22} {current_label:>16} {baseline_label:>16} {'delta':>16}")
-    for name, fmt in COMPARE_ROWS:
+    rows=list(COMPARE_ROWS)
+    known={name for name,_ in rows}
+    for faction in FACTIONS:
+        if faction in BASE_FACTIONS: continue
+        for prefix,fmt in (("spawned","{:d}"),("queued","{:.0f}"),("flow","{:.0f}"),
+                           ("upgrade","{:.0f}"),("losses","{:d}"),("build_blackout","{:.1f}%")):
+            name=f"{prefix}.{faction}"
+            if name not in known: rows.append((name,fmt)); known.add(name)
+    for name, fmt in rows:
         left = current.get(name, 0)
         right = baseline.get(name, 0)
         try:
@@ -1400,7 +1436,9 @@ def compare(current, baseline, current_label, baseline_label):
                 delta = fmt.format(float(left) - float(right))
         except (ValueError, TypeError):
             delta = "-"
-        print(f"  {name:22} {fmt.format(left):>16} {fmt.format(right):>16} {delta:>16}")
+        left_text = '-' if left is None else fmt.format(left)
+        right_text = '-' if right is None else fmt.format(right)
+        print(f"  {name:22} {left_text:>16} {right_text:>16} {delta:>16}")
     print(f"  {'outcomes':22} {str(current['outcomes']):>16}")
     print(f"  {'':22} {str(baseline['outcomes']):>16}")
     print("  note: compare_batches.py and ai_timeline.py supersede this table for")
@@ -1438,15 +1476,22 @@ def main() -> int:
     jobs = discover_jobs(args.output_dir)
     if not jobs:
         raise SystemExit(f"No engine-result.json or rts-ai-*.jsonl under {args.output_dir}")
-    current = report([analyze(run, telemetry) for run, telemetry in jobs], "CURRENT MOD", True)
+    current_matches=[analyze(run,telemetry) for run,telemetry in jobs]
+    baseline_matches=None
     if args.baseline and args.baseline.is_dir():
         base_jobs = discover_jobs(args.baseline)
         if not base_jobs:
             print(f"\n(no engine-result.json or telemetry under baseline {args.baseline})")
         else:
-            baseline = report([analyze(run, telemetry) for run, telemetry in base_jobs],
-                              "BASELINE", True)
-            compare(current, baseline, "current", "baseline")
+            baseline_matches=[analyze(run,telemetry) for run,telemetry in base_jobs]
+    global FACTIONS
+    FACTIONS=observed_factions(current_matches+(baseline_matches or []))
+    current=report(current_matches,"CURRENT MOD",True)
+    if baseline_matches is not None:
+        baseline=report(baseline_matches,"BASELINE",True)
+        compare(current,baseline,"current","baseline")
+    if any(m['records']==0 for m in current_matches):
+        return 2
     return 0 if current["crashed"] == 0 and current["errors"] == 0 else 1
 
 

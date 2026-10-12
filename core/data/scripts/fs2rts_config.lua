@@ -10,22 +10,63 @@ return {
     HostileTeam = "hostile",
     ThirdTeam = "neutral",
     ObserverShip = "RTS Observer",
-    CarrierShip = "RTS Blue Station",
-    EnemyCommandShip = "RTS Red Station",
-    ThirdCommandShip = "RTS Gold Station",
-    -- Faction-specific command-station hulls. Blue keeps the retail Arcadia;
-    -- Red and Gold use the bundled user-made Arachnas/Cairo models.
-    StationClass = "GTI Arcadia", -- legacy/default fallback
-    StationClasses = {
-        BLUE = "GTI Arcadia",
-        RED = "SI Arachnas",
-        GOLD = "GVI Cairo",
+    HotkeyHintsKey = "F10",
+    CarrierShip = "RTS Team 01 Station",
+    EnemyCommandShip = "RTS Team 02 Station",
+    ThirdCommandShip = "RTS Team 03 Station",
+    Species = {
+        TERRAN = { label = "TERRAN", stationClass = "GTI Arcadia", roster = "BlueRoster" },
+        SHIVAN = { label = "SHIVAN", stationClass = "SI Arachnas", roster = "RedRoster" },
+        VASUDAN = { label = "VASUDAN", stationClass = "GVI Cairo", roster = "GoldRoster" },
+    },
+    -- Political factions share species/assets, not identity. The rosters are
+    -- curated per faction. Five missing FS1/ST craft are bundled as standalone
+    -- ship classes with attributed models and retail-only weapons.
+    FactionChoices = { "GTA", "GTVA", "PVN", "PVE", "NTF", "GTI_LOYAL", "GTI_ROGUE", "HOL", "SHIVAN", "RANDOM" },
+    FactionAliases = { TERRAN="GTA", VASUDAN="PVE", NFT="NTF", GTI="GTI_LOYAL" },
+    FactionProfiles = {
+        GTA = { label="GTA", name="Galactic Terran Alliance", species="TERRAN", insignia="rts-faction-gta", rosters={"BlueRoster"},
+            doctrine="Great War fleet: affordable massed escorts",
+            classes={"GTF Ulysses","GTF Hercules","GTF Apollo","GTF Valkyrie","GTF Ares","GTB Athena","GTB Medusa","GTB Ursa","GTC Fenris","GTC Leviathan","GTD Orion"},
+            abilityKey="BLUE", ability={name="ORBITAL STRIKE"} },
+        PVN = { label="PVN", name="Parliamentary Vasudan Navy", species="VASUDAN", insignia="rts-faction-pvn", rosters={"GoldRoster"},
+            doctrine="Great War fleet: resilient strike wings",
+            classes={"PVF Anubis","GVF Horus","GVF Seth","GVF Thoth","GVB Osiris","GVB Sekhmet","GVC Aten","GVD Typhon"},
+            ability={kind="reinforcement",name="MOBILE RESERVES",class="GVF Thoth",tier=1,count=4,cooldown=180} },
+        GTVA = { label="GTVA", name="Galactic Terran-Vasudan Alliance", species="TERRAN", insignia="rts-faction-gtva", insigniaBackdrop={195,210,216}, rosters={"BlueRoster","GoldRoster"},
+            doctrine="Combined fleet: flexible but expensive endgame",
+            classes={"GTF Myrmidon","GTF Perseus","GTF Ulysses","GTF Hercules Mark II","GTF Loki","GTF Pegasus","GTF Ares","GTF Erinyes","GVF Tauret","GTB Artemis","GTB Boanerges","GTB Medusa","GTB Ursa","GTB Zeus","GVB Bakha","GTC Fenris","GTC Aeolus","GTC Leviathan","GVC Aten","GVC Mentu","GTCv Deimos","GVCv Sobek","GTD Hecate","GTD Orion","GVD Typhon","GVD Hatshepsut","GTVA Colossus"},
+            ability={kind="surge",name="JOINT MOBILIZATION",roles={escort=true,capital=true},cost=750,cooldown=180,radius=6000,speedMultiplier=1.30,seconds=25} },
+        PVE = { label="PVE", name="Parliamentary Vasudan Empire", species="VASUDAN", insignia="rts-faction-pvn", rosters={"GoldRoster"},
+            doctrine="Modern Vasudan fleet: escort and bomber support",
+            classes={"GVF Tauret","GVF Serapis","GVF Ptah","GVB Bakha","GVB Sekhmet","GVC Aten","GVC Mentu","GVCv Sobek","GVD Typhon","GVD Hatshepsut"},
+            abilityKey="GOLD", ability={name="REINFORCEMENT JUMP"} },
+        NTF = { label="NTF", name="Neo-Terran Front", species="TERRAN", insignia="rts-faction-ntf", rosters={"BlueRoster"},
+            doctrine="Terran insurgency: rapid fighter interception",
+            classes={"GTF Myrmidon","GTF Hercules Mark II","GTF Loki","GTF Perseus","GTF Ulysses","GTB Artemis","GTB Medusa","GTC Aeolus","GTC Leviathan","GTCv Deimos","GTD Orion","NTF Boadicea","NTF Iceni"},
+            ability={kind="surge",name="RAIDER SCREEN",roles={fighter=true},cost=750,cooldown=180,radius=6000,speedMultiplier=1.60,seconds=20} },
+        GTI_LOYAL = { label="GTI LOYAL", name="Galactic Terran Intelligence - Loyalists", species="TERRAN", insignia="rts-faction-gti", rosters={"BlueRoster"},
+            doctrine="Special operations: precise fire support",
+            classes={"GTF Ulysses","GTF Hercules","GTF Loki","GTB Zeus","GTB Ursa","GTC Fenris","GTC Leviathan","GTD Orion"},
+            ability={kind="strike",name="PRECISION STRIKE",cost=750,cooldown=150,delay=3,range=10000,radius=450,innerRadius=150,damage=1800} },
+        GTI_ROGUE = { label="GTI ROGUE", name="Galactic Terran Intelligence - Hades Rebels", species="TERRAN", insignia="rts-faction-gti", rosters={"BlueRoster"},
+            doctrine="Hades rebels: costly prototype flagship",
+            classes={"GTF Ulysses","GTF Hercules","GTF Loki","GTB Zeus","GTB Ursa","GTC Fenris","GTC Leviathan","GTD Orion","GTD Hades"},
+            ability={kind="surge",name="PROTOTYPE OVERDRIVE",roles={heavy=true,juggernaut=true},cost=1000,cooldown=240,radius=6000,speedMultiplier=1.20,seconds=20} },
+        HOL = { label="HoL", name="Hammer of Light", species="VASUDAN", insignia="rts-faction-hol", rosters={"GoldRoster"},
+            doctrine="Vasudan zealots: committed bomber assaults",
+            classes={"PVF Anubis","GVF Horus","GVF Seth","GVF Thoth","GVB Osiris","GVB Sekhmet","GVC Aten","GVD Typhon"},
+            ability={kind="surge",name="ZEALOUS ADVANCE",roles={bomber=true,escort=true},cost=750,cooldown=180,radius=6000,speedMultiplier=1.40,seconds=25} },
+        SHIVAN = { label="SHIVANS", name="Shivans", species="SHIVAN", insignia="rts-faction-shivan", rosters={"RedRoster"},
+            doctrine="Alien invasion: premium siege and swarm mobility",
+            classes={"SF Mara","SF Basilisk","SF Dragon","SF Manticore","SF Aeshma","SF Astaroth","SB Shaitan","SB Nephilim","SB Taurvi","SB Nahema","SB Seraphim","SC Cain","SC Rakshasa","SC Lilith","SCv Moloch","SD Ravana","SD Demon","SD Lucifer","SJ Sathanas"},
+            abilityKey="RED", ability={name="SWARM SURGE"} },
     },
     SentryShipClass = "GTSG Mjolnir",
-    -- Normalize strategic base durability before the selected 30/60-minute
-    -- duration multiplier, so faction choice changes arsenal/geometry rather
+    -- Normalize strategic base durability before fixed escalation modifiers,
+    -- so faction choice changes arsenal/geometry rather
     -- than granting a free hull-HP advantage.
-    StationBaseHull = 200000,
+    StationBaseHull = 60000,
 
     -- Stable three-faction tie-break.  With symmetric base layouts a pure
     -- nearest/health sort otherwise degenerates into both AI factions choosing
@@ -39,33 +80,56 @@ return {
 
     Factions = {
         BLUE = {
-            name = "GTVA // BLUE FLEET",
-            short = "BLUE",
-            station = "RTS Blue Station",
+            name = "TERRAN",
+            short = "TEAM 01",
+            team = "friendly",
+            teamColor = "RTS Faction Blue",
+            defaultSpecies = "TERRAN",
+            station = "RTS Team 01 Station",
             primary = "Destroy every opposing faction command station.",
-            secondary = "Protect Blue Station; screen hostile strike craft; destroy enemy capital ships.",
+            secondary = "Protect your station; screen hostile strike craft; destroy enemy capital ships.",
         },
         RED = {
-            name = "SHIVAN // RED SWARM",
-            short = "RED",
-            station = "RTS Red Station",
+            name = "SHIVAN",
+            short = "TEAM 02",
+            team = "hostile",
+            teamColor = "RTS Faction Red",
+            defaultSpecies = "SHIVAN",
+            station = "RTS Team 02 Station",
             primary = "Destroy an opposing command station while advancing through its fleet screen.",
-            secondary = "Protect Red Station; intercept threats near the station; destroy hostile capital ships.",
+            secondary = "Protect your station; intercept nearby threats; destroy hostile capital ships.",
         },
         GOLD = {
-            name = "VASUDAN // GOLD FLEET",
-            short = "GOLD",
-            station = "RTS Gold Station",
+            name = "VASUDAN",
+            short = "TEAM 03",
+            team = "neutral",
+            teamColor = "RTS Faction Gold",
+            defaultSpecies = "VASUDAN",
+            station = "RTS Team 03 Station",
             primary = "Destroy an opposing command station while advancing through its fleet screen.",
-            secondary = "Protect Gold Station; intercept threats near the station; destroy hostile capital ships.",
+            secondary = "Protect your station; intercept nearby threats; destroy hostile capital ships.",
         },
+    },
+
+    -- The first three teams are the mission's Friendly/Hostile/Neutral IFFs.
+    -- fs2rts_factions.lua adds 9 more after loading so the experiment runner
+    -- can still wrap this config's single top-level return table.
+    FactionOrder = { "BLUE", "RED", "GOLD" },
+    FactionIndex = { BLUE=1, RED=2, GOLD=3 },
+    FactionStationByName = {
+        ["RTS Team 01 Station"]="BLUE", ["RTS Team 02 Station"]="RED", ["RTS Team 03 Station"]="GOLD",
+    },
+    FactionColors = {
+        {70,220,255}, {255,75,75}, {255,190,70}, {45,190,255}, {70,230,105},
+        {195,115,255}, {255,130,45}, {255,100,195}, {190,240,70}, {110,100,255},
+        {60,225,185}, {255,115,95},
     },
 
     Camera = {
         Focus = { x = 0, y = 0, z = 500 },
         Distance = 9000,
         MinDistance = 55,
-        MaxDistance = 65000,
+        MaxDistance = 300000,
         PitchDegrees = 58,
         MinPitchDegrees = 24,
         MaxPitchDegrees = 84,
@@ -93,9 +157,7 @@ return {
     -- Sins-style tactical controls. Mouse gestures are handled in fs2rts.lua:
     -- LMB selects, MMB drag pans, RMB drag orbits, RMB click issues context orders,
     -- wheel zooms toward the cursor, WASD pans, and Shift slows camera movement.
-    -- Number keys 1-4 drive the time-skip ladder and F1-F4 recall wings, so the
-    -- former F1 (select all) and F2/F3/F4 (policies) homes are retired to plain
-    -- letters that the engine leaves free in this state. Keep this table and the
+    -- Number keys recall groups, Shift assigns and Alt controls time. Keep the
     -- literals in fs2rts_input.lua in sync: ShouldOverrideKey swallows a key
     -- that is listed here, and a key that is only bound there leaks to FSO.
     HomeworldControls = {
@@ -119,16 +181,15 @@ return {
         DefensivePolicy = "X",
         AggressivePolicy = "V",
         Cinematic = "C",
-        -- 1/2/3/4 are the time-skip ladder: slower, pause toggle, faster, reset.
+        -- Labels used by the speed buttons; keyboard speed requires Alt.
         TimeSlower = "1",
         TimePause = "2",
         TimeFaster = "3",
         TimeReset = "4",
-        -- F1-F4 recall the four quick wings; Ctrl+F1-F4 assign the selection.
-        Wing1 = "F1",
-        Wing2 = "F2",
-        Wing3 = "F3",
-        Wing4 = "F4",
+        Wing1 = "1",
+        Wing2 = "2",
+        Wing3 = "3",
+        Wing4 = "4",
         MuteMusic = "N",
     },
 
@@ -143,71 +204,116 @@ return {
         NextShotKey = "Right",
         PreviousShotKey = "Left",
         RestartShotKey = "5",
-        -- Keep the camera drifting along a slow orbit after the last shot so the
-        -- intro does not end on a frozen frame when the player just watches.
-        EndHoldSeconds = 1.2,
+        -- Fade through black before resetting the camera to battle setup.
+        EndHoldSeconds = 2,
         Shots = {
             {
-                duration = 6.8,
-                from = { x = -14200, y = 2600, z = -5600 },
-                to = { x = -10800, y = 1450, z = -3000 },
-                target = { x = -9000, y = 0, z = 0 },
-                faction = "GTVA // BLUE FLEET",
-                caption = "BLUE FORWARD COMMAND",
-                subcaption = "Arcadia Station anchors the GTVA line. If it falls, Blue loses the battle.",
-            },
-            {
-                duration = 5.4,
-                from = { x = -11500, y = 900, z = 2400 },
-                to = { x = -7400, y = 1250, z = 1500 },
-                target = { x = -9000, y = 0, z = 0 },
-                caption = "HANGAR DECK",
-                subcaption = "Escort and bomber wings cycle through the bays. Press N to mute the music.",
-            },
-            {
-                duration = 6.2,
-                from = { x = -5600, y = 4200, z = -9000 },
-                to = { x = 1200, y = 3000, z = -7200 },
-                targetFrom = { x = -1600, y = 0, z = 0 },
-                targetTo = { x = 1800, y = 0, z = 0 },
-                caption = "THE ESCALATION FRONT",
-                subcaption = "Fighters screen the advance. Capital ships break the line. Command the fleet, pilot a fighter, or take control of capital turret groups.",
-            },
-            {
-                duration = 6.8,
-                from = { x = 14200, y = 2450, z = 5700 },
-                to = { x = 10800, y = 1500, z = 3000 },
-                target = { x = 9000, y = 0, z = 0 },
-                faction = "SHIVAN // RED SWARM",
-                caption = "RED ESCALATION NODE",
-                subcaption = "The Shivan station is both fortress and production anchor. Break it before Red reaches terminal escalation.",
-            },
-            {
-                duration = 5.6,
-                from = { x = 4200, y = 6400, z = 4200 },
-                to = { x = 1200, y = 5200, z = 1600 },
+                duration = 10.2,
+                subject = 1,
+                from = { x = -400, y = 250, z = -650 },
+                to = { x = -220, y = 150, z = -450 },
                 target = { x = 0, y = 0, z = 0 },
-                caption = "THE CONTESTED CENTRE",
-                subcaption = "Capital beams are scaled against command stations. Bring siege, not a single lucky shot.",
+                faction = "RIVAL COMMANDS",
+                caption = "COMMANDS IN CONFLICT",
+                subcaption = "Rival commands converge on contested space. Broken alliances, competing claims and old hostilities have become a fight for survival.",
             },
             {
-                duration = 5.8,
-                from = { x = 0, y = 11800, z = -17800 },
-                to = { x = 0, y = 8600, z = -14800 },
+                duration = 8.1,
+                subject = 5,
+                from = { x = -180, y = 75, z = -210 },
+                to = { x = -100, y = 40, z = -130 },
+                target = { x = 0, y = 0, z = 0 },
+                caption = "LIVES ABOARD",
+                subcaption = "Every deployment carries people into danger. Recover damaged crews, protect their return and keep a fighting fleet alive.",
+            },
+            {
+                duration = 9.3,
+                subject = 3,
+                from = { x = -250, y = 120, z = -220 },
+                to = { x = -140, y = 60, z = -170 },
+                target = { x = 0, y = 0, z = 0 },
+                caption = "THE ESCALATION FRONT",
+                subcaption = "Reinforcements deepen the conflict. Fighters protect the strike force; bombers and capital ships threaten enemy command stations.",
+            },
+            {
+                duration = 10.2,
+                subject = 2,
+                from = { x = 400, y = 230, z = 650 },
+                to = { x = 200, y = 150, z = 420 },
+                target = { x = 0, y = 0, z = 0 },
+                faction = "OPPOSING CREWS",
+                caption = "RIVAL SURVIVORS",
+                subcaption = "Other commands fight for their own survival. Losing a station does not erase the ships and crews still in battle.",
+            },
+            {
+                duration = 8.4,
+                subject = 5,
+                from = { x = 180, y = 90, z = -230 },
+                to = { x = 100, y = 60, z = -160 },
+                target = { x = 0, y = 0, z = 0 },
+                caption = "THE COST OF COMMAND",
+                subcaption = "Some objectives demand courage and sacrifice. Commit with purpose, cover the vulnerable and give survivors a way home.",
+            },
+            {
+                duration = 8.7,
+                subject = 1,
+                from = { x = 800, y = 1800, z = -2200 },
+                to = { x = 400, y = 1400, z = -1600 },
                 target = { x = 0, y = 0, z = 0 },
                 caption = "FLEET COMMAND",
-                subcaption = "COMMAND. ESCALATE. SURVIVE.",
+                subcaption = "Choose your command. Lead from the tactical view or take the helm. Break the opposition while bringing your people through.",
             },
         },
     },
 
     -- Mission music. FSO's event music runs on the same global stream table as
     -- every other sound, so pausing handle -1 silences the whole score without
-    -- touching weapon or UI audio. See RTS:SetMusicMuted in fs2rts_service.lua.
+    -- touching unrelated voice or effects. The scene module owns its stream.
     Music = {
         Enabled = true,
         Muted = false,
-        -- Keys that cycle the mute state are handled through HomeworldControls.
+        -- Retail soundtrack audio, streamed through FSO's VFS so MediaVP
+        -- overrides win automatically. Keep this list to looping combat cues.
+        Tracks = {
+            { label="Genesis A", file="FS2_Btl_A01.wav", mediavps="FS2_Btl_A01.ogg" },
+            { label="Genesis B", file="FS2_Btl_A02.wav" },
+            { label="Genesis C", file="FS2_Btl_A03.wav" },
+            { label="Exodus A", file="FS2_Btl_B01.wav" },
+            { label="Exodus B", file="FS2_Btl_B02.wav" },
+            { label="Exodus C", file="FS2_Btl_B03.wav" },
+            { label="Leviticus A", file="FS2_Btl_C01.wav" },
+            { label="Leviticus B", file="FS2_Btl_C02.wav" },
+            { label="Leviticus C", file="FS2_Btl_C03.wav", mediavps="FS2_Btl_C03.ogg" },
+            { label="Numbers A", file="FS2_Btl_D01.wav", mediavps="FS2_Btl_D01.ogg" },
+            { label="Numbers B", file="FS2_Btl_D02.wav", mediavps="FS2_Btl_D02.ogg" },
+            { label="Numbers C", file="FS2_Btl_D03.wav", mediavps="FS2_Btl_D03.ogg" },
+            { label="Revelation A", file="FS2_Btl_E01.wav", mediavps="FS2_Btl_E01.ogg" },
+            { label="Revelation B", file="FS2_Btl_E02.wav", mediavps="FS2_Btl_E02.ogg" },
+            { label="Revelation C", file="FS2_Btl_E03.wav", mediavps="FS2_Btl_E03.ogg" },
+            { label="Deuteronomy A", file="FS2_Btl_F01.wav", mediavps="FS2_Btl_F01.ogg" },
+            { label="Deuteronomy B", file="FS2_Btl_F02.wav", mediavps="FS2_Btl_F02.ogg" },
+            { label="Deuteronomy C", file="FS2_Btl_F03.wav", mediavps="FS2_Btl_F03.ogg" },
+            { label="Joshua A", file="FS2_Btl_G01.wav", mediavps="FS2_Btl_G01.ogg" },
+            { label="Joshua B", file="FS2_Btl_G02.wav", mediavps="FS2_Btl_G02.ogg" },
+            { label="Joshua C", file="FS2_Btl_G03.wav", mediavps="FS2_Btl_G03.ogg" },
+        },
+    },
+
+    Environment = {
+        -- These are the stock retail nebula backdrops registered in stars.tbl.
+        -- They are 2D sky art only: no full-nebula fog, visibility, targeting,
+        -- or volumetric rendering. FSO resolves same-name MV textures via VFS.
+        NebulaBackdrops = {
+            "neb01", "neb02", "neb03", "neb04", "neb05", "neb06",
+            "neb07", "neb08", "neb09", "neb10", "neb11", "neb12",
+            "neb13", "neb14", "neb15", "neb16", "neb17", "neb18",
+            "dneb01", "dneb02", "dneb03", "dneb04", "dneb05", "dneb06",
+            "dneb07", "dneb08", "dneb09", "dneb10", "dneb11", "dneb12",
+            "dneb13", "dneb14", "dneb15", "dneb16", "dneb17", "dneb18",
+        },
+        -- The mission's own nebula (+Nebula in FS2_RTS_Escalation.fs2) is the default look.
+        -- These 2D sky sprites are an optional pick, so they do not start on top of it.
+        RandomBackdropOnStart = false,
     },
 
     Selection = {
@@ -219,12 +325,10 @@ return {
         DoubleClickMaxDistancePixels = 12,
         BracketPadding = 6,
         SelectedBracketPadding = 18,
-        -- Role marker drawn just inside the top-left of the selection brackets.
-        -- 0 disables it. Inset keeps the glyph off the bracket corner, and the
-        -- shapes are distinct per role so it reads at a glance without colour.
+        -- Role marker inside the upper-left corner, scaled with the HUD.
+        -- 0 disables it. Inset is the gap from the bracket corner.
         RoleMarkerSize = 11,
-        RoleMarkerInset = 9,
-        RoleMarkerMinZoom = 0,
+        RoleMarkerInset = 3,
         -- gr.drawTargetingBrackets projects the real model bounds, so at long
         -- camera range the box collapses to a few pixels and the unit reads as
         -- unmarked. Reticles are clamped to this band instead, and are drawn
@@ -239,7 +343,6 @@ return {
         ReticleEdgeClampMargin = 26,
         -- Hover weapon range ring.
         ShowWeaponRange = true,
-        WeaponRangeMaxPixels = 340,
         WeaponRangeSegments = 48,
         WeaponRangeAlpha = 90,
         HullBarThickness = 5,
@@ -249,6 +352,9 @@ return {
     },
 
     Pilot = {
+        -- Upstream Lua does not expose the weapon Flak flag. Canonical retail
+        -- classes are explicit; asset packs can register additional classes here.
+        FlakWeapons = {['Standard Flak']=true,['Heavy Flak']=true,['Long Range Flak']=true},
         NativeWingExtensions = false, -- upstream proposal only; the released mod must run on stock FSO
         ToggleKey = "P",
         FOV = 0.92,
@@ -274,41 +380,16 @@ return {
         -- control rather than latching on the first tick.
         TurretFireLatches = true,
         -- Announce the manual-fire state in the pilot HUD.
-        TurretFireStatusLine = "MANUAL TURRET FIRE ACTIVE",
-    },
-
-    -- Time-boxed outcome. Victory used to fire only on elimination, so a
-    -- three-way free-for-all needed two station kills at a measured rate of
-    -- roughly one per 3,000 s and could not resolve inside its own advertised
-    -- length: 8 of 8 headless batches ended time_limit. The box makes every
-    -- match losable, which is the precondition for any pacing work meaning
-    -- anything. On expiry the result is decided on attrition score.
-    Victory = {
-        -- DISABLED pending a crash fix. The time box is the only new code path
-        -- that fires late in a long match (elapsed >= targetSeconds, 1800 s on
-        -- the 30 MIN profile), and a 3,000 s headless run reaches it and then
-        -- dies at mission teardown with no Lua error and no engine output, so
-        -- no engine-result.json is written. 90 s and 300 s runs complete
-        -- because the box never expires in them. GetAttritionScore and
-        -- ResolveTimeBoxVictory are implemented and unit-covered; the call site
-        -- is gated here so flipping this on is a one-word change once the
-        -- teardown crash is found. Do not ship a build with this true until an
-        -- 8-match 3,000 s batch completes.
-        TimeBoxEnabled = false,
-        -- Credit for station damage dealt, normalised against the leading
-        -- faction, so a faction that actually cracked a base is rewarded
-        -- without the match having to run long enough to finish the job.
-        StationCreditWeight = 0.25,
+        TurretFireStatusLine = "FIRE INPUT HELD // SHOTS NOT GUARANTEED",
     },
 
     Formation = {
-        Spacing = 450,
+        Spacing = 240,
         SpawnForwardClearance = 1100,
-        InterShipClearance = 120,
+        InterShipClearance = 60,
         CommandAreaFraction = 0.90,
         MaxFormationWidthFraction = 1.10,
         VerticalCommandFraction = 0.35,
-        WorldWarningMultiplier = 1.60,
         -- Player-selectable shapes. "id" is stored on self.SelectedFormation and
         -- consumed by RTS:BuildSafeFormationDestinations. Every shape resolves to
         -- a (lateral, depth) slot for each unit relative to the move target and
@@ -316,12 +397,12 @@ return {
         -- the player and the AI.
         Default = "LINE_ABREAST",
         Types = {
-            { id = "LINE_ABREAST", label = "LINE",     desc = "Even spread across the destination, one rank deep." },
-            { id = "COLUMN",       label = "COLUMN",   desc = "Single file behind the leader. Best through chokepoints." },
-            { id = "TIGHT",        label = "TIGHT",    desc = "Packed ranks at close spacing. Concentrated return fire." },
-            { id = "WEDGE",        label = "WEDGE",    desc = "V formation with the point forward. Breaks interceptor clusters." },
-            { id = "ECHELON",      label = "ECHELON",  desc = "Staggered diagonal. Spreads coverage across a wide front." },
-            { id = "SCREEN",       label = "SCREEN",   desc = "Wedge facing outward. Protects a slow core from frontal attacks." },
+            { id = "LINE_ABREAST", label = "LINE",     desc = "One rank, perpendicular to facing." },
+            { id = "COLUMN",       label = "COLUMN",   desc = "Single file; narrow passages." },
+            { id = "TIGHT",        label = "TIGHT",    desc = "Close ranks; concentrated fire." },
+            { id = "WEDGE",        label = "WEDGE",    desc = "Point forward; breaks fighter clusters." },
+            { id = "ECHELON",      label = "ECHELON",  desc = "Diagonal ranks; broad coverage." },
+            { id = "SCREEN",       label = "SCREEN",   desc = "Outward wedge around a slow core." },
         },
         -- Shape-specific multipliers applied on top of Spacing.
         Shapes = {
@@ -364,8 +445,7 @@ return {
         WingBuildTimeMultiplier = 1.65,
     },
 
-    -- Player production tiers. Higher tiers unlock according to the selected
-    -- 30/60 minute escalation profile.
+    -- Player production tiers unlock on the shared escalation schedule.
     ProductionClasses = {
         { class = "GTF Myrmidon", tier = 1, role = "fighter", count = 4 },
         { class = "GTF Perseus", tier = 1, role = "fighter", count = 4 },
@@ -384,7 +464,6 @@ return {
         { class = "GTB Zeus", tier = 2, role = "bomber", count = 4 },
         { class = "GTC Aeolus", tier = 2, role = "escort" },
         { class = "GTC Leviathan", tier = 2, role = "escort" },
-        { class = "GTSC Faustus", tier = 2, role = "escort" },
         { class = "GVC Mentu", tier = 2, role = "escort" },
         { class = "GTCv Deimos", tier = 3, role = "capital" },
         { class = "GVCv Sobek", tier = 3, role = "capital" },
@@ -407,7 +486,7 @@ return {
         CostRoundTo = 25,
         BuildSecondsPerCP = 0.025,
         GlobalMultiplier = 1.25,
-        TierMultipliers = { 1.0, 1.75, 2.75, 4.50, 6.50 },
+        TierMultipliers = { 1.0, 1.50, 1.75, 2.00, 2.00 },
         -- Spawn telemetry shows fighters dominate hull counts. Add modest
         -- premiums to fighter/bomber packages while leaving scarce high-tier
         -- roles unchanged until their share warrants a price increase.
@@ -419,12 +498,18 @@ return {
             heavy = 1.00,
             juggernaut = 0.14,
         },
-        -- Juggernaut costs target roughly one quarter of a faction's measured
-        -- lifetime CP income per hull; stronger hulls retain a price premium.
+        -- Class estimates feed replacement value/bounties. Sathanas purchases
+        -- have an explicit floor below, shared by every producer.
         ClassMultipliers = {
-            ["GVD Hatshepsut"] = 0.30, ["SD Ravana"] = 0.30,
             ["GTVA Colossus"] = 0.50, ["SJ Sathanas"] = 0.65, ["SD Lucifer"] = 1.25,
+            -- Classic-only fleets lack cheap corvettes; reduce the radius
+            -- premium on their first heavy hull. Shared class pricing also
+            -- applies to modern rosters, replacement value and bounties.
+            ["GTD Orion"] = 0.60, ["GVD Typhon"] = 0.60,
         },
+        -- A tier-5 Sathanas must cost more than a destroyer. Retail pricing
+        -- otherwise discounts it to 12,675 CP through the juggernaut formula.
+        PurchaseCostFloor = { ["SJ Sathanas"] = 60000, ["GTVA Colossus"] = 40000, ["SD Lucifer"] = 35000, ["GTD Hades"] = 40000 },
         MinBuildSeconds = 6,
         MaxBuildSeconds = 180,
     },
@@ -452,6 +537,8 @@ return {
         QuickGroupHeight = 86,
         OptionsHeight = 48,
         SelectionHeight = 330,
+        -- How long the "NEW UNITS READY" card stays after delivery or after pilot mode ends.
+        NewUnitPopupSeconds = 5,
     },
 
     Policy = {
@@ -475,11 +562,16 @@ return {
         DefaultDifficulty = 2,
         DefaultFactions = 2,
         DefaultEconomy = 2,
-        DefaultDuration = 1,
         DefaultAutoMode = false,
         DefaultAsteroids = false,
         DefaultSentries = false,
-        DefaultBaseDistance = 2,
+        DefaultBaseDistance = 1,
+        DefaultBaseLayout = 1,
+        BaseLayouts = {
+            {id="CIRCLE",name="CIRCLE",desc="One ring with evenly spaced stations."},
+            {id="STAR",name="STAR",desc="Alternating outer and inner stations."},
+            {id="MULTI_CIRCLE",name="MULTIPLE CIRCLES",desc="Two or three separated clusters of stations."},
+        },
         BaseDistances = {
             { name = "CLOSE", distance = 12000 },
             { name = "STANDARD", distance = 18000 },
@@ -497,35 +589,13 @@ return {
             { name = "STANDARD", startCP = 1800, income = 10 },
             { name = "RICH", startCP = 2600, income = 14 },
         },
-        Durations = {
-            {
-                name = "30 MIN",
-                targetSeconds = 1800,
-                -- Late juggernaut unlock leaves a short, deliberate endgame window.
-                tierUnlocks = { 0, 240, 570, 1050, 1380 },
-                playerIncomeScale = 1.10,
-                aiIncomeScale = 1.12,
-                buildTimeScale = 0.85,
-                stationHullScale = 0.85,
-                threeFactionStationScale = 0.78,
-            },
-            {
-name = "60 MIN",
-targetSeconds = 3600,
-tierUnlocks = { 0, 480, 1140, 2160, 2760 },
--- This profile was harder than 30 MIN on EVERY axis at once: 1.55x station hull
--- against 0.82x player income and 1.15x build times. At SCARCE + BRUTAL that is
--- close to degenerate - the AI out-earned the player ~35% while building 22%
--- faster against a station half again as thick. Station hull is now 1.15x and
--- player income is restored to parity, so the longer match is longer rather
--- than uniformly punishing.
-playerIncomeScale = 1.00,
-aiIncomeScale = 0.88,
-buildTimeScale = 1.00,
-stationHullScale = 1.15,
-threeFactionStationScale = 0.80,
-            },
-        },
+    },
+
+    Escalation = {
+        tierUnlocks = { 0, 240, 570, 1050, 1380 },
+        playerIncomeScale = 1.10, aiIncomeScale = 1.12,
+        buildTimeScale = 0.85, stationHullScale = 0.85,
+        threeFactionStationScale = 0.78,
     },
 
     -- Station upgrades, placeable sentries and faction command abilities.
@@ -541,67 +611,45 @@ threeFactionStationScale = 0.80,
             DeploySafeRadius = 1800,
             SellRefund = 0.5,
             HullBonus = 1.5,        -- Defenses L2
-            -- How often the beam sentry engagement window is re-evaluated.
-            -- PROPOSED knob, previously hardcoded to 1 mission second.
+            -- Legacy beam platforms use this interval; cannon/laser platforms
+            -- slew toward nearby enemies once per mission second.
             RangeScanSeconds = 1,
--- `weapon` names one of the four RTS-owned classes in
--- core/data/tables/fs2rts-sentry-wep.tbm. It must NOT name a retail weapon:
--- reach is what makes a sentry a defence rather than scenery (measured 2.95%
--- of attacker-time inside the stock guns' 950-1375 m envelope), and the retail
--- classes are carried by other hulls, so widening one there would move every
--- hull that mounts it. `range` is the mod's own engagement window, read for
--- the beam role by UpdateMjolnirRange; every other role's reach is read off
--- the weapon itself by GetSentryWeaponRange, so the two are kept equal.
+            ScreenWeapon = "RTS Sentry Interceptor",
+            -- Every platform has two turrets, each with a close-defense laser
+            -- and an anti-capital cannon. Tiers buy durability, not new weapons.
+            -- fs2rts-cannon-wep.tbm patches the retail Vasudan Flux Cannon to
+            -- 11 km. Retail ships.tbl has no other hull mounting this weapon;
+            -- other asset packs must be checked separately. Keep these fallback
+            -- ranges in sync with that table. The HUD reads native weapon reach.
+            -- The cannon retains its retail capital-target flags and slow shell
+            -- speed; the separate laser handles nearby strike craft.
             Classes = {
                 BLUE = {
-                    { class = "GTSG Watchdog", tier = 1, cost = 375, hull = 600, role = "screen", weapon = "RTS Sentry Screen Laser", range = 11000 },
-                    { class = "GTSG Cerberus", tier = 2, cost = 875, hull = 900, role = "flak", weapon = "RTS Sentry Flak", range = 11500 },
-                    { class = "GTSG Alastor", tier = 3, cost = 1500, hull = 1200, role = "missile", weapon = "RTS Sentry Missiles", range = 12000 },
-                    { class = "GTSG Mjolnir", tier = 4, cost = 3000, hull = 3000, role = "beam", weapon = "RTS Sentry Beam", range = 12000 },
+                    { class = "GTSG Watchdog", tier = 1, cost = 250,  hull = 600,  role = "cannon", weapon = "Vasudan Flux Cannon", range = 11000 },
+                    { class = "GTSG Watchdog", tier = 2, cost = 375,  hull = 900,  role = "cannon", weapon = "Vasudan Flux Cannon", range = 11000 },
+                    { class = "GTSG Watchdog", tier = 3, cost = 500,  hull = 1200, role = "cannon", weapon = "Vasudan Flux Cannon", range = 11000 },
+                    { class = "GTSG Watchdog", tier = 4, cost = 1250, hull = 3000, role = "cannon", weapon = "Vasudan Flux Cannon", range = 11000 },
                 },
                 GOLD = {
-{ class = "GVSG Ankh", tier = 1, cost = 375, hull = 600, role = "screen", weapon = "RTS Sentry Screen Laser", range = 11000 },
-{ class = "GVSG Edjo", tier = 2, cost = 875, hull = 1000, role = "missile", weapon = "RTS Sentry Missiles", range = 12000 },
--- GOLD previously stopped at tier 2 while BLUE reached 4 and RED 3. With
-            -- UpdateStationAI filtering on option.tier<=tier, from tier 3 on GOLD's sentry
-            -- score was pinned at -cost/1000 and it stopped buying sentries entirely, so its
-            -- base was materially softer than BLUE's at identical CP spend.
-            --
-            -- Tiers 3 and 4 here are TERRAN hulls (GTSG Cerberus, GTSG Mjolnir),
-            -- not the GVSG Sotar and GVSG Sekhem this list previously named.
-            -- Neither of those exists in retail ships.tbl - which holds exactly
-            -- two Vasudan sentries, GVSG Ankh and GVSG Edjo - and no mod table
-            -- defined either, so both resolved to invalid ship handles and
-            -- those two slots could never build anything. That is the same
-            -- defect the entries were added to fix, arriving through a name
-            -- that does not resolve.
-            --
-            -- Reusing BLUE's hulls is a deliberate, visible compromise: it
-            -- restores the tier parity this block is for, using only classes
-            -- that actually load, at the cost of a Vasudan base fielding
-            -- Terran emplacements. The mod already accepts cross-faction
-            -- hardware (fs2rts-stations-shp.tbm puts Shivan beams on a Terran
-            -- hull). Properly modelling Vasudan tier-3/4 emplacements means
-            -- defining real ship classes in a mod *-shp.tbm, which is a
-            -- separate piece of work and not a tuning change.
-            { class = "GTSG Cerberus", tier = 3, cost = 1500, hull = 1200, role = "flak", weapon = "RTS Sentry Flak", range = 11500 },
-            { class = "GTSG Mjolnir", tier = 4, cost = 3000, hull = 3000, role = "beam", weapon = "RTS Sentry Beam", range = 12000 },
-},
+                    { class = "GVSG Ankh",    tier = 1, cost = 250,  hull = 600,  role = "cannon", weapon = "Vasudan Flux Cannon", range = 11000 },
+                    { class = "GVSG Ankh",    tier = 2, cost = 375,  hull = 900,  role = "cannon", weapon = "Vasudan Flux Cannon", range = 11000 },
+                    { class = "GVSG Ankh",    tier = 3, cost = 500,  hull = 1200, role = "cannon", weapon = "Vasudan Flux Cannon", range = 11000 },
+                    { class = "GVSG Ankh",    tier = 4, cost = 1250, hull = 3000, role = "cannon", weapon = "Vasudan Flux Cannon", range = 11000 },
+                },
                 RED = {
-                    { class = "SSG Trident", tier = 1, cost = 375, hull = 700, role = "screen", weapon = "RTS Sentry Screen Laser", range = 11000 },
-                    { class = "SSG Belial", tier = 2, cost = 825, hull = 1100, role = "screen", weapon = "RTS Sentry Screen Laser", range = 11000 },
-                    { class = "SSG Rahu", tier = 3, cost = 2000, hull = 4000, role = "flak", weapon = "RTS Sentry Flak", range = 11500 },
+                    { class = "SSG Trident",  tier = 1, cost = 250,  hull = 600,  role = "cannon", weapon = "Vasudan Flux Cannon", range = 11000 },
+                    { class = "SSG Trident",  tier = 2, cost = 375,  hull = 900,  role = "cannon", weapon = "Vasudan Flux Cannon", range = 11000 },
+                    { class = "SSG Trident",  tier = 3, cost = 500,  hull = 1200, role = "cannon", weapon = "Vasudan Flux Cannon", range = 11000 },
+                    { class = "SSG Trident",  tier = 4, cost = 1250, hull = 3000, role = "cannon", weapon = "Vasudan Flux Cannon", range = 11000 },
                 },
             },
         },
         -- Each track has three levels; level N needs escalation tier Tiers[N].
         Tracks = {
 armor     = { label = "ARMOR",     costs = { 625, 1250, 2250 }, seconds = { 30, 60, 90 }, tiers = { 1, 2, 3 },
--- L3 was a dead end: it bought hull and nothing else, and it out-priced every
--- competing track at the point in the match where the fleet is committed. It now
--- also finishes the repair curve, so a damaged station can actually be brought
--- back into service rather than permanently sitting below its ceiling.
-desc = { "+20% station hull", "+40% hull, slow repair out of combat", "+60% hull, repair ceiling to 100%" } },
+        -- Passive station repair is available from the start; Armor 2 doubles
+        -- its rate. Scars remain permanent at every level.
+desc = { "+20% station hull", "+40% hull, double quiet repair rate", "+60% hull" } },
             defenses  = { label = "DEFENSES",  costs = { 750, 1500, 2750 }, seconds = { 30, 60, 90 }, tiers = { 1, 2, 3 },
                           desc = { "+2 sentry cap", "Sentries +50% hull", "Station and sentry turrets fire 25% faster" } },
 logistics = { label = "LOGISTICS", costs = { 625, 1400, 4200 }, seconds = { 30, 60, 150 }, tiers = { 1, 2, 3 },
@@ -610,11 +658,11 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
                           desc = { "+8 fleet cap", "Sentry radius +2 km, sentry cap +2", "Unlocks faction ability" } },
         },
         ArmorHull = { 1.0, 1.2, 1.4, 1.6 },
-        ArmorRepairPerSecond = 0.0005,  -- Armor L2+: 5% hull per 100 quiet repair seconds
+        ArmorRepairPerSecond = 0.0005,  -- Armor L2+: 5%; below L2 stations repair at half rate
         ArmorRepairDelay = 30,          -- follow-up attacks have time to exploit damage
         RecoverableDamageFraction = .60, -- remaining hull damage permanently lowers the station repair ceiling
         FleetService = {
-            TickSeconds = 2, Slots = 2, StandOff = 1100, ArrivalRadius = 700,
+            TickSeconds = 1, Slots = 4, StandOff = 1100, ArrivalRadius = 700,
             QuietSeconds = 8, MinimumRecoverySeconds = 20, RetrySeconds = 30,
     -- A docked hull whose pad stays inside a hostile's DangerRadius can never
     -- satisfy the `not alive(threat)` finish test, so it sat in UNDER_FIRE for
@@ -650,9 +698,9 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             -- cost only the 150 s cooldown; 750 sits between a T1 sentry (375)
             -- and a T2 sentry (875) and is well under COMMAND L3's own 3250.
             -- Balance call: retune freely, QueueOrbitalStrike reads a.cost.
-            BLUE = { name = "ORBITAL STRIKE", cost = 750, delay = 5, radius = 900, innerRadius = 250, damage = 1200, range = 12000 },
-            GOLD = { name = "REINFORCEMENT JUMP", class = "GVCv Sobek" },
-            RED  = { name = "SWARM SURGE", radius = 5000, speedMultiplier = 1.5, seconds = 20 },
+            BLUE = { kind="strike", name = "ORBITAL STRIKE", cost = 750, delay = 5, radius = 900, innerRadius = 250, damage = 1200, range = 12000 },
+            GOLD = { kind="reinforcement", name = "REINFORCEMENT JUMP", class = "GVCv Sobek", tier=3, count=1, cost = 6000, cooldown = 300 },
+            RED  = { kind="surge", roles={fighter=true,bomber=true}, name = "SWARM SURGE", cost=750, radius = 5000, speedMultiplier = 1.5, seconds = 20 },
         },
         AI = {
             ThinkSeconds = 8,
@@ -715,7 +763,7 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             -- and siblings, 900 at tier 4). That is how long the fleet producer
             -- is itself willing to wait, so the base never waits longer than the
             -- fleet that is outbidding it.
-            CapitalAwareInvestment = false,
+            CapitalAwareInvestment = true,
             -- Escape bound in seconds. nil = derive the producer's longest
             -- declared save window. Set to 0 to disable deferral entirely
             -- (fail-open), or to a positive number to hold the base back longer.
@@ -834,7 +882,7 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
         -- Neither PreserveSavingClockWhileFielding nor BoundBankTarget rescues
         -- it: both were A/B'd and both leave capital production at 0, because
         -- the drain is the policy of fielding a hull during saving, not the
-        -- clock or the target. See docs/contracts/03-ai-production.md.
+        -- clock or the target. See docs/DEVELOPMENT.md.
         FieldCheapHullWhileSaving = false,
         -- ChooseAIBuild clears state.savingSince/state.savingRole after EVERY
         -- purchase. When FieldCheapHullWhileSaving is also on, that purchase is
@@ -865,7 +913,7 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
         -- of the form cp + rate * window recomputes as cp grows and would outrun
         -- the bank every think, which is the same livelock by another route.
         -- On by default: false = current shipped behaviour.
-        BoundBankTarget = false,
+        BoundBankTarget = true,
         CapitalSavingSeconds = 600,
         HeavyCapitalSavingSeconds = 900,
         JuggernautSavingSeconds = 600,
@@ -891,7 +939,7 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
     -- the AI ended a match at ~2.45x income against the player's ~1.60x. Blue
     -- led combatant value in 0% of samples over 32 headless matches and never
     -- took the lead once. The AI is now converged onto the player's curve; the
-    -- 30 MIN profile resolves on CP parity, not on a richer opponent.
+    -- Normal difficulty follows comparable player and opponent income curves.
     LateGameIncomeRamp = 0.20,
     IncomeRampPerTier = 0.10,
         Doctrine = {
@@ -923,24 +971,6 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             -- SYSTEMS_DAMAGED are never overridden.
             AssaultHoldEnabled = true,
             AssaultHoldDistance = 8000,
-            -- Beam reach. FSO does not expose beam weapon range to scripting, so
-            -- GetStrategicWeapons recorded zero for every beam mount and four
-            -- call sites inherited it: escorts/heavies/juggernauts were never
-            -- seen as attackers, never matched as interceptors, and charged the
-            -- wrong ETA. The measured effect was that the only hulls with
-            -- sustained DPS against a 132,600 HP station never closed - p05
-            -- approach 9,667 m against a 1,251 m fighter minimum. station=2000
-            -- is deliberate: it stops a base from looking reach-superior to its
-            -- own defenders, which was the premise the cap was being tuned
-            -- around.
-            BeamRangeEnabled = true,
-            BeamNominalRange = 5000,
-            BeamRangeMax = 12000,
-            BeamRangesByRole = {
-                station = 2000, sentry = 4000, support = 3500, fighter = 4500,
-                bomber = 4500, escort = 5500, capital = 8000, heavy = 8000,
-                juggernaut = 9000,
-            },
             -- Bounded close-in escort screen on the strike. Escorts were never
             -- assault-reserved at all (assaultRole is capital/heavy/juggernaut/
             -- bomber only), so the bulk of the beam DPS simply had no base
@@ -984,7 +1014,7 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             -- order terminates on arrival (only ORDER_WAYPOINTS_ONCE raises
             -- $On Waypoints Done), so without this cadence the capital
             -- reaches the stale intercept point once and then sits there
-            -- holding nothing. Read at fs2rts_strategy.lua:274 (RefreshAIPursuit),
+            -- holding nothing. Read at fs2rts_strategy/orders.lua:40 (RefreshAIPursuit),
             -- :299 (RefreshEngagePursuit) and :330 (UpdateAIPursuitGoals gate).
             -- Matches the PURSUIT_REFRESH_SECONDS fallback those sites carry.
             PursuitRefreshInterval = 1.5,
@@ -1010,7 +1040,7 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             -- the fraction are handled separately by fleet service
             -- (CriticalHull in fs2rts_service.lua), which pulls them out
             -- without disbanding the rest of the formation.
-            RetreatDamagedShipFraction = 0.50,
+            RetreatDamagedShipFraction = 0.75,
             RetreatCommitSeconds = 25,
             TelemetrySummarySeconds = 30,
 
@@ -1018,7 +1048,7 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             -- byte, until an A/B proves it.
             --
             -- The defect it addresses. A group's identity is fixed at
-            -- fs2rts_strategy.lua:687 as (logical wing id or ship signature) ..
+            -- fs2rts_strategy/weapons.lua:151 as (logical wing id or ship signature) ..
             -- role, and it is rebuilt from scratch every strategic tick from
             -- wing membership. Nothing ever merges two groups. So the number of
             -- simultaneous groups is exactly the number of surviving wings plus
@@ -1047,7 +1077,7 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             -- ApplyAIOperationOrder (fs2rts_operations.lua:257) sets
             -- context.locked=true for every operation member it does not
             -- release, and CommitAIGroup's retention gate
-            -- (fs2rts_ai_planning.lua:597) requires `not context.locked`. So for
+            -- (fs2rts_ai_planning/battle_events.lua:8) requires `not context.locked`. So for
             -- the 67% of decisions that are operation members the
             -- MinimumCommitmentSeconds floor above never runs at all: the
             -- operation re-derives a target from ChooseAIOperationTarget every
@@ -1082,7 +1112,7 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             -- 1, then compares rank*100000 minus distance minus covered, so the
             -- 200,000 gap makes the objective unreachable: every candidate is
             -- within station radius + 6000 m, so distance can never pay for two
-            -- ranks. It is called from fs2rts_strategy.lua:1422, AFTER every
+            -- ranks. It is called from fs2rts_strategy/strategic_plan.lua:468, AFTER every
             -- local-threat decision, and it returns with context.locked=true,
             -- which is why the local threat never appears in the record. It was
             -- never consulted, not merely outvoted.
@@ -1107,7 +1137,7 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             -- AI.LocalEngageRadius, the radius that produces localThreat at all
             -- (ChooseAILocalThreat), so the bound is tight by construction and
             -- still bites on the one path that can push a local threat outward:
-            -- the INTERCEPT retention swap at fs2rts_strategy.lua:1040-1044,
+            -- the INTERCEPT retention swap at fs2rts_strategy/strategic_plan.lua:86-90,
             -- which re-binds localThreat to a previous target that may be far
             -- outside the radius.
             AssaultStaticDefenceThreatDistance = 3600,
@@ -1127,7 +1157,7 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             -- and bombers. Separate flag, default OFF pending evidence. This is
             -- the 30.3% escort bucket, and it is the same rank rule rather than
             -- a separate defect: IsCapitalTarget is true for role escort
-            -- (fs2rts_factions.lua:185), so an enemy escort is a rank-1 capital
+            -- (fs2rts_factions/faction_setup.lua:97), so an enemy escort is a rank-1 capital
             -- target that beats the station on distance alone across an 18 km
             -- map. 74.7% of those also satisfy a 3000 m corridor, so the same
             -- local-threat-only rule is the only one that can bite here too.
@@ -1136,6 +1166,9 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             AssaultMobileThreatCorridorWidth = 0,
         },
         BlueRoster = {
+            { class = "GTF Apollo", tier = 1, role = "fighter", weight = 3 },
+            { class = "GTF Valkyrie", tier = 2, role = "fighter", weight = 2 },
+            { class = "GTB Athena", tier = 1, role = "bomber", weight = 2 },
             { class = "GTF Myrmidon", tier = 1, role = "fighter", weight = 5 },
             { class = "GTF Perseus", tier = 1, role = "fighter", weight = 4 },
             { class = "GTB Artemis", tier = 2, role = "bomber", weight = 4 },
@@ -1151,25 +1184,20 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             { class = "GTB Medusa", tier = 2, role = "bomber", weight = 3 },
             { class = "GTB Ursa", tier = 2, role = "bomber", weight = 3 },
             { class = "GTB Zeus", tier = 2, role = "bomber", weight = 2 },
-            -- No GTC Fenris entry. It was here on the stated grounds that it
-            -- "is a legitimate hull" that should be deprioritised via a
-            -- fractional weight, but there is no such class: retail ships.tbl
-            -- has GTC Aeolus, GTC Leviathan and GTCv Deimos and no Fenris at
-            -- all, and no mod table defines one. An unknown class resolves to
-            -- an invalid handle rather than nil, so the entry never failed
-            -- loudly - it just made this roster longer than the game is. Four
-            -- real tier-2 escorts remain below, so escort coverage is
-            -- unchanged. core/tools/test_table_references.py now fails the
-            -- build on any class name that does not resolve.
+            -- Upstream strips retail's obsolete @ demo prefix from Fenris.
+            { class = "GTC Fenris", tier = 2, role = "escort", weight = 3 },
             { class = "GTC Aeolus", tier = 2, role = "escort", weight = 4 },
             { class = "GTC Leviathan", tier = 2, role = "escort", weight = 2 },
-            { class = "GTSC Faustus", tier = 2, role = "escort", weight = 1 },
             { class = "GTCv Deimos", tier = 3, role = "capital", weight = 5 },
             { class = "GTD Hecate", tier = 4, role = "heavy", weight = 4 },
             { class = "GTD Orion", tier = 4, role = "heavy", weight = 3 },
             { class = "GTVA Colossus", tier = 5, role = "juggernaut", weight = 1 },
+            { class = "GTD Hades", tier = 5, role = "juggernaut", weight = 1 },
+            { class = "NTF Boadicea", tier = 3, role = "capital", weight = 3 },
+            { class = "NTF Iceni", tier = 4, role = "heavy", weight = 2 },
         },
         RedRoster = {
+            { class = "SB Shaitan", tier = 1, role = "bomber", weight = 2 },
             { class = "SF Mara", tier = 1, role = "fighter", weight = 5 },
             { class = "SF Dragon", tier = 1, role = "fighter", weight = 4 },
             { class = "SB Nephilim", tier = 2, role = "bomber", weight = 4 },
@@ -1195,6 +1223,7 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
 { class = "SD Lucifer", tier = 5, role = "juggernaut", weight = 1 },
         },
         GoldRoster = {
+            { class = "PVF Anubis", tier = 1, role = "fighter", weight = 2 },
             { class = "GVF Tauret", tier = 1, role = "fighter", weight = 5 },
             { class = "GVF Horus", tier = 1, role = "fighter", weight = 3 },
             { class = "GVB Bakha", tier = 2, role = "bomber", weight = 4 },

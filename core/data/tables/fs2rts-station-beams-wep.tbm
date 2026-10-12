@@ -1,0 +1,342 @@
+#Primary Weapons
+; Retail beam profiles dedicated to station mounts. Both the acquisition range
+; and physical beam length are 6 km; fleet capital weapons keep their reach.
+$Name: RTS Station BVas
+$Model File:					none
+@Laser Bitmap:               	laserglow01
+@Laser Color:					255, 200, 67
+@Laser Length:					0.0
+@Laser Head Radius:				0.3
+@Laser Tail Radius:				0.3
+$Mass:                          100.0
+$Velocity:                      1600.0
+$Fire Wait:                     24.0
+$Damage:                        1100
+$Damage Type: RTS Capital Beam
+$Armor Factor:                  1.0
+$Shield Factor:                 1.0
+$Subsystem Factor:              1.0
+$Lifetime:                      25.0
+$Energy Consumed:               0.30
+$Cargo Size:                    0.0
+$Homing:                        NO
+$LaunchSnd:                     125
+$ImpactSnd:                     88
++Weapon Range: 6000
+$Flags:                         ("Big Ship" "huge" "beam")
+$Icon:                          icongun05
+$Anim:                          LoadGun07
+$Impact Explosion:              ExpMissileHit1
+$Impact Explosion Radius:       60.0
+$BeamInfo:
+	+Type:						0
+	+Life:		  				3.7
+	+Warmup:		  			3500
+	+Warmdown:					3500
+	+Radius:		  			110.0
+	+PCount:					20
+	+PRadius:					1.4
+	+PAngle:					60.0
+	+PAni:						particleexp01
+	+Miss Factor:				1.0 1.2 1.5 1.7 2.1
+	+BeamSound:					121
+	+WarmupSound:				122
+	+WarmdownSound:				123
+	+Muzzleglow:				beamglow6
+	+Shots:						0
+	+ShrinkFactor:				0.0
+	+ShrinkPct:					0.0
+	+Range: 6000
+	$Section:
+		+Width:					20.0
+		+Texture:				beam-white3
+		+RGBA Inner:			255 255 255 255
+		+RGBA Outer:			150 150 150 10
+		+Flicker:				0.1
+		+Zadd:					2.0
+	$Section:
+		+Width:					40.0
+		+Texture:				beam-orange2
+		+RGBA Inner:			160 160 0 255
+		+RGBA Outer:			60 60 0 10
+		+Flicker:				0.2
+		+Zadd:					1.0
+	$Section:
+		+Width:					50.0
+		+Texture:				beam-orange
+		+RGBA Inner:			255 0 0 255
+		+RGBA Outer:			60 0 0 10
+		+Flicker:				0.3
+		+Zadd:					0.0
+
+$Name: RTS Station AAAf
+$Model File:                    none
+@Laser Bitmap:                  laserglow01
+@Laser Color:					136, 243, 249
+@Laser Length:					0.0
+@Laser Head Radius:				0.60
+@Laser Tail Radius:				0.60
+$Mass:                          100.0
+$Velocity:                      1000.0
+$Fire Wait:                     5.5
+$Damage:                        14
+$Damage Type: RTS Capital Beam
+$Armor Factor:                  1.0
+$Shield Factor:                 1.0
+$Subsystem Factor:              1.0
+$Lifetime:                      40.0
+$Energy Consumed:               0.30
+$Cargo Size:                    0.0
+$Homing:                        NO
+$LaunchSnd:                     124
+$ImpactSnd:                     88
++Weapon Range: 6000
+$Flags:                         ("Big Ship" "beam")
+$Icon:                          icongun05
+$Anim:                          LoadGun07
+$Impact Explosion:              ExpMissileHit1
+$Impact Explosion Radius:       10.0
+$BeamInfo:
+	+Type:						3
+	+Life:			  			2.5
+	+Warmup:		  			1500
+	+Warmdown:					1200
+	+Radius:		  			20.0
+	+PCount:					12
+	+PRadius:					1.2
+	+PAngle:					65.0
+	+PAni:						particleexp01
+	+Miss Factor:				1.5 1.6 1.7 1.8 2.0
+	+BeamSound:					149
+	+WarmupSound:				151
+	+WarmdownSound:				161
+	+Muzzleglow:				thrusterglow01
+	+Shots:						3
+	+ShrinkFactor:				0.0
+	+ShrinkPct:					0.0
+	+Range: 6000
+	$Section:
+		+Width:					2.0
+		+Texture:				beam-white
+		+RGBA Inner:			255 255 255 255
+		+RGBA Outer:			150 150 150 10
+		+Flicker:				0.1
+		+Zadd:					2.0
+	$Section:
+		+Width:					6.0
+		+Texture:				beam-dblue2
+		+RGBA Inner:			160 160 0 255
+		+RGBA Outer:			60 60 0 10
+		+Flicker:				0.1
+		+Zadd:					1.0
+	$Section:
+		+Width:					8.0
+		+Texture:				beam-dblue
+		+RGBA Inner:			255 0 0 255
+		+RGBA Outer:			60 0 0 10
+		+Flicker:				0.4
+		+Zadd:					0.0
+
+$Name: RTS Station SAAA
+$Model File:                    none
+@Laser Bitmap:                  laserglow01
+@Laser Color:			250, 30, 30
+@Laser Length:			0.0
+@Laser Head Radius:		0.60
+@Laser Tail Radius:		0.60
+$Mass:                          4.0
+$Velocity:                      1000.0
+$Fire Wait:                     5.0
+$Damage:                        9
+$Damage Type: RTS Capital Beam
+$Armor Factor:                  1.0
+$Shield Factor:                 1.0
+$Subsystem Factor:              1.0
+$Lifetime:                      50.0
+$Energy Consumed:               0.30
+$Cargo Size:                    0.0
+$Homing:                        NO
+$LaunchSnd:                     124
+$ImpactSnd:                     88
++Weapon Range: 6000
+$Flags:                         ("Big Ship" "beam")
+$Icon:                          icongun05
+$Anim:                          LoadGun07
+$Impact Explosion:              ExpMissileHit1
+$Impact Explosion Radius:       10.0
+$BeamInfo:
+	+Type:			3
+	+Life:			3.5
+	+Warmup:		1000
+	+Warmdown:		1000
+	+Radius:		20.0
+	+PCount:		12
+	+PRadius:		1.2
+	+PAngle:		65.0
+	+PAni:			particleexp01
+	+Miss Factor:				6.0 5.0 4.0 3.0 1.5
+	+BeamSound:			179
+	+WarmupSound:		182
+	+WarmdownSound:		189
+	+Muzzleglow:		thrusterglow01
+	+Shots:				3
+	+ShrinkFactor:		0.0
+	+ShrinkPct:			0.0
+	+Range: 6000
+	$Section:
+		+Width:			2.0
+		+Texture:		beam-red
+		+RGBA Inner:		255 255 255 255
+		+RGBA Outer:		150 150 150 10
+		+Flicker:		0.1
+		+Zadd:			2.0
+	$Section:
+		+Width:			6.0
+		+Texture:		beam-red2
+		+RGBA Inner:		160 160 0 255
+		+RGBA Outer:		60 60 0 10
+		+Flicker:		0.1
+		+Zadd:			1.0
+	$Section:
+		+Width:			8.0
+		+Texture:		beam-white
+		+RGBA Inner:		255 0 0 255
+		+RGBA Outer:		60 0 0 10
+		+Flicker:		0.1
+		+Zadd:			0.0
+
+$Name: RTS Station LRed
+$Model File:                    none
+@Laser Bitmap:                  laserglow01
+@Laser Color:					250, 30, 30
+@Laser Length:					0.0
+@Laser Head Radius:				0.30
+@Laser Tail Radius:				0.30
+$Mass:                          100.0
+$Velocity:                      1000.0
+$Fire Wait:                     10.0
+$Damage:                        600
+$Damage Type: RTS Capital Beam
+$Armor Factor:                  1.0
+$Shield Factor:                 1.0
+$Subsystem Factor:              1.0
+$Lifetime:                      30.0
+$Energy Consumed:               0.30
+$Cargo Size:                    0.0
+$Homing:                        NO
+$LaunchSnd:                     125
+$ImpactSnd:                     88
++Weapon Range: 6000
+$Flags:                         ("Big Ship" "huge" "beam")
+$Icon:                          icongun05
+$Anim:                          LoadGun07
+$Impact Explosion:              ExpMissileHit1
+$Impact Explosion Radius:       50.0
+$BeamInfo:
+	+Type:						0
+	+Life:			  			7.0
+	+Warmup:		  			3000
+	+Warmdown:					1500
+	+Radius:		  			80.0
+	+PCount:					12
+	+PRadius:					1.9
+	+PAngle:					65.0
+	+PAni:						particleexp01
+	+Miss Factor:				2.5 1.875 1.25 0.875 0.5
+	+BeamSound:					178
+	+WarmupSound:				184
+	+WarmdownSound:				188
+	+Muzzleglow:				thrusterglow01
+	+Shots:						0
+	+ShrinkFactor:				0.1
+	+ShrinkPct:					1.8
+	+Range: 6000
+	$Section:
+		+Width:					12.0
+		+Texture:				beam-white
+		+RGBA Inner:			255 255 255 255
+		+RGBA Outer:			150 150 150 10
+		+Flicker:				0.1
+		+Zadd:					2.0
+	$Section:
+		+Width:					40.0
+		+Texture:				beam-red2
+		+RGBA Inner:			160 160 0 255
+		+RGBA Outer:			60 60 0 10
+		+Flicker:				0.1
+		+Zadd:					1.0
+	$Section:
+		+Width:					65.0
+		+Texture:				beam-red
+		+RGBA Inner:			255 0 0 255
+		+RGBA Outer:			60 0 0 10
+		+Flicker:				0.1
+		+Zadd:					0.0
+$Name: RTS Station LTerSlash
+$Model File:                    none
+@Laser Bitmap:                  laserglow01
+@Laser Color:					0, 255, 54
+@Laser Length:					0.0
+@Laser Head Radius:				0.30
+@Laser Tail Radius:				0.30
+$Mass:                          100.0
+$Velocity:                      1000.0
+$Fire Wait:                     10.0
+$Damage:                        150
+$Damage Type: RTS Capital Beam
+$Armor Factor:                  1.0
+$Shield Factor:                 1.0
+$Subsystem Factor:              1.0
+$Lifetime:                      30.0
+$Energy Consumed:               0.30
+$Cargo Size:                    0.0
+$Homing:                        NO
+$LaunchSnd:                     124
+$ImpactSnd:                     88
++Weapon Range: 6000
+$Flags:                         ("Big Ship" "huge" "beam")
+$Icon:                          icongun05
+$Anim:                          LoadGun07
+$Impact Explosion:              ExpMissileHit1
+$Impact Explosion Radius:       40.0
+$BeamInfo:
+	+Type:						1
+	+Life:			  			2.2
+	+Warmup:		  			3000
+	+Warmdown:					1500
+	+Radius:		  			40.0
+	+PCount:					12
+	+PRadius:					1.2
+	+PAngle:					65.0
+	+PAni:						particleexp01
+	+Miss Factor:				0.5 0.875 1.25 1.875 2.5
+	+BeamSound:					144
+	+WarmupSound:				153
+	+WarmdownSound:				156
+	+Muzzleglow:				beamglow3
+	+Shots:						0
+	+ShrinkFactor:				0.0
+	+ShrinkPct:					0.0
+	+Range: 6000
+	$Section:
+		+Width:					7.0
+		+Texture:				beam-white3
+		+RGBA Inner:			255 255 255 255
+		+RGBA Outer:			150 150 150 10
+		+Flicker:				0.0
+		+Zadd:					2.0
+	$Section:
+		+Width:					16.0
+		+Texture:				beam-green2
+		+RGBA Inner:			160 160 0 255
+		+RGBA Outer:			60 60 0 10
+		+Flicker:				0.4
+		+Zadd:					1.0
+	$Section:
+		+Width:					26.0
+		+Texture:				beam-green3
+		+RGBA Inner:			255 0 0 255
+		+RGBA Outer:			60 0 0 10
+		+Flicker:				0.5
+		+Zadd:					0.0
+#End

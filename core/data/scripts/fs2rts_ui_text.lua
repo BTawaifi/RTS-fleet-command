@@ -10,6 +10,22 @@ function RTS:Log(message)
     ba.print("[FS2RTS] " .. tostring(message) .. "\n")
 end
 
+local WEAPON_DISPLAY_NAMES={BGreen='Green heavy beam',BBlue='Blue heavy beam',BRed='Red heavy beam',
+    TerSlash='Terran slash beam',LTerSlash='Light Terran slash beam',AAAf='Terran anti-fighter beam',
+    SAAA='Shivan anti-fighter beam',BVas='Vasudan heavy beam',LRed='Light Shivan beam',
+    ['Terran Huge Turret']='Heavy laser',['Terran Turret']='Defense laser'}
+
+function RTS:GetWeaponDisplayName(weapon)
+    local name=type(weapon)=='string' and weapon or weapon.Name
+    if type(weapon)~='string' then
+        local title=weapon.TechTitle
+        if type(title)=='string' and title~='' and title~=name then return title end
+        local display=tostring(weapon)
+        if display~=name and not display:find('^table:') and not display:find('^userdata:') then return display end
+    end
+    return WEAPON_DISPLAY_NAMES[name] or name
+end
+
 -- Measured text width. FSO's default UI font is a proportional face
 -- (font01.vf, loaded in code/graphics/software/font.cpp:246) and gr.getStringWidth
 -- is the engine's own measurement for it (code/scripting/api/libs/graphics.cpp:1557).
@@ -32,7 +48,7 @@ function RTS:TruncateToWidth(text, maxWidth)
     maxWidth = math.floor(tonumber(maxWidth) or 0)
     if maxWidth <= 0 then return "" end
     if self:TextWidth(text) <= maxWidth then return text end
-    local ellipsis = "."
+    local ellipsis = "..."
     local lo, hi = 0, #text
     while lo < hi do
         local mid = math.floor((lo + hi + 1) / 2)
@@ -173,6 +189,17 @@ end
 -- passed the full string to a five-argument gr.drawString and let the engine
 -- clip it now truncate first, so a long label degrades to a shortened one
 -- instead of being re-wrapped over its neighbours.
+function RTS:DrawWrappedTextToWidth(text,x,y,width,lineHeight,maxLines)
+    local lines=self:WrapTextLinesToWidth(text,width,maxLines)
+    for i,line in ipairs(lines) do gr.drawString(line,x,y+(i-1)*lineHeight) end
+    return #lines*lineHeight
+end
+
+function RTS:TextHeight(text)
+    local ok,height=pcall(gr.getStringHeight,tostring(text or "M"))
+    return ok and type(height)=="number" and height>0 and height or 16
+end
+
 function RTS:DrawCenteredTextClipped(text, x1, x2, y)
     text = self:TruncateToWidth(tostring(text or ""), (x2 - x1))
     self:DrawCenteredText(text, x1, x2, y)
@@ -205,6 +232,11 @@ function RTS:GetBaseDistanceProfile()
     return list[self.SetupBaseDistanceIndex or 1] or list[1] or {name="STANDARD", distance=18000}
 end
 
+function RTS:GetBaseLayoutProfile()
+    local list=self.Config.Setup.BaseLayouts or {}
+    return list[self.SetupBaseLayoutIndex or 1] or list[1] or {id="CIRCLE",name="CIRCLE",desc="One ring with evenly spaced stations."}
+end
+
 function RTS:GetScenarioBasePosition(kind)
     local p = self.ScenarioBasePositions and self.ScenarioBasePositions[kind]
     if p ~= nil then return p end
@@ -212,6 +244,20 @@ function RTS:GetScenarioBasePosition(kind)
     if kind == "RED" then return vec(9000,0,0) end
     local g=self.Config.ThirdFaction.StationPosition
     return vec(g.x,g.y,g.z)
+end
+
+function RTS:GetFactionBattleFacingPoint(kind)
+    if not self.ScenarioBaseLayoutId or self.ScenarioBaseLayoutId=='CIRCLE' then return vec(0,0,0) end
+    local origin=self.ScenarioBasePositions[kind]
+    local best,closest=nil,math.huge
+    for _,other in ipairs(self:GetFactionKeys()) do
+        local p=self.ScenarioBasePositions[other]
+        if other~=kind and origin and p and (self.SetupActive or not self:IsFactionEliminated(other)) then
+            local distance=origin:getDistance(p)
+            if distance<closest then best,closest=p,distance end
+        end
+    end
+    return best or vec(0,0,0)
 end
 
 function RTS:RepositionExistingFaction(kind, desired)
@@ -225,7 +271,8 @@ function RTS:RepositionExistingFaction(kind, desired)
     if not shipValid(station) or desired==nil then return end
     local old=copyVec(station.Position)
     local dx,dy,dz=desired.x-old.x,desired.y-old.y,desired.z-old.z
-    local teamKey = kind=="BLUE" and self.Config.FriendlyTeam or self.Config.HostileTeam
+    local faction=self:GetFactionDefinition(kind)
+    local teamKey = faction and faction.team or (kind=="BLUE" and self.Config.FriendlyTeam or self.Config.HostileTeam)
     self:EachShip(function(ship)
         if shipValid(ship) and ship.Name~=self.Config.ObserverShip and teamName(ship)==teamKey then
             ship.Position=vec(ship.Position.x+dx,ship.Position.y+dy,ship.Position.z+dz)
@@ -234,28 +281,68 @@ function RTS:RepositionExistingFaction(kind, desired)
 end
 
 function RTS:ApplyConfiguredBaseSpacing()
+    if not self.SetupActive then return false end
     local profile=self:GetBaseDistanceProfile(); local d=profile.distance or 18000
-    local blue,red,gold
-    if self.SetupFactionCount >= 3 then
-        local h=math.sqrt(3)*0.5*d
-        blue=vec(-d*0.5,0,-h/3)
-        red=vec(d*0.5,0,-h/3)
-        gold=vec(0,0,2*h/3)
+    local keys=self:GetFactionKeys(); local count=#keys
+    if count<2 then return false end
+    local positions={}; local maxRadius=0
+    local layout=self:GetBaseLayoutProfile().id
+    if layout=="CIRCLE" and count==2 then
+        positions[keys[1]]=vec(-d*.5,0,0); positions[keys[2]]=vec(d*.5,0,0); maxRadius=d*.5
+    elseif layout=="CIRCLE" then
+        local radius=d/(2*math.sin(math.pi/count))
+        local startAngle=-math.pi*.5-math.pi/count
+        for index,kind in ipairs(keys) do
+            local angle=startAngle+2*math.pi*(index-1)/count
+            positions[kind]=vec(radius*math.cos(angle),0,radius*math.sin(angle))
+        end
+        maxRadius=radius
     else
-        blue=vec(-d*0.5,0,0)
-        if self:IsFactionEnabled("RED") then red=vec(d*0.5,0,0) else gold=vec(d*0.5,0,0) end
+        local cx,cz=0,0
+        local clusters=count>=9 and 3 or 2
+        for index,kind in ipairs(keys) do
+            local x,z
+            if layout=="MULTI_CIRCLE" then
+                local cluster=(index-1)%clusters
+                local size=math.floor((count-1-cluster)/clusters)+1
+                local localIndex=math.floor((index-1)/clusters)
+                local centerAngle=math.pi+2*math.pi*cluster/clusters
+                local angle=-math.pi*.5+2*math.pi*localIndex/size
+                local radius=size>1 and 1 or 0
+                x=3*math.cos(centerAngle)+radius*math.cos(angle)
+                z=3*math.sin(centerAngle)+radius*math.sin(angle)
+            else
+                local angle=-math.pi*.5-math.pi/count+2*math.pi*(index-1)/count
+                local radius=index%2==1 and 1 or .5
+                x=radius*math.cos(angle); z=radius*math.sin(angle)
+            end
+            positions[kind]=vec(x,0,z); cx=cx+x/count; cz=cz+z/count
+        end
+        local nearest=math.huge
+        for i=1,count do for j=i+1,count do nearest=math.min(nearest,positions[keys[i]]:getDistance(positions[keys[j]])) end end
+        -- Different shapes retain the chosen minimum separation, not an arbitrary radius.
+        local scale=d/nearest
+        for _,kind in ipairs(keys) do
+            local p=positions[kind]; p=vec((p.x-cx)*scale,0,(p.z-cz)*scale); positions[kind]=p
+            maxRadius=math.max(maxRadius,p:getDistance(vec(0,0,0)))
+        end
     end
-    self.ScenarioBasePositions={BLUE=blue,RED=red,GOLD=gold}
-    self:RepositionExistingFaction("BLUE",blue)
-    if red~=nil then self:RepositionExistingFaction("RED",red) end
+    self.ScenarioBasePositions=positions
+    self.ScenarioBaseLayoutId=layout
+    self.ScenarioMapHalfExtent=math.max(self.Config.TacticalMap.HalfExtent or 15000,maxRadius+math.max(10000,d*.65))
+    for _,kind in ipairs(self:GetFactionKeys()) do self:RepositionExistingFaction(kind,positions[kind]) end
+    self.CameraDistance=math.max(self.CameraDistance or self.Config.Camera.Distance,maxRadius*1.7)
+    self.CameraDistance=math.min(self.CameraDistance,self.Config.Camera.MaxDistance)
     self.CameraFocus=vec(0,0,0); self:UpdateCameraTransform()
 end
 
 function RTS:OpenPostBattle(resultText)
     if self.PostBattleActive then return end
+    self.FreeCamActive=false
+    self:StopBattleCam()
     self.PostBattleActive=true
     self.PostBattleResult=resultText or "BATTLE COMPLETE"
-    self:EmitAIFinalBalance(self.BattleVictor or self.GameStatus or self.PostBattleResult,mn.getMissionTime())
+    if self.StrategicResult then self:EmitAIFinalBalance(self.StrategicResult.victor,mn.getMissionTime()) end
     if self.PossessedSignature~=nil then self:ExitPilotMode(nil,false) end
     if self.FollowSignature~=nil then self:ExitFollowMode(nil) end
     self.Selected={}
@@ -264,10 +351,30 @@ function RTS:OpenPostBattle(resultText)
     -- old call here stopped the mod's own systems (OnFrame returns early on
     -- PostBattleActive) and left the ENGINE clock running: ships kept flying
     -- and weapons kept firing behind the result overlay. SetPaused is not used
-    -- because it would leave the Esc key toggling a pause on a screen that has
-    -- no resume, and would still be true when RestartMission calls
-    -- SetTimeScale(1).
+    -- because the result overlay owns this stop separately from gameplay pause.
     self:SetTimeScale(0,true)
+end
+
+function RTS:ResumePostBattle()
+    if not self.PostBattleActive or self.FleetFateFinal then return false end
+    self.AftermathResultStatus=self.GameStatus; self.AftermathResultText=self.PostBattleResult
+    self.AftermathStationCount=#self:GetLivingFactionKeys()
+    self.PostBattleActive=false; self.GameStatus='ACTIVE'; self.Paused=false
+    self:ClearInputGestures()
+    self.ArmedSentryIndex=nil; self.ArmedCommand=nil
+    self.NextSurvivorCombat=0
+    self:SetTimeScale(1)
+    self:SetStatus(self.AftermathActive and 'AFTERMATH // No construction, income, abilities or refitting'
+        or 'BATTLE CONTINUES // Surviving stations retain their economies',8)
+    self:EmitAIEvent('BATTLE_RESUMED',{stationsRemaining=self.AftermathStationCount},mn.getMissionTime())
+    return true
+end
+
+function RTS:OpenSurvivorReport()
+    if (not self.AftermathActive and not self.PlayerDefeatShown) or self.PostBattleActive then return end
+    self.GameStatus=self.StrategicResult and self.AftermathResultStatus or 'DEFEAT'
+    self.BattleSummary=self:BuildBattleSummary()
+    self:OpenPostBattle(self.StrategicResult and self.AftermathResultText or 'YOUR STATION WAS LOST // GLOBAL BATTLE UNRESOLVED')
 end
 
 function RTS:RestartMission()
@@ -279,7 +386,25 @@ function RTS:RestartMission()
     else self:SetStatus("Restart unavailable - use Esc > Restart", 4) end
 end
 
+function RTS:OpenExitMenu()
+    if self.ExitMenuActive then return end
+    if self.Paused then self:SetPaused(false) end
+    self.ExitMenuResumeScale=self.TimeScale>0 and self.TimeScale or 1
+    self.ExitMenuActive=true; self.EnvironmentPicker=false
+    self:ClearInputGestures(); self:SetTimeScale(0,true)
+end
+
+function RTS:HandleExitMenuAction(action)
+    if not self.ExitMenuActive or (action~='resume' and action~='restart' and action~='quit') then return false end
+    self.ExitMenuActive=false; self:ClearInputGestures()
+    self:SetTimeScale(self.ExitMenuResumeScale or 1); self.ExitMenuResumeScale=nil
+    if action=='restart' then self:RestartMission()
+    elseif action=='quit' then self:ExitMissionToMenu() end
+    return true
+end
+
 function RTS:ExitMissionToMenu()
+    self:EmitAIEvent('OBSERVATION_ENDED',{strategicVictor=self.StrategicResult and self.StrategicResult.victor or 'UNRESOLVED'},mn.getMissionTime())
     self:SetTimeScale(1)
     local ok, ev = pcall(function() return ba.GameEvents["GS_EVENT_END_GAME"] end)
     if ok and ev ~= nil then
@@ -291,7 +416,12 @@ end
 function RTS:HandlePostBattleClick(x,y)
     for id,rect in pairs(self.PostBattleButtonRects or {}) do
         if self:PointInside(rect,x,y) then
-            if id=="restart" then self:RestartMission() elseif id=="exit" then self:ExitMissionToMenu() end
+            if id=="resume" then self:ResumePostBattle() elseif id=="restart" then self:RestartMission() elseif id=="exit" then self:ExitMissionToMenu()
+            elseif id=='withdraw' then self:WithdrawPlayerFleet()
+            elseif id=='prev' then self.ReportOffset=math.max(0,(self.ReportOffset or 0)-5)
+            elseif id=='next' then self.ReportOffset=(self.ReportOffset or 0)+5
+            elseif id:sub(1,5)=='page_' then self.ReportPage=id:sub(6); self.ReportOffset=0
+            elseif id:sub(1,8)=='history_' then self.HistoryDetail=id:sub(9) end
             return true
         end
     end
@@ -299,7 +429,7 @@ function RTS:HandlePostBattleClick(x,y)
 end
 
 function RTS:GetHoverOrderTarget(ship)
-    if not shipValid(ship) then return nil,nil end
+    if not shipValid(ship) or not self:IsFriendly(ship) then return nil,nil end
     local sig=ship:getSignature(); local order=self.UserOrders[sig]
     if order and order.targetSignature then
         local t=self:FindShipBySignature(order.targetSignature)
@@ -317,6 +447,7 @@ end
 
 function RTS:GetHoverActionLabel(ship)
     if not shipValid(ship) then return "UNKNOWN" end
+    if not self:IsFriendly(ship) then return "ENEMY CONTACT" end
     local sig=ship:getSignature()
     local order=self.UserOrders[sig]
     if order~=nil and order.kind~=nil then return "PLAYER ORDER: "..string.upper(tostring(order.kind)) end
@@ -328,7 +459,7 @@ function RTS:GetHoverActionLabel(ship)
 end
 
 function RTS:GetHoverCourseProjection(ship, startX, startY)
-    if not shipValid(ship) then return nil end
+    if not shipValid(ship) or not self:IsFriendly(ship) then return nil end
     local velocity=ship.Physics and ship.Physics.Velocity or nil
     if velocity==nil or not self:IsFiniteVector(velocity) then return nil end
     local speedSquared=velocity.x*velocity.x+velocity.y*velocity.y+velocity.z*velocity.z
@@ -364,30 +495,64 @@ end
 
 function RTS:DrawHoverReadout(ship, mouseX, mouseY, target, courseSeconds)
     local sw,sh=gr.getScreenWidth(),gr.getScreenHeight()
-    local width=math.min(440,math.max(180,sw-16))
-    local height=100
-    local x=clamp(mouseX+18,8,math.max(8,sw-width-8))
+    local m=self:GetUIMetrics(sw,sh)
+    local width=math.min(m.pad(440),math.max(180,sw-16))
+    local friendly=self:IsFriendly(ship)
+    local lh=math.max(m.lineHeight,self:TextHeight("M")+3)
+    -- The action label is the longest string on the card. It wraps to a second row
+    -- instead of being cut ("PRIMARY ...") and the rows below move down with it.
+    local actionLines=friendly and self:WrapTextLinesToWidth("ACTION: "..self:GetHoverActionLabel(ship),width-18,2) or {}
+    local extra=math.max(0,#actionLines-1)*lh
+    local height=16+lh*(friendly and 9 or 3)+extra
+    -- Keep clear of the right-hand column: the station upgrade and sentry buttons
+    -- it describes were hidden behind the card.
+    local columnLeft=sw-m.margin-m.rightPanelWidth-m.gap
+    local x=clamp(mouseX+18,8,math.max(8,math.min(sw-width-8,columnLeft-width)))
     local y=clamp(mouseY+18,48,math.max(48,sh-height-8))
     gr.setColor(3,10,17,232); gr.drawRectangle(x,y,x+width,y+height,true)
     gr.setColor(85,210,235,245); gr.drawRectangle(x,y,x+width,y+height,false)
-    gr.setColor(115,235,255,255); gr.drawString(tostring(ship.Name or "SHIP"),x+9,y+7,x+width-9,y+25)
-    gr.setColor(240,245,250,255); gr.drawString("ACTION: "..self:GetHoverActionLabel(ship),x+9,y+29,x+width-9,y+47)
+    gr.setColor(115,235,255,255); self:DrawTextLine(ship.Name or "SHIP",x+9,y+7,width-18)
+    gr.setColor(200,220,235,255)
+    self:DrawTextLine((ship.Class and ship.Class.Name or "UNKNOWN").." | "..self:GetFactionDisplayName(self:GetFactionKey(ship)).." | "..string.upper(self:GetShipRole(ship)),x+9,y+7+lh,width-18)
+    if not friendly then
+        local hp=ship.HitpointsMax>0 and clamp(ship.HitpointsLeft/ship.HitpointsMax*100,0,100) or 0
+        local max=ship.Shields.CombinedMax or 0
+        local shields=max>0 and clamp((ship.Shields.CombinedLeft or 0)/max*100,0,100) or 0
+        self:DrawTextLine(string.format("Hull %.0f%% | Shields %.0f%%",hp,shields),x+9,y+7+2*lh,width-18)
+        return
+    end
+    gr.setColor(240,245,250,255)
+    -- Row 2 is the ACTION row (row 0 is the name, row 1 the class line).
+    for i,line in ipairs(actionLines) do gr.drawString(line,x+9,y+7+(2+i-1)*lh) end
     if shipValid(target) then
         gr.setColor(255,220,125,255)
-        gr.drawString("TARGET: "..tostring(target.Name or "OBJECT"),x+9,y+51,x+width-9,y+69)
+        self:DrawTextLine("TARGET: "..tostring(target.Name or "OBJECT"),x+9,(y+7+extra+3*lh),width-18)
     else
-        gr.setColor(175,195,205,255); gr.drawString("TARGET: none",x+9,y+51,x+width-9,y+69)
+        gr.setColor(175,195,205,255); self:DrawTextLine("TARGET: none",x+9,(y+7+extra+3*lh),width-18)
     end
     if courseSeconds~=nil then
         gr.setColor(85,235,255,255)
-        gr.drawString(string.format("COURSE (LINEAR): %.1fs",courseSeconds),x+9,y+73,x+width-9,y+91)
+        -- courseSeconds is the horizon of the drawn line at current speed, not an ETA.
+        self:DrawTextLine(string.format("COURSE: straight line, %.1fs ahead",courseSeconds),x+9,(y+7+extra+4*lh),width-18)
     else
-        gr.setColor(175,195,205,255); gr.drawString("COURSE: stationary",x+9,y+73,x+width-9,y+91)
+        gr.setColor(175,195,205,255); self:DrawTextLine("COURSE: stationary",x+9,(y+7+extra+4*lh),width-18)
     end
+    local ranges=self:GetShipWeaponRanges(ship)
+    gr.setColor(80,220,255,255)
+    self:DrawTextLine(string.format("PRIMARY: %dm",ranges.primary),x+9,(y+7+extra+5*lh),width-18)
+    gr.setColor(255,190,75,255)
+    self:DrawTextLine(string.format("SECONDARY: %dm",ranges.secondary),x+9,(y+7+extra+6*lh),width-18)
+    gr.setColor(205,140,255,255)
+    self:DrawTextLine(string.format("BEAM: %dm",ranges.beam),x+9,(y+7+extra+7*lh),width-18)
+    gr.setColor(175,195,205,255)
+    self:DrawTextLine("Max loaded reach; arcs/target limits apply",x+9,(y+7+extra+8*lh),width-18)
 end
 
 function RTS:DrawCurrentHoverReadout()
     local hover=self.HoverReadout
+    -- While placing a sentry the placement readout is the only cursor text that
+    -- matters; a ship card under the cursor covered it.
+    if self.ArmedCommand=="sentry" then return end
     if hover~=nil and shipValid(hover.ship) then
         self:DrawHoverReadout(hover.ship,hover.mouseX,hover.mouseY,hover.target,hover.courseSeconds)
     end

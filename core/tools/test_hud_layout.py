@@ -37,7 +37,7 @@ io.getMouseY=io.getMouseY or function() return 100 end
 io.setCursorHidden=io.getCursorHidden or function() end
 ba.postGameEvent=ba.postGameEvent or function() end
 ba.setButtonControlMode=ba.setButtonControlMode or function() end
-bit=bit or {checkBit=function() return false end}
+bit=bit or {checkBit=function(value,index) return math.floor(value/2^index)%2==1 end}
 
 -- Draw-call recorder. Every geometry assertion below reads these, because a
 -- rect table the HUD forgot to publish would not show up in a hit test.
@@ -54,12 +54,13 @@ function setScreen(w,h) SCREEN_W=w; SCREEN_H=h end
 SCREEN_W=1920; SCREEN_H=1080
 
 gr={setCamera=function() end,
+  loadTexture=function() return {isValid=function() return true end,getWidth=function() return 128 end,getHeight=function() return 128 end} end,
   getScreenWidth=function() return SCREEN_W end,
   getScreenHeight=function() return SCREEN_H end,
   setColor=function() end,
   getStringWidth=function(text) return #tostring(text)*FONT_W end,
   drawRectangle=function(x1,y1,x2,y2,filled)
-    drawLog.rects[#drawLog.rects+1]={x1=x1,y1=y1,x2=x2,y2=y2}
+    drawLog.rects[#drawLog.rects+1]={x1=x1,y1=y1,x2=x2,y2=y2,filled=filled==true}
     drawLog.order[#drawLog.order+1]='rect' end,
   drawString=function(text,x1,y1,x2,y2)
     drawLog.strings[#drawLog.strings+1]={text=tostring(text),x1=x1,y1=y1,x2=x2,y2=y2}
@@ -130,12 +131,256 @@ def resolutions_lua():
 
 
 class HudLayoutTests(unittest.TestCase):
+    def test_setup_layout_selector_has_space_above_faction_rows_and_start(self):
+        self.check('''
+          r.SetupActive=true; r.SetupFactionCountChoice=12; r:UpdateFactionCount()
+          for _,res in ipairs({{1280,720},{1920,1080}}) do
+            setScreen(res[1],res[2]); resetDraws(); r:DrawSetupOverlay(res[1],res[2])
+            local layout=r.SetupButtonRects.layout; local start=r.SetupButtonRects.start
+            assert(layout and layout.y2<start.y1,'layout control overlaps start')
+            for id,rect in pairs(r.SetupButtonRects) do
+              if id:sub(1,8)=='faction_' and id~='faction_prev' and id~='faction_next' then
+                assert(rect.y1>layout.y2 and rect.y2+24<start.y1,'faction row crowds layout/footer')
+              end
+            end
+            r:HandleSetupClick((layout.x1+layout.x2)/2,(layout.y1+layout.y2)/2)
+            assert(r.SetupBaseLayoutIndex>1,'layout selector did not cycle through actual click handler')
+            r.SetupBaseLayoutIndex=1
+          end
+        ''')
+
+    def test_button_labels_are_centered_using_actual_glyph_height(self):
+        self.check('''
+          setScreen(1280,720); resetDraws()
+          local rect={x1=100,y1=100,x2=220,y2=140}
+          r:DrawButton(rect,'BUILD',true,false)
+          local label=drawLog.strings[1]
+          assert(label.x1==math.floor((rect.x1+rect.x2-gr.getStringWidth('BUILD'))/2),'button label is left-biased')
+          -- +1 is the measured optical correction: the caps sit ~1.5px above the
+          -- font-cell centre at 1920x1080, so the label is nudged down one pixel.
+          assert(label.y1==math.floor((rect.y1+rect.y2-r:TextHeight('BUILD'))/2)+1,'button label uses line pitch instead of ink height')
+        ''')
+
+    def test_build_ai_button_badge_and_details_have_separate_padded_columns(self):
+        self.check('''
+          r.AutoPlayerMode=true
+          local badges={}; r.DrawRoleBadge=function(self,role,x,y,size) badges[#badges+1]={x1=x,y1=y,x2=x+size,y2=y+size} end
+          for _,size in ipairs(RES) do
+            setScreen(size[1],size[2]); r.UIMetrics=nil; badges={}; resetDraws()
+            r:DrawBuildPanel(size[1],size[2]); local m=r:GetUIMetrics(size[1],size[2])
+            local count=0
+            for index,button in pairs(r.AutoBuildRequestRects) do
+              count=count+1; local badge=badges[count]; local row=r.BuildButtonRects[index]
+              assert(badge.x1-button.x2>=m.sectionGap,'AI button touches type badge')
+              assert(button.y1-row.y1>=6 and row.y2-button.y2>=6,'AI button lacks vertical padding')
+              assert(row.x2-badge.x2>=m.buttonPadding,'type badge touches row edge')
+            end
+            assert(count>0,'no build rows reached')
+            local costs=0
+            for _,entry in ipairs(drawLog.strings) do
+              if entry.text:find(' CP | ',1,true) then costs=costs+1; assert(entry.x1+gr.getStringWidth(entry.text)<=r.AutoBuildRequestRects[1].x1-m.sectionGap+1,'cost/time is covered by AI') end
+            end
+            assert(costs==count,'cost/time lines are missing')
+          end
+        ''')
+
+    def test_notifications_stay_between_sidebar_controls_and_stack(self):
+        self.check('''
+          for _,size in ipairs(RES) do
+            setScreen(size[1],size[2]); r.UIMetrics=nil
+            r.AnnouncementText='Tier unlocked'; r.AnnouncementUntil=100
+            r.ControlsRect={y1=size[2]-180}
+            local m=r:GetUIMetrics(size[1],size[2])
+            local first=r:GetNotificationRect(size[1],size[2],m.lineHeight+20,'announcement')
+            local ready=r:GetNotificationRect(size[1],size[2],m.lineHeight+18,'ready')
+            local status=r:GetNotificationRect(size[1],size[2],m.lineHeight+16,'status')
+            for _,rect in ipairs({first,ready,status}) do
+              assert(rect.x1>=m.margin+m.selectionWidth+m.gap)
+              assert(rect.x2<=size[1]-m.margin-m.rightPanelWidth-m.gap)
+              assert(rect.y1>=m.topBarHeight and rect.y2<size[2]-m.margin)
+            end
+            assert(ready.y1>first.y2 and status.y2<r.ControlsRect.y1,'notifications overlap one another or hints')
+          end
+        ''')
+
     def setUp(self):
         self.lua = boot()
+        self.check('r.ShowHotkeyHints=true')
         self.check(resolutions_lua())
 
     def check(self, code):
         self.lua.execute(code)
+
+    def test_intro_wrapped_captions_leave_room_for_the_hints_footer(self):
+        self.check('''
+          for _,size in ipairs({{1280,720},{1366,768},{1920,1080},{3840,2160}}) do
+            local w,h=size[1],size[2]; setScreen(w,h)
+            for _,shot in ipairs(r.Config.Cinematic.Shots) do
+              resetDraws(); r.ShowHotkeyHints=false
+              r.CinematicCaption=shot.caption; r.CinematicSubcaption=shot.subcaption
+              r:DrawCinematicOverlay(w,h)
+              local m=r:GetUIMetrics(w,h); local footerY=h-m.lineHeight-m.pad(4)
+              for _,s in ipairs(drawLog.strings) do
+                assert(s.y1+r:TextHeight(s.text)+m.pad(8)<=footerY,
+                  'intro caption collides with hints footer at '..w..'x'..h)
+              end
+            end
+          end
+        ''')
+
+    def test_citation_notification_wraps_and_is_available_in_rts_and_pilot_modes(self):
+        self.check('''
+          r.FleetCitationNotice={name='A deliberately long crewed ship',reason='Recovered from hostile fire and returned to effective combat',untilTime=100}
+          local printed={}; gr.drawString=function(text) printed[#printed+1]=text end
+          for _,size in ipairs(RES) do
+            setScreen(size[1],size[2])
+            for _,mode in ipairs({'RTS','PILOT'}) do
+              r.PossessedSignature=mode=='PILOT' and 123 or nil
+              printed={}
+              assert(r:DrawFleetCitationNotice(size[1],size[2]),'citation vanished at '..size[1]..' '..mode)
+              assert(table.concat(printed,' '):find('effective combat',1,true),'citation reason was clipped')
+            end
+          end
+          r.PilotCommMenuActive=true; assert(not r:DrawFleetCitationNotice(1280,720))
+          r.PilotCommMenuActive=false; r.FleetCitationNotice.untilTime=-1
+          assert(not r:DrawFleetCitationNotice(1280,720),'expired citation persisted')
+        ''')
+
+    def test_fleet_controls_and_recovery_card_avoid_side_panels_and_capture_clicks(self):
+        self.check('''
+          r.BlueEliminated=true; r.PlayerDefeatShown=true
+          r.ExtractionAreas={}; r.AllowWithdrawal={BLUE=true}
+          r.UnitHistory={notice={name='Recoverable ship',fate='PRESENT'}}
+          r.FleetRecoveryNotice={id='notice',untilTime=100}
+          r.GetSelectedFriendlyShips=function() return {} end
+          for _,size in ipairs(RES) do
+            setScreen(size[1],size[2]); resetDraws()
+            r.ControlsRect={y1=size[2]-100}
+            r:DrawFleetLifeOverlay(size[1],size[2])
+            local m=r:GetUIMetrics(size[1],size[2])
+            local count=0
+            for _,rect in pairs(r.FleetLifeButtonRects) do
+              count=count+1
+              assert(rect.x1>=m.margin+m.selectionWidth+m.gap)
+              assert(rect.x2<=size[1]-m.margin-m.rightPanelWidth-m.gap)
+              assert(rect.y1>=m.topBarHeight and rect.y2<r.ControlsRect.y1)
+              assert(REAL_IS_POINT_ON_RTS_UI(r,(rect.x1+rect.x2)/2,(rect.y1+rect.y2)/2))
+            end
+            assert(count==4,'withdraw, report, focus and service must be drawn')
+          end
+        ''')
+
+    def test_exit_button_opens_action_menu_and_resumes_paused_battle(self):
+        self.check('''
+          r.SetPaused=function(self,value) self.Paused=value; if not value then self.TimeScale=2 end end
+          r.SetTimeScale=function(self,value) self.TimeScale=value end
+          r.Paused=true; r.TimeScale=0; r:DrawTopBar(1920)
+          assert(r.ExitMenuButtonRect,'RTS top bar did not draw Exit')
+          local rect=r.ExitMenuButtonRect
+          assert(r:HandleUILeftClick((rect.x1+rect.x2)/2,(rect.y1+rect.y2)/2))
+          assert(r.ExitMenuActive and not r.Paused and r.TimeScale==0,'Exit did not open its paused action menu')
+          r:DrawExitMenu(1280,720)
+          for _,action in ipairs({'resume','restart','quit'}) do
+            rect=r.ExitMenuButtonRects[action]; assert(rect and rect.x1>=0 and rect.x2<=1280 and rect.y1>=0 and rect.y2<=720)
+          end
+          rect=r.ExitMenuButtonRects.resume
+          io.getMouseX=function() return (rect.x1+rect.x2)/2 end
+          io.getMouseY=function() return (rect.y1+rect.y2)/2 end
+          r:OnMousePressed(1); r:OnMouseReleased(1)
+          assert(not r.ExitMenuActive and not r.Paused and r.TimeScale==2,'Resume click did not restore the battle speed')
+          local restarted,quit=false,false
+          r.RestartMission=function() restarted=true end; r.ExitMissionToMenu=function() quit=true end
+          r:OpenExitMenu(); assert(r:HandleExitMenuAction('restart') and restarted)
+          r:OpenExitMenu(); assert(not r:HandleExitMenuAction('invalid') and r.ExitMenuActive)
+          assert(r:HandleExitMenuAction('quit') and quit)
+        ''')
+
+    def test_rts_escape_opens_exit_menu_from_live_or_paused(self):
+        self.check('''
+          r.SetStatus=function() end; r.SetPaused=function(self,value) self.Paused=value end
+          r.SetTimeScale=function(self,value) self.TimeScale=value end
+          for _,paused in ipairs({false,true}) do
+            r.ExitMenuActive=false; r.Paused=paused; r.TimeScale=paused and 0 or 4; r.LastNonZeroTimeScale=4
+            r:OnKeyPressed('Esc','Esc')
+            assert(r.ExitMenuActive and not r.Paused and r.TimeScale==0 and r:ShouldOverrideKey('Esc','Esc'),'RTS Escape did not open the actual action menu')
+            r:OnKeyPressed('Esc','Esc')
+            assert(not r.ExitMenuActive and not r.Paused and r.TimeScale>0 and r:ShouldOverrideKey('Esc','Esc'),'Escape did not resume from the action menu')
+          end
+        ''')
+
+    def test_early_hud_return_clears_new_interactive_regions(self):
+        self.check('''
+          r.FleetLifeButtonRects={withdraw={}}; r.EnvironmentButtonRects={close={}}
+          r.AutoBuildRequestRects={[1]={}}; r.CancelAutoBuildRect={}; r.SceneButtonRect={}
+          r.CinematicActive=true
+          r.DrawCinematicOverlay=function() end
+          r.DrawHintsNotice=function() end
+          r:DrawHUD()
+          assert(next(r.FleetLifeButtonRects)==nil and next(r.EnvironmentButtonRects)==nil)
+          assert(next(r.AutoBuildRequestRects)==nil and r.CancelAutoBuildRect==nil and r.SceneButtonRect==nil)
+        ''')
+
+    def test_victory_aftermath_panel_says_victory_not_aftermath(self):
+        """A player who eliminated the enemy got the generic AFTERMATH card, whose
+        text ("destroy the remaining enemy station to earn a draw") reads as a loss.
+        The panel has to show the outcome the battle already resolved to."""
+        self.check('''
+          r.BlueEliminated=false; r.AftermathActive=true; r.GameStatus='VICTORY'
+          r.AftermathResultText='BLUE WON THE STRATEGIC BATTLE'
+          resetDraws(); r:DrawBuildPanel(1280,720)
+          local text={}
+          for _,s in ipairs(drawLog.strings) do text[#text+1]=s.text end
+          local joined=table.concat(text,' | ')
+          assert(joined:find('VICTORY',1,true),'victory aftermath panel did not show VICTORY: '..joined)
+          assert(not joined:find('AFTERMATH',1,true),'victory aftermath panel still titled AFTERMATH: '..joined)
+          assert(not joined:find('earn a draw',1,true),'victory aftermath panel still shows the defeat-style draw text: '..joined)
+        ''')
+
+    def test_intercept_button_is_lit_while_interception_is_on(self):
+        """'INTERCEPT: OFF' wrapped in the 150 px button and only 'INTERCEPT:' showed.
+        The label is the fixed word and the state is the button's highlight: lit while
+        enemies may fire on departing ships. An unset value means interception is off."""
+        self.check('''
+          r.SetupActive=false; r.EnvironmentPicker=nil; r.PostBattleActive=false
+          r.ExtractionAreas={RED={center=ba.createVector(0,0,0),radius=8000,direction=ba.createVector(1,0,0),slots={}}}
+          r.BlueEliminated=true
+          local seen={}
+          r.DrawButton=function(self,rect,label,enabled,active) seen[#seen+1]={label=label,active=active} end
+          local function intercept()
+            seen={}; r:DrawFleetLifeOverlay(1280,720)
+            for _,b in ipairs(seen) do if b.label=='INTERCEPT' then return b.active==true end end
+            assert(false,'no INTERCEPT button was drawn')
+          end
+          r.AllowWithdrawal={}
+          assert(intercept()==false,'interception off still lights the INTERCEPT button')
+          r.AllowWithdrawal={BLUE=false}
+          assert(intercept()==true,'interception on does not light the INTERCEPT button')
+        ''')
+
+    def test_final_fleet_report_has_no_resume_or_withdraw_button(self):
+        self.check('''
+          r.PostBattleActive=true; r.BlueEliminated=true; r.GameStatus='DEFEAT'
+          r.BattleSummary={fleetHistory={records={},wings={},present=3}}
+          r.FleetFateFinal=false; r:DrawPostBattleOverlay(1280,720)
+          assert(r.PostBattleButtonRects.resume and r.PostBattleButtonRects.withdraw)
+          r.FleetFateFinal=true; r:DrawPostBattleOverlay(1280,720)
+          assert(not r.PostBattleButtonRects.resume and not r.PostBattleButtonRects.withdraw)
+          assert(r.PostBattleButtonRects.restart and r.PostBattleButtonRects.exit)
+          assert(not r:ResumePostBattle(),'hidden Resume action still resumes a final result')
+        ''')
+
+    def test_scene_picker_does_not_use_backdrop_index_for_unselected_music(self):
+        self.check('''
+          r.EnvironmentPicker=true; r.EnvironmentMusicIndex=nil
+          r.EnvironmentBackdropIndex=1
+          assert(r.Config.Music.Tracks[1],'control needs a valid but wrongly selected track')
+          resetDraws(); r:DrawFleetLifeOverlay(1280,720)
+          local seen=false
+          for _,row in ipairs(drawLog.strings) do
+            if row.text=='MUSIC: RANDOM AT START' then seen=true end
+          end
+          assert(seen and r.EnvironmentButtonRects.music_next)
+        ''')
 
     # -- defect 1: the production panel drew zero build rows at 768p ---------
     def test_build_panel_draws_at_least_one_row_at_every_resolution(self):
@@ -401,9 +646,9 @@ class HudLayoutTests(unittest.TestCase):
             local previous=chips[i-1]
             if chips[i].y1==previous.y1 then
               local gap=chips[i].x1-(previous.x1+r:TextWidth(previous.text))
-              assert(gap==m.pad(10),
+              assert(gap==m.sectionGap,
                 'legend chips "'..previous.text..'" and "'..chips[i].text..'" are '
-                  ..gap..'px apart, not the measured '..m.pad(10)..'px, at '..at)
+                  ..gap..'px apart, not the measured '..m.sectionGap..'px, at '..at)
             end
           end
           for _,row in ipairs(r.SelectionRows or {}) do
@@ -508,6 +753,31 @@ class HudLayoutTests(unittest.TestCase):
         local drawn=0
         for _,k in ipairs(drawLog.order) do if k=='rect' or k=='line' then drawn=drawn+1 end end
         assert(drawn>0,'the behind-camera marker placed a point but drew nothing')""")
+
+    def test_edge_marker_is_one_small_filled_square(self):
+        """The off-screen marker was a hollow box with an X through it. It is now a
+        small filled square; the role letter sits beside it, not on the fill."""
+        self.check("""local w,h=1920,1080
+        setScreen(w,h); r.UIMetrics=nil; r.EdgeMarkerPoints={}
+        local s=ship('edge',class('SF Mara'),ba.createVector(0,0,0),mn.Teams.hostile)
+        s.role='fighter'
+        resetDraws()
+        r:DrawEdgeContactMarker(s,3000,540,{255,0,0},w,h)
+        local lines=0
+        for _,k in ipairs(drawLog.order) do if k=='line' then lines=lines+1 end end
+        assert(lines==0,'edge marker still draws cross lines')
+        assert(#drawLog.rects==1,'edge marker drew '..#drawLog.rects..' rectangles, expected one square')
+        local rect=drawLog.rects[1]
+        assert(rect.filled,'edge marker is hollow')
+        assert(rect.x2-rect.x1<=12 and rect.y2-rect.y1<=12,'edge marker square is not small')
+        assert(#drawLog.strings==0,'edge marker still draws a role letter')""")
+
+    def test_own_command_station_is_never_edge_marked(self):
+        self.check("""local w,h=1920,1080
+        setScreen(w,h); r.UIMetrics=nil; r.EdgeMarkerPoints={}
+        resetDraws()
+        r:DrawEdgeContactMarker(stations.BLUE,3000,540,{0,255,0},w,h)
+        assert(#drawLog.rects==0 and #r.EdgeMarkerPoints==0,'our own command station was edge-marked')""")
 
     def test_an_on_screen_contact_is_not_pinned_to_the_border(self):
         """The opposite guard: a contact whose projection landed on screen is

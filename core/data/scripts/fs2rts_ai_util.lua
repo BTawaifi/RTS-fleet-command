@@ -12,8 +12,9 @@ local function balanceDefinition(self)
     local setup=self.Config.Setup or {}
     local economy=setup.Economies and setup.Economies[self.SetupEconomyIndex] or {}
     local difficulty=setup.Difficulties and setup.Difficulties[self.SetupDifficultyIndex] or {}
-    local duration=setup.Durations and setup.Durations[self.SetupDurationIndex] or {}
+    local duration=self.Config.Escalation or {}
     local baseDistance=setup.BaseDistances and setup.BaseDistances[self.SetupBaseDistanceIndex] or {}
+    local layout=setup.BaseLayouts and setup.BaseLayouts[self.SetupBaseLayoutIndex or 1] or {}
     local ai=self.Config.AI or {}
     local playerCatalog={}
     for _,option in ipairs(self.BuildCatalog or {}) do
@@ -21,7 +22,7 @@ local function balanceDefinition(self)
             role=option.role,tier=option.tier,count=option.count,cost=option.cost,buildSeconds=option.time}
     end
     local rosters={}
-    for _,kind in ipairs({'BLUE','RED','GOLD'}) do
+    for _,kind in ipairs(self:GetFactionKeys()) do
         local entries={}
         for _,entry in ipairs(self:GetAIRoster(kind) or {}) do
             local role=entry.role or 'fighter'
@@ -43,14 +44,15 @@ local function balanceDefinition(self)
     local durationAIIncome=duration.aiIncomeScale or 1
     local durationPlayerIncome=duration.playerIncomeScale or 1
     return {
-        setup={difficulty=difficulty.name,economy=economy.name,duration=duration.name,
+        setup={difficulty=difficulty.name,economy=economy.name,tierUnlocks=duration.tierUnlocks,
             baseDistance=baseDistance.name,baseDistanceUnits=baseDistance.distance,
+            baseLayout=self.ScenarioBaseLayoutId or layout.id or 'CIRCLE',
             factionCount=self.SetupFactionCount,autoPlayer=self.AutoPlayerMode==true},
         economy={playerStartingCP=economy.startCP,playerBaseIncomePerSecond=economy.income*durationPlayerIncome,
             playerFleetCap=self.Config.Economy.FleetCap,aiStartingCP=economy.startCP*(ai.StartingCPScale or .92),
             aiBaseIncomePerSecond=economy.income*durationAIIncome*difficultyIncome*(ai.IncomeScale or .95),
             aiFleetCap=ai.FleetCap or 64,difficultyIncomeScale=difficultyIncome,
-            durationPlayerIncomeScale=durationPlayerIncome,durationAIIncomeScale=durationAIIncome,
+            escalationPlayerIncomeScale=durationPlayerIncome,escalationAIIncomeScale=durationAIIncome,
             aiBuildSpeed=difficulty.aiBuildSpeed or 1,buildTimeScale=duration.buildTimeScale or 1,
             bounties=self.Config.Bounties},
         awareness={source='all living ships in StrategicThreatSnapshot',sensorLimited=false,

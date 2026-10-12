@@ -1,18 +1,20 @@
 #IFFs
 
-; RTS three-way free-for-all relationships.  Each active faction must regard
-; both other factions as valid enemies; otherwise FSO AI goal validation and
-; turret targeting can reject Red-vs-Gold or Blue-vs-Gold engagements.
+; Set the three mission IFF colors. The mission's +All Teams Attack directive
+; makes every non-exempt team hostile, including the additional RTS IFFs.
 $IFF Name: Friendly
 +nocreate
+$Color: ( 70, 220, 255 )
 $Attacks: ( "Hostile" "Neutral" "Traitor" )
 
 $IFF Name: Hostile
 +nocreate
+$Color: ( 255, 75, 75 )
 $Attacks: ( "Friendly" "Neutral" "Traitor" )
 
 $IFF Name: Neutral
 +nocreate
+$Color: ( 255, 190, 70 )
 $Attacks: ( "Friendly" "Hostile" "Traitor" )
 
 #End

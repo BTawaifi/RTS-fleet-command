@@ -13,8 +13,8 @@ and answers the four questions a maintainer has after a headless run:
                                 [--from 0 --to 1800] [--resolution 60]
                                 [--json out.json] [--events]
 
-engine-result.json is deliberately NOT required: these runs hit the engine's
--max-sim-time, the process is killed, and the engine never flushes it.
+Legacy traces can be described without engine-result.json. Fresh completion
+claims use the engine sidecar; proximity to a cap alone is not proof of exit.
 
 INTERVAL vs CUMULATIVE vs GAUGE -- the traps this file exists partly to avoid.
 data.economy.flow.productionSpend is an INTERVAL flow, not a total.
@@ -255,6 +255,8 @@ def new_faction(name):
         "spend_checkpoints": [], "posture_history": [],
         "operation_phases": [],
         "service_entries": collections.defaultdict(list),
+        "service_visits": collections.defaultdict(set),
+        "service_last_phase": {},
         "service_phases": collections.Counter(), "service_reasons": collections.Counter(),
         "friendly_fire_times": [], "friendly_fire_detail": collections.Counter(),
         "build_decisions": 0, "build_reasons": collections.Counter(),
@@ -796,7 +798,9 @@ class MatchTimeline:
                         continue
                     row = acc["orders"][mission]
                     for key in ("failed", "rejected", "success", "unchanged"):
-                        row[key] += num(outcome.get(key)) or 0.0
+                        value = num(outcome.get(key))
+                        if value is not None:
+                            row[key] = value
 
     def on_objective(self, time, data):
         faction = data.get("faction")
@@ -846,7 +850,8 @@ class MatchTimeline:
             return
         slot = self.bucket(self.faction(faction), time)
         self._put(slot, "stalled", num(data.get("stalledGroups")), "max")
-        self._put(slot, "service_max", num(data.get("servicedShips")), "max")
+        # CONTEST.servicedShips counts every faction's visits in the producer.
+        # Only FACTION.servicing is a per-faction concurrency gauge.
         counts = data.get("missionCounts")
         if isinstance(counts, dict):
             for mission, value in counts.items():
@@ -875,7 +880,17 @@ class MatchTimeline:
         slot["servicing"] = (slot["servicing"] or 0) + 1
         if ship is not None:
             entries = acc["service_entries"][ship]
-            if len(entries) < 400:
+            phase = data.get("phase")
+            visit = data.get("visit")
+            if visit is not None:
+                is_entry = visit not in acc["service_visits"][ship]
+                acc["service_visits"][ship].add(visit)
+            else:
+                # Legacy phase records cannot prove a new admission after an
+                # interruption. Count only the first return or a ready control.
+                is_entry = phase == "RETURNING" and acc["service_last_phase"].get(ship) in (None, "READY")
+            acc["service_last_phase"][ship] = phase
+            if is_entry and len(entries) < 400:
                 entries.append(time)
 
     def on_service_interrupted(self, time, data):
@@ -1286,8 +1301,8 @@ def _service_thrash(match, acc, limits):
                       "total_entries_for_ship": len(acc["service_entries"][ship]),
                       "service_phases": dict(acc["service_phases"].most_common(6)),
                       "service_reasons": dict(acc["service_reasons"].most_common(6))},
-            cause="FLEET_SERVICE phase cycling RETURNING->UNDER_FIRE->REPAIR_REARM->READY; "
-                  "the ship is being pulled out repeatedly rather than repaired once",
+            cause="Repeated distinct service visits were observed; inspect completion, "
+                  "interruption and renewed damage before deciding whether the returns were wasteful",
         ))
     series = match.series(acc["name"])
     concurrent = [s["service_max"] or 0 for s in series]
@@ -1300,15 +1315,15 @@ def _service_thrash(match, acc, limits):
             start=busy[0] if busy else peak_at,
             end=busy[-1] if busy else peak_at,
             duration=(busy[-1] - busy[0]) if len(busy) > 1 else 0,
-            title=f"up to {peak:.0f} ships in the service cycle simultaneously "
-                  f"(mean {sum(concurrent) / len(concurrent):.0f}, fleet {fmt(acc['last_combatants'])})",
+            title=f"peak sampled service concurrency {peak:.0f} "
+                  f"(mean {sum(concurrent) / len(concurrent):.0f}; end fleet {fmt(acc['last_combatants'])}, a different time)",
             evidence={"peak_simultaneous": peak,
                       "mean_simultaneous": sum(concurrent) / len(concurrent),
                       "service_phases": dict(acc["service_phases"].most_common(6)),
                       "service_reasons": dict(acc["service_reasons"].most_common(6)),
                       "sparkline": sparkline(concurrent, 60)},
-            cause="most of the fleet is cycling through the station at once rather than "
-                  "being repaired opportunistically; check station repair throughput",
+            cause="Concurrency is a gauge, not proof of congestion. Compare same-time fleet size, "
+                  "capacity, paid work and READY/rejoin before judging recovery.",
         ))
     return out
 
@@ -1411,15 +1426,21 @@ def _hull_text(state):
 
 
 def termination_state(match, plan):
-    """engine-result.json is absent for these runs, so the stop has to be derived
-    from the telemetry plus the batch's own -max-sim-time.
-
-    Telemetry cannot tell a cap hit from a process kill that landed short of the
-    cap, so a run that stopped well before the cap is reported as an early kill
-    rather than being rounded up to "simulation_cap".
-    """
+    """Prefer actual engine termination; qualify legacy telemetry-only inference."""
     cap = num((plan or {}).get("max_sim_time"))
     last = match.last_time or 0.0
+    sidecar = match.path.parents[2] / "engine-result.json"
+    if sidecar.is_file():
+        result = json.loads(sidecar.read_text(encoding="utf-8"))
+        if not isinstance(result, dict):
+            raise ValueError(f"Invalid engine result: {sidecar}")
+        if result.get("termination") == "time_limit" and result.get("time_limit_reached") is True:
+            elapsed = num(result.get("simulated_seconds"))
+            engine_cap = num(result.get("max_sim_time")) or cap
+            if elapsed is None or not engine_cap or elapsed < engine_cap - .1 or (cap and abs(engine_cap-cap) > .1):
+                raise ValueError(f"Contradictory cap evidence: {sidecar}")
+            return "simulation_cap", f"engine-result.json confirms unresolved cap at t={elapsed:.2f}"
+        return str(result.get("termination") or "unknown_engine_termination"), "engine-result.json; global result requires BATTLE_END"
     if match.outcome_causes:
         return "station_destroyed", f"OUTCOME_CAUSE at t={match.outcome_causes[0][0]:.0f}"
     if match.battle_end:
@@ -1428,7 +1449,7 @@ def termination_state(match, plan):
         fraction = last / cap
         verdict = "simulation_cap" if fraction >= 0.9 else "killed_before_cap"
         return verdict, (f"last telemetry t={last:.0f} of -max-sim-time {cap:.0f} "
-                         f"({100 * fraction:.0f}%); engine-result.json never written")
+                         f"({100 * fraction:.0f}%); telemetry-only inference, engine completion unverified")
     return "truncated_or_unknown", (f"last telemetry t={last:.0f}; no cap known and no "
                                     f"terminal record")
 
@@ -1457,7 +1478,7 @@ def render_series(match, faction, out, width, limits):
         ("dmg recv (cum)", [s["received"] for s in series]),
         ("stalled", [s["stalled"] for s in series]),
         ("unengaged s", [s["unengaged"] for s in series]),
-        ("servicing", [s["servicing"] for s in series]),
+        ("service phase events", [s["servicing"] for s in series]),
         # COUNTERS carries no faction field, so reissue/switch rates are global.
         # They are shown here from the all-factions track, not per faction.
         ("reissued (global)", [s["reissued"] for s in global_series]),
@@ -1764,6 +1785,7 @@ def to_json(match, target, plan, anomalies, limits):
         "match": {
             "path": str(match.path),
             "name": target.name,
+            "trace": str(match.path),
             "records": match.records,
             "malformed_lines": match.malformed,
             "truncated_tail": match.truncated_tail,
@@ -1798,6 +1820,24 @@ def to_json(match, target, plan, anomalies, limits):
 
 # ------------------------------------------------------------------------ CLI
 
+def compact_match(payload, faction_filter=None):
+    """Bound terminal output; retain full evidence in the optional JSON export."""
+    match = payload["match"]
+    wanted = {s.strip().upper() for s in faction_filter.split(",")} if faction_filter else None
+    return {
+        "trace": match["trace"], "seconds": match["last_time"],
+        "termination": match["termination"], "evidence": match["termination_detail"],
+        "battle_end": match["battle_end"],
+        "integrity": {k: match[k] for k in ("records", "malformed_lines", "truncated_tail", "sequence_regressions")},
+        "factions": {name: {
+            "end": row["end_state"], "losses": sum(row["losses"].values()),
+            "loss_cp": row["loss_value"], "spent_cp": row["cumulative_cp_spent_from_interval_flow"],
+            "orders": {key: sum(o.get(key, 0) for o in row["orders"].values()) for key in ("success", "failed", "rejected")} if row["orders"] else None,
+            "service_phases": row["service_phases"],
+        } for name, row in payload["factions"].items() if wanted is None or name in wanted},
+        "diagnostic_leads_not_verdicts": dict(collections.Counter(a["code"] for a in payload["anomalies"] if wanted is None or a.get("faction") in wanted)),
+    }
+
 def build_limits(args):
     limits = dict(THRESHOLDS)
     for key in limits:
@@ -1823,6 +1863,7 @@ def main(argv=None):
                         help="also print the per-event-type census and bucket detail")
     parser.add_argument("--width", type=int, default=72, help="sparkline width")
     parser.add_argument("--quiet", action="store_true", help="suppress the terminal report")
+    parser.add_argument("--brief", action="store_true", help="compact outcome/measurement summary; full evidence stays in --json")
     parser.add_argument("--top", type=int, default=3,
                         help="longest anomalies of each code to print (default 3)")
     for key in THRESHOLDS:
@@ -1845,7 +1886,7 @@ def main(argv=None):
         match = MatchTimeline(path, args.resolution).consume()
         run_dir = path.parent.parent.parent.parent
         target_dir = target if target.is_dir() else run_dir
-        if args.quiet:
+        if args.quiet or args.brief:
             anomalies = detect_anomalies(match, limits)
             total_anomalies += len(anomalies)
             payload.append(to_json(match, target_dir, plan, anomalies, limits))
@@ -1862,7 +1903,9 @@ def main(argv=None):
             out.append("  EVENT CENSUS")
             for event, count in sorted(match.events.items(), key=lambda kv: -kv[1]):
                 out.append(f"    {event:26} {count:>8,}")
-    if not args.quiet:
+    if args.brief and not args.quiet:
+        print(json.dumps({"matches": [compact_match(p, args.faction) for p in payload]}, separators=(",", ":"), default=str))
+    elif not args.quiet:
         out.insert(0, f"AI TIMELINE  {target}\n"
                       f"{len(files)} match(es), resolution {args.resolution:.0f} s, "
                       f"{total_anomalies} anomalies\n")

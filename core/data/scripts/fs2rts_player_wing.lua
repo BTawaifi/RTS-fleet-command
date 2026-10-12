@@ -3,6 +3,155 @@ local U=require 'fs2rts_util'
 local R=require 'fs2rts_state'
 local valid,alive=U.shipValid,U.shipAlive
 
+function R:GetPilotWingmates()
+    local logical=self:GetLogicalWing(self:GetPossessedShip())
+    local group=self:GetPilotCommGroup()
+    if group then logical={label='Control group '..group,signatures=self.ControlGroups[group]} end
+    local result={}
+    if logical then
+        for _,id in ipairs(logical.signatures) do
+            local ship=self:FindShipBySignature(id)
+            if alive(ship) and id~=self.PossessedSignature and ship.Name~=self.Config.ObserverShip
+                and self:IsMovableFriendly(ship) and not self:IsCommandStation(ship) then result[#result+1]=ship end
+        end
+    end
+    return result,logical and logical.label
+end
+
+function R:OnPilotCommMenuOpened()
+    if self.Enabled and self.PossessedSignature and not self.PendingPilotEject then
+        self.PilotCommMenuActive=true
+        self.PilotCommMenuPending=true
+    end
+end
+
+function R:OnPilotCommMenuClosed()
+    self.PilotCommMenuActive=false
+    self.PilotCommMenuPending=nil
+end
+
+function R:UpdatePilotCommMenu()
+    if not self.PilotCommMenuPending or not mn.CommItems then return end
+    -- Logical wings are not native mission wings on upstream. Open the native
+    -- broadcast command list; the command-issued hook filters it to our wing.
+    for i=1,#mn.CommItems do
+        local item=mn.CommItems[i]
+        if item.Name=='All Fighters' then
+            self.PilotCommMenuPending=nil
+            if item.Active then item:selectItem() end
+            return
+        end
+    end
+end
+
+-- Native broadcasts fan out through this hook before installing each goal.
+-- Never allow a wing goal to carry the hidden player proxy out of the mission.
+function R:GetPilotCommRecipients(recipient)
+    local allowed={}
+    for _,ship in ipairs(self:GetPilotWingmates()) do allowed[ship:getSignature()]=true end
+    local result={}
+    if not recipient then return result end
+    recipient:forAllShips(function(ship)
+        if alive(ship) and allowed[ship:getSignature()] and ship:getSignature()~=self.PossessedSignature
+            and ship.Name~=self.Config.ObserverShip and self:IsMovableFriendly(ship) and not self:IsCommandStation(ship) then
+            result[#result+1]=ship
+        end
+    end)
+    return result
+end
+
+local function depart(order,name)
+    return name=='Depart' or order=='Depart' or (order~=nil and order==SQUAD_MESSAGE_DEPART)
+end
+
+function R:GetPilotCommGroup()
+    for group=1,4 do
+        for _,id in ipairs((self.ControlGroups or {})[group] or {}) do
+            if id==self.PossessedSignature then return group end
+        end
+    end
+end
+
+function R:ShouldOverridePilotCommOrder(recipient,order,name)
+    if not self.Enabled then return false end
+    if depart(order,name) then return true end
+    if self.PossessedSignature==nil or self.PendingPilotEject or self.Paused then return true end
+    local permitted=self:GetPilotCommRecipients(recipient)
+    local total=0
+    if recipient then recipient:forAllShips(function() total=total+1 end) end
+    return total==0 or #permitted~=total or order~=nil
+end
+
+function R:OnPilotCommOrder(recipient,order,target,subsystem,name)
+    if not self.Enabled then return end
+    if depart(order,name) then
+        self.PilotCommWarningUntil=self:UINow()+4
+        self.PilotCommWarningText='DEPART IS DISABLED'
+        self:SetStatus('Depart is disabled in fleet command.',4)
+        return
+    end
+    local permitted=self:GetPilotCommRecipients(recipient)
+    local group=self:GetPilotCommGroup()
+    if self.PossessedSignature==nil or self.PendingPilotEject or self.Paused or #permitted==0
+        or (not group and self:ShouldOverridePilotCommOrder(recipient)) then
+        self.PilotCommWarningUntil=self:UINow()+4
+        self.PilotCommWarningText='COMMAND YOUR WING / GROUP ONLY'
+        self:SetStatus('Commands are limited to your wingmates. Your hull, stations and other wings are protected.',4)
+        return
+    end
+    local nativeKind,orderTarget,orderSubsystem
+    if order~=nil then
+        local function is(key,label) return name==label or order==label or (order~=nil and _G['SQUAD_MESSAGE_'..key]~=nil and order==_G['SQUAD_MESSAGE_'..key]) end
+        orderTarget=target
+        if is('ATTACK_TARGET','Attack my target') then nativeKind=ORDER_ATTACK
+        elseif is('DISABLE_TARGET','Disable my target') then nativeKind=ORDER_DISABLE
+        elseif is('DISARM_TARGET','Disarm my target') then nativeKind=ORDER_DISARM
+        elseif is('PROTECT_TARGET','Protect my target') then nativeKind=ORDER_GUARD
+        elseif is('IGNORE_TARGET','Ignore my target') then nativeKind=ORDER_IGNORE_SHIP
+        elseif is('ENGAGE_ENEMY','Engage enemy') then nativeKind=ORDER_ATTACK_ANY; orderTarget=nil
+        elseif is('FORMATION','Form on my wing') or is('COVER_ME','Cover me') then nativeKind=ORDER_GUARD; orderTarget=self:GetPossessedShip()
+        elseif is('STAY_NEAR_ME','Stay near me') then nativeKind=ORDER_STAY_NEAR; orderTarget=self:GetPossessedShip()
+        elseif is('STAY_NEAR_TARGET','Stay near my target') then nativeKind=ORDER_STAY_NEAR
+        elseif is('KEEP_SAFE_DIST','Keep safe distance') then nativeKind=ORDER_KEEP_SAFE_DISTANCE; orderTarget=nil
+        elseif is('DISABLE_SUBSYSTEM','Destroy my subsystem') then nativeKind=ORDER_ATTACK; orderSubsystem=subsystem end
+        if nativeKind==nil or (orderTarget~=nil and not alive(orderTarget))
+            or (nativeKind~=ORDER_ATTACK_ANY and nativeKind~=ORDER_KEEP_SAFE_DISTANCE and orderTarget==nil) then
+            self:SetStatus('This command has no valid fleet-group target.',3); return
+        end
+        if (nativeKind==ORDER_ATTACK or nativeKind==ORDER_DISABLE or nativeKind==ORDER_DISARM)
+            and not self:AreEnemies(self:GetPossessedShip(),orderTarget) then
+            self:SetStatus('Attack commands require a hostile target.',3); return
+        end
+        local token=table.concat({group or 'wing',tostring(order),target and valid(target) and target:getSignature() or 0,mn.getMissionTime()},':')
+        if self.PilotCommGroupToken==token then return end
+        self.PilotCommGroupToken=token
+        permitted=self:GetPilotWingmates()
+    end
+    self.PilotCommOrders=self.PilotCommOrders or {}
+    for _,ship in ipairs(permitted) do
+        local id=ship:getSignature()
+        if not self.PilotCommOrders[id] then self.PilotCommOrders[id]={previous=self.UserOrders[id]} end
+        self:SetUserOrder(ship,{kind='wing'})
+        if nativeKind then
+            ship:clearOrders(); ship:giveOrder(nativeKind,orderTarget,orderSubsystem,.95)
+            if nativeKind==ORDER_GUARD or nativeKind==ORDER_STAY_NEAR then self:SetNativeGuardRange(ship,orderTarget,self.Config.AI.CohesionRadius) end
+        end
+    end
+end
+
+function R:RestorePilotCommOrders()
+    self.PilotCommMenuPending=nil
+    self.PilotCommGroupToken=nil
+    for id,saved in pairs(self.PilotCommOrders or {}) do
+        local ship=self:FindShipBySignature(id)
+        if alive(ship) and self.UserOrders[id] and self.UserOrders[id].kind=='wing' then
+            self.UserOrders[id]=saved.previous
+            if saved.previous then self:ReissueUserOrder(ship,saved.previous) else self:ReturnToDefaultControl(ship) end
+        end
+    end
+    self.PilotCommOrders=nil
+end
+
 function R:JoinPilotNativeWing(pilot)
     if self.Config and self.Config.Pilot and self.Config.Pilot.NativeWingExtensions==false then return nil end
     local detached,detachError=self:LeavePilotNativeWing()

@@ -1,16 +1,37 @@
 -- AI rosters and build choices.
 local Config = require "fs2rts_config"
 local U = require "fs2rts_util"
-local AI_FACTION_ORDER, sortedNumericKeys = U.AI_FACTION_ORDER, U.sortedNumericKeys
+local sortedNumericKeys = U.sortedNumericKeys
 local RTS = require "fs2rts_state"
 local clamp, lower, vec, copyVec, distance2, objectValid, shipValid, shipAlive, teamName, tableContainsSignature
     = U.clamp, U.lower, U.vec, U.copyVec, U.distance2, U.objectValid, U.shipValid, U.shipAlive, U.teamName, U.tableContainsSignature
 
 function RTS:GetAIRoster(kind)
-    if kind=="BLUE" then return self.Config.AI.BlueRoster or self.Config.ProductionClasses or {} end
-    if kind=="RED" then return self.Config.AI.RedRoster or {} end
-    if kind=="GOLD" then return self.Config.AI.GoldRoster or {} end
-    return {}
+    local species=self:GetFactionChoice(kind)
+    if species=="RANDOM" then
+        local faction=self:GetFactionDefinition(kind)
+        species=faction and faction.defaultSpecies or "TERRAN"
+        species=(self.Config.FactionAliases or {})[species] or species
+    end
+    local profile=(self.Config.FactionProfiles or {})[species]
+    if not profile then
+        local race=self.Config.Species[species]
+        return race and self.Config.AI[race.roster] or {}
+    end
+    self.FactionRosterCache=self.FactionRosterCache or {}
+    if not self.FactionRosterCache[species] then
+        local wanted={}; for _,name in ipairs(profile.classes) do wanted[name]=true end
+        local entries={}; local seen={}
+        for _,source in ipairs(profile.rosters) do
+            for _,entry in ipairs(self.Config.AI[source] or {}) do
+                if wanted[entry.class] and not seen[entry.class] then
+                    entries[#entries+1]=entry; seen[entry.class]=true
+                end
+            end
+        end
+        self.FactionRosterCache[species]=entries
+    end
+    return self.FactionRosterCache[species]
 end
 
 -- Rosters are static config; index class -> first matching entry per faction
@@ -35,11 +56,65 @@ function RTS:GetAIRosterEntry(kind, className)
 end
 
 function RTS:InitializeAIStates(now)
-    self.AIStates={}; local economy=self.Config.Setup.Economies[self.SetupEconomyIndex]; local duration=self:GetDurationProfile(); local difficulty=self.Config.Setup.Difficulties[self.SetupDifficultyIndex]
+    self.AIStates={}; local economy=self.Config.Setup.Economies[self.SetupEconomyIndex]; local duration=self:GetEscalationProfile(); local difficulty=self.Config.Setup.Difficulties[self.SetupDifficultyIndex]
     local baseStart=economy.startCP*(self.Config.AI.StartingCPScale or .92); local baseIncome=economy.income*(duration.aiIncomeScale or 1)*(difficulty.aiIncome or 1)*(self.Config.AI.IncomeScale or .95)
-    if self.AutoPlayerMode then self.AIStates.BLUE={cp=self.CommandPoints,income=0,lastIncome=now,queue=nil,nextThink=now+0.25,serial=0,eliminated=false,playerEconomy=true} end
-    if self:IsFactionEnabled("RED") then self.AIStates.RED={cp=baseStart,income=baseIncome,lastIncome=now,queue=nil,nextThink=now+0.25,serial=0,eliminated=false} end
-    if self:IsFactionEnabled("GOLD") then self.AIStates.GOLD={cp=baseStart,income=baseIncome,lastIncome=now,queue=nil,nextThink=now+0.25,serial=0,eliminated=false} end
+    for _,kind in ipairs(self:GetFactionKeys()) do
+        if kind=="BLUE" then
+            if self.AutoPlayerMode then self.AIStates.BLUE={cp=self.CommandPoints,income=0,lastIncome=now,queue=nil,nextThink=now+0.25,serial=0,eliminated=false,playerEconomy=true} end
+        else
+            self.AIStates[kind]={cp=baseStart,income=baseIncome,lastIncome=now,queue=nil,nextThink=now+0.25,serial=0,eliminated=false}
+        end
+    end
+end
+
+function RTS:RequestAutoBuild(className)
+    local now=mn.getMissionTime()
+    local state=self.AIStates and self.AIStates.BLUE
+    if not self.AutoPlayerMode or not state or state.playerEconomy~=true then return false,"AUTO_MODE_OFF" end
+    if self.SetupActive or self.AftermathActive or self.PostBattleActive then return false,"MATCH_NOT_ACTIVE" end
+    local entry=type(className)=="string" and self:GetAIRosterEntry("BLUE",className) or nil
+    local class=entry and tb.ShipClasses[entry.class]
+    if not entry or not class or not class:isValid() then return false,"NOT_IN_ROSTER" end
+    local tier=entry.tier or 1
+    if tier>self:GetCurrentEscalationTier(now) then return false,"TIER_LOCKED" end
+    if not shipAlive(self:GetFactionCommandShip("BLUE")) then return false,"BASE_DESTROYED" end
+    if state.AutoBuildRequest then return false,"REQUEST_ACTIVE" end
+    local estimate=self:GetPurchaseEstimate(entry.class,tier,1)
+    if not estimate then return false,"UNAVAILABLE" end
+    state.AutoBuildRequest={id=(state.AutoBuildRequestSerial or 0)+1,class=entry.class,tier=tier,count=1,
+        label=entry.label or entry.class,cost=estimate.cost,status="SAVING",requestedAt=now}
+    state.AutoBuildRequestSerial=state.AutoBuildRequest.id
+    -- Station investments run on their own clock; reserve immediately rather
+    -- than leaving the requested hull's bank spendable until the next think.
+    state.savingRole="player-request:"..state.AutoBuildRequest.id
+    state.savingSince=now; state.productionReserve=estimate.cost
+    self:EmitAIEvent("PRODUCTION",{action="AUTO_BUILD_REQUESTED",producer="PLAYER",faction="BLUE",
+        class=entry.class,tier=tier,count=1,cost=estimate.cost,commandPoints=self.CommandPoints},now)
+    return true,state.AutoBuildRequest
+end
+
+function RTS:CancelAutoBuildRequest(reason)
+    local state=self.AIStates and self.AIStates.BLUE
+    local request=state and state.AutoBuildRequest
+    if not request then return false,"NO_REQUEST" end
+    local now=mn.getMissionTime()
+    local queued=state.queue
+    if queued and queued.autoBuildRequestId==request.id then
+        local refund=queued.estimate.cost
+        state.queue=nil
+        self:RefundFactionCP("BLUE",refund)
+        self:EmitAIEvent("PRODUCTION",{action="QUEUE_REFUNDED",producer="AI",faction="BLUE",
+            jobId=queued.id,class=queued.entry.class,queuedAt=queued.queuedAt,refundedCP=refund,
+            reason=reason or "PLAYER_CANCELLED"},now)
+    end
+    request.status=reason and "FAILED" or "CANCELLED"
+    request.reason=reason
+    state.LastAutoBuildRequest=request
+    state.AutoBuildRequest=nil
+    state.savingRole=nil; state.savingSince=nil; state.productionReserve=0
+    self:EmitAIEvent("PRODUCTION",{action="AUTO_BUILD_CANCELLED",producer="PLAYER",faction="BLUE",
+        class=request.class,count=request.count,cost=request.cost,reason=reason or "PLAYER_CANCELLED"},now)
+    return true,request
 end
 
 function RTS:CountAIRoleUnits(kind)
@@ -70,13 +145,23 @@ function RTS:CountCommittedCombatants(kind)
     return count
 end
 
+function RTS:GetAICompositionTargets(kind,tier,availableRoles)
+    local baseline=(self.Config.AI.CompositionTargets or {})[tier] or {fighter=.3,bomber=.2,escort=.2,capital=.3}
+    local demand=(self.AIProductionNeeds or {})[kind] or {}
+    local targets,total={},0
+    for _,role in ipairs({'fighter','bomber','escort','capital'}) do
+        local weight=availableRoles[role] and math.max(0,(baseline[role] or 0)+(demand[role] or 0)) or 0
+        targets[role]=weight; total=total+weight
+    end
+    if total>0 then for role,weight in pairs(targets) do targets[role]=weight/total end end
+    return targets
+end
+
 function RTS:ChooseAIBuild(kind,state,now)
     local tier=self:GetCurrentEscalationTier(now); local roster=self:GetAIRoster(kind); local counts,values=self:CountAIRoleUnits(kind)
     local cap=self:GetFleetCap(kind)
     local slots=cap-self:CountCommittedCombatants(kind)
-    local targets=(self.Config.AI.CompositionTargets or {})[tier] or {fighter=.3,bomber=.2,escort=.2,capital=.3}
     local demand=self.AIProductionNeeds and self.AIProductionNeeds[kind] or {}
-    local deficits={}; for _,cat in ipairs({"fighter","bomber","escort","capital"}) do local share=values.total>0 and values[cat]/values.total or 0; deficits[cat]=(targets[cat] or 0)-share+(demand[cat] or 0) end
     local availableRoles={}
     for _,entry in ipairs(roster) do
         local class=tb.ShipClasses[entry.class]
@@ -84,12 +169,19 @@ function RTS:ChooseAIBuild(kind,state,now)
             local role=entry.role or "fighter"; availableRoles[(role=="heavy" or role=="juggernaut") and "capital" or role]=true
         end
     end
+    local targets=self:GetAICompositionTargets(kind,tier,availableRoles)
+    local deficits={}
+    for _,cat in ipairs({'fighter','bomber','escort','capital'}) do
+        local share=values.total>0 and values[cat]/values.total or 0
+        deficits[cat]=(targets[cat] or 0)-share
+    end
     local desired=nil
     for _,cat in ipairs({"fighter","bomber","escort","capital"}) do if availableRoles[cat] and (not desired or deficits[cat]>deficits[desired]) then desired=cat end end
     desired=desired or "fighter"
     local decision={faction=kind,tier=tier,commandPoints=state.cp,slots=slots,unitCounts=counts,
         unitValues=values,compositionTargets=targets,tacticalDemand=demand,deficits=deficits,desiredRole=desired,options={}}
     local candidates={}; local cheapestDesired=math.huge; local cheapestCurrentDesired=math.huge; local hasCurrentDesired=false
+    local newestUnlockedBomberTier=0; local cheapestNewestBomber=math.huge
     local unlockedCount=0; local fleetFitCount=0; local affordableCount=0
     for _,entry in ipairs(roster) do
         local et=entry.tier or 1
@@ -115,6 +207,10 @@ function RTS:ChooseAIBuild(kind,state,now)
             unlockedCount=unlockedCount+1
             if count<=slots then
                 fleetFitCount=fleetFitCount+1
+                if cat=='bomber' then
+                    if et>newestUnlockedBomberTier then newestUnlockedBomberTier=et; cheapestNewestBomber=est.cost
+                    elseif et==newestUnlockedBomberTier then cheapestNewestBomber=math.min(cheapestNewestBomber,est.cost) end
+                end
                 if cat==desired then
                     cheapestDesired=math.min(cheapestDesired,est.cost)
                     if et==tier then hasCurrentDesired=true; cheapestCurrentDesired=math.min(cheapestCurrentDesired,est.cost) end
@@ -129,6 +225,12 @@ function RTS:ChooseAIBuild(kind,state,now)
                 end
             end
         end
+    end
+    local baseIncome=state.playerEconomy and self.ActiveIncomePerSecond or state.income
+    local retainBomberProgression=desired=='bomber' and newestUnlockedBomberTier>1
+        and ((baseIncome or 0)>0 or state.cp>=cheapestNewestBomber)
+    if retainBomberProgression then
+        cheapestDesired=cheapestNewestBomber; cheapestCurrentDesired=cheapestNewestBomber; hasCurrentDesired=true
     end
     local bankTarget=(hasCurrentDesired and cheapestCurrentDesired or cheapestDesired)
     local boundedBankTarget=false
@@ -151,10 +253,9 @@ function RTS:ChooseAIBuild(kind,state,now)
     -- instead. Anchored to a real roster price, NOT to cp, so it does not
     -- outrun the bank the way a cp-relative bound (cp + rate * window) would.
     if self.Config.AI.BoundBankTarget==true and hasCurrentDesired and cheapestDesired<math.huge then
-        -- rate is 0 for a player-economy faction (Blue auto spends the player's
-        -- pool, whose income this function does not model), so leave Blue alone
-        -- rather than silently changing what it builds.
-        local rate=(state.income or 0)*self:GetAIIncomeRamp(now)*self:GetIncomeMultiplier(kind)
+        local baseIncome=state.playerEconomy and self.ActiveIncomePerSecond or state.income
+        local rate=0
+        if (baseIncome or 0)>0 then rate=baseIncome*self:GetAIIncomeRamp(now)*self:GetIncomeMultiplier(kind) end
         if rate>0 and state.cp+rate*savingSeconds<cheapestCurrentDesired then
             bankTarget=cheapestDesired
             boundedBankTarget=true
@@ -171,13 +272,25 @@ function RTS:ChooseAIBuild(kind,state,now)
     local emergencyState=self.AIProductionEmergency and self.AIProductionEmergency[kind]
     local emergencyBuild=emergencyState and emergencyState.emergency==true
         and now-(emergencyState.time or now)<=math.max(24,(self.Config.AI.StrategicOrderInterval or 12)*2)
+    if retainBomberProgression and not emergencyBuild then
+        -- Bank for the latest bomber instead of repeatedly draining its fund into obsolete ordnance.
+        local progressing={}
+        for _,c in ipairs(candidates) do
+            if c.category~='bomber' or (c.entry.tier or 1)==newestUnlockedBomberTier then progressing[#progressing+1]=c end
+        end
+        candidates=progressing
+    end
     -- Rising edge only. A sustained emergency spans many 2 s strategic frames,
     -- and clearing the save clock on every one of them meant a routine weapon
     -- lock during a committed assault permanently cancelled the 10-15 minute
     -- capital bank - the more committed the assault, the less the AI ever
     -- built a capital.
-    local risingEmergency=emergencyBuild and not (emergencyState and emergencyState.wasEmergencyBuild==true)
-    if emergencyState then emergencyState.wasEmergencyBuild=emergencyBuild end
+    -- Strategic plans replace their evidence table; the producer owns edge memory.
+    local risingEmergency=emergencyBuild and state.wasEmergencyBuild~=true
+    state.wasEmergencyBuild=emergencyBuild
+    -- Capture completion before the affordability branch clears the clock.
+    -- Classic rosters have no current-tier hull to force the desired purchase.
+    local savingsReady=state.savingRole~=nil and state.cp>=bankTarget
     state.productionReserve=emergencyBuild and 0 or (decision.bankTarget or 0)
     if bankTarget<math.huge and state.cp<bankTarget and tier>=2 and not emergencyBuild then
         local goal=desired..":"..tier
@@ -213,11 +326,8 @@ function RTS:ChooseAIBuild(kind,state,now)
                 if preserveClock then
                     local remaining = savingSeconds - (now - state.savingSince)
                     local shortfall = bankTarget - state.cp
-                    local rate = (state.income or 0) * self:GetAIIncomeRamp(now) * self:GetIncomeMultiplier(kind)
-                    -- rate is 0 for a player-economy faction (Blue auto spends the
-                    -- player's pool, whose income this function does not model), so
-                    -- fall back to the shipped alongside behaviour there rather than
-                    -- silently making Blue stop producing.
+                    local baseIncome=state.playerEconomy and self.ActiveIncomePerSecond or state.income
+                    local rate = (baseIncome or 0) * self:GetAIIncomeRamp(now) * self:GetIncomeMultiplier(kind)
                     canBank = rate > 0 and shortfall <= rate * remaining
                     decision.savingCanBank=canBank
                 end
@@ -251,7 +361,9 @@ function RTS:ChooseAIBuild(kind,state,now)
         -- success rate. It is set below, where a hull is actually chosen.
         return nil,decision
     end
-    if decision.savingFallback then
+    -- Once a bounded savings goal is affordable, finish that purchase rather
+    -- than letting the general weighted draw spend its bank on another role.
+    if decision.savingFallback or ((boundedBankTarget or savingsReady) and state.cp>=bankTarget and not emergencyBuild) then
         local replacements={}
         for _,c in ipairs(candidates) do if c.category==desired then replacements[#replacements+1]=c end end
         -- The save window exists to END in a purchase, and this is the only rung
@@ -282,15 +394,23 @@ function RTS:ChooseAIBuild(kind,state,now)
     -- immediately falling back to an older cheap substitute.
     if not emergencyBuild and hasCurrentDesired and state.cp>=cheapestCurrentDesired then
         local newest={}
-        for _,c in ipairs(candidates) do if c.category==desired and (c.entry.tier or 1)==tier then newest[#newest+1]=c end end
+        local preferredTier=retainBomberProgression and newestUnlockedBomberTier or tier
+        for _,c in ipairs(candidates) do if c.category==desired and (c.entry.tier or 1)==preferredTier then newest[#newest+1]=c end end
         if #newest>0 then candidates=newest end
     end
+    -- A later global tier need not add a bomber; retain siege progression
+    -- instead of spending an affordable newer bomber's bank on an old hull.
+    local newestBomberTier=1
+    for _,c in ipairs(candidates) do
+        if c.category=='bomber' then newestBomberTier=math.max(newestBomberTier,c.entry.tier or 1) end
+    end
+    decision.newestAffordableBomberTier=newestBomberTier
     if emergencyBuild then
         local preferred=(demand.bomber or 0)>(demand.fighter or 0) and {"bomber","fighter","escort","capital"} or {"fighter","escort","bomber","capital"}
         for _,role in ipairs(preferred) do
             local fastest=nil
             for _,candidate in ipairs(candidates) do
-                if candidate.category==role and (fastest==nil
+                if candidate.category==role and (role~='bomber' or (candidate.entry.tier or 1)==newestBomberTier) and (fastest==nil
                     or candidate.estimate.time<fastest.estimate.time
                     or (candidate.estimate.time==fastest.estimate.time and candidate.estimate.cost<fastest.estimate.cost)) then
                     fastest=candidate
@@ -334,15 +454,19 @@ function RTS:ChooseAIBuild(kind,state,now)
     return selected,decision
 end
 
-function RTS:SpawnAIProduction(kind,queued)
-    local station=self:GetFactionCommandShip(kind); if not shipValid(station) or queued==nil then return nil end
+function RTS:SpawnAIProduction(kind,queued,spawned)
+    local station=self:GetFactionCommandShip(kind); if not shipAlive(station) or queued==nil then return nil end
     local state=self.AIStates[kind]; state.serial=(state.serial or 0)+1
-    local prefix=kind=="BLUE" and "RTS Blue Auto" or (kind=="RED" and "RTS Red Production" or "RTS Gold Production")
-    local count=queued.count or 1; local spawned={}; local wingLabel=count>1 and self:GetNextWingCallsign(kind) or nil
+    local faction=self:GetFactionDefinition(kind)
+    local prefix=kind=="BLUE" and "RTS Player Auto" or ("RTS "..(faction and faction.short or kind).." Production")
+    local count=queued.count or 1; spawned=spawned or {}; local wingLabel=count>1 and self:GetNextWingCallsign(kind) or nil
     for i=1,count do
         local name=wingLabel and (wingLabel.." "..tostring(i)) or nil
-        local ship=self:SpawnFactionUnit(queued.entry.class,station,station.Team,prefix,queued.entry.tier or 1,state.serial,i,i,count,name,state.serial)
-        if shipValid(ship) then spawned[#spawned+1]=ship; self:AssignAIStrategicOrder(ship,kind,true) end
+        local ok,err=pcall(function()
+            local ship=self:SpawnFactionUnit(queued.entry.class,station,station.Team,prefix,queued.entry.tier or 1,state.serial,i,i,count,name,state.serial,spawned)
+            if shipValid(ship) then self:AssignAIStrategicOrder(ship,kind,true) end
+        end)
+        if not ok then self:Log("AI SPAWN FAILED: "..queued.entry.class..": "..tostring(err)) end
     end
     if #spawned>1 then self:RegisterLogicalWing(spawned,wingLabel) end
     return spawned[1],spawned
@@ -361,9 +485,7 @@ end
 -- and the existing tests already describe, and raising it 48% would flood the
 -- mid-game with income whose second-order effects are unmeasured.
 function RTS:GetAIIncomeRamp(now)
-    local duration=self:GetDurationProfile()
-    local target=(duration and duration.targetSeconds) or 1800
-    local progress=clamp(self:GetScenarioElapsed(now)/math.max(1,target),0,1)
+    local progress=self:GetEscalationProgress(now)
     local tier=self:GetCurrentEscalationTier(now)
     local cfg=self.Config.AI or {}
     local perTier=cfg.IncomeRampPerTier or 0.10
@@ -373,9 +495,9 @@ function RTS:GetAIIncomeRamp(now)
 end
 
 function RTS:UpdateAIProduction(now)
-    if self.Config.AI==nil or self.Config.AI.Enabled==false or self.SetupActive or self.ScenarioStartTime==nil or self.PostBattleActive then return end
-    local duration=self:GetDurationProfile(); local difficulty=self.Config.Setup.Difficulties[self.SetupDifficultyIndex]; local target=duration.targetSeconds or 1800
-    local progress=clamp(self:GetScenarioElapsed(now)/math.max(1,target),0,1); local tier=self:GetCurrentEscalationTier(now)
+    if self.AftermathActive or self.Config.AI==nil or self.Config.AI.Enabled==false or self.SetupActive or self.ScenarioStartTime==nil or self.PostBattleActive then return end
+    local duration=self:GetEscalationProfile(); local difficulty=self.Config.Setup.Difficulties[self.SetupDifficultyIndex]
+    local tier=self:GetCurrentEscalationTier(now)
     local incomeRamp=self:GetAIIncomeRamp(now)
     -- Blue auto can be switched off mid-mission. AIStates.BLUE survives the
     -- switch, so without this the loop keeps syncing the player's CP, keeps
@@ -388,14 +510,17 @@ function RTS:UpdateAIProduction(now)
         self:EmitAIEvent("PRODUCTION",{action="BUILD_SUSPENDED",producer="AI",faction="BLUE",
             reason="AUTO_MODE_OFF",staleState=true},now)
     end
-    for _,kind in ipairs(AI_FACTION_ORDER) do
+    for _,kind in ipairs(self:GetFactionKeys()) do
         local state=self.AIStates and self.AIStates[kind]
         local station=self:GetFactionCommandShip(kind)
         -- No production state means the faction is not AI controlled here, and
         -- for Blue it also means Blue is not running automatically: only the
         -- player builds. RED and GOLD keep their own states untouched.
         if state == nil or (kind=="BLUE" and not self.AutoPlayerMode) then
-        elseif not shipValid(station) then state.eliminated=true else
+        elseif state.eliminated or not shipAlive(station) then
+            state.eliminated=true
+            if kind=="BLUE" and state.AutoBuildRequest then self:CancelAutoBuildRequest("BASE_DESTROYED") end
+        else
             if state.playerEconomy then state.cp=self.CommandPoints; state.lastIncome=now
             else
                 local delta=math.max(0,now-(state.lastIncome or now)); local income=delta*state.income*incomeRamp*self:GetIncomeMultiplier(kind)
@@ -405,7 +530,12 @@ function RTS:UpdateAIProduction(now)
             if state.queue and now>=state.queue.finishTime then
                 local queued=state.queue
                 if self:CountFactionCombatants(kind)+(queued.count or 1)<=cap then
-                    local first,spawned=self:SpawnAIProduction(kind,queued); local signatures={}
+                    state.queue=nil
+                    local spawned={}
+                    local ok,first,returned=pcall(function() return self:SpawnAIProduction(kind,queued,spawned) end)
+                    if ok and returned then spawned=returned end
+                    if not ok then self:Log("AI SPAWN RAISED: "..queued.entry.class..": "..tostring(first)); first=nil end
+                    local signatures={}
                     for _,ship in ipairs(spawned or {}) do if shipValid(ship) then signatures[#signatures+1]=ship:getSignature() end end
                     -- Spawn placement is the only observable proof that capitals
                     -- land near their own station instead of the enemy base, so
@@ -417,21 +547,35 @@ function RTS:UpdateAIProduction(now)
                         end
                     end
                     local failureReason=nil
-                    if not first then failureReason="SPAWN_FAILED" end
-                    self:EmitAIEvent("PRODUCTION",{action=first and "UNIT_SPAWNED" or "BUILD_FAILED",
-                        producer="AI",faction=kind,class=queued.entry.class,role=queued.entry.role,
+                    local missing=math.max(0,(queued.count or 1)-#signatures)
+                    local refund=math.floor(queued.estimate.cost*missing/math.max(1,queued.count or 1)+.5)
+                    if refund>0 then self:RefundFactionCP(kind,refund) end
+                    if not ok or missing>0 then failureReason="PARTIAL_OR_FAILED_SPAWN" end
+                    if kind=="BLUE" and queued.autoBuildRequestId then
+                        local request=state.AutoBuildRequest
+                        if request and request.id==queued.autoBuildRequestId then
+                            if #signatures>0 then
+                                request.status="COMPLETE"; request.completedAt=now
+                                state.LastAutoBuildRequest=request; state.AutoBuildRequest=nil
+                            else
+                                request.status="SAVING"; request.queuedAt=nil
+                            end
+                        end
+                    end
+                    self:EmitAIEvent("PRODUCTION",{action=failureReason==nil and "UNIT_SPAWNED" or "BUILD_FAILED",
+                        producer="AI",faction=kind,jobId=queued.id,class=queued.entry.class,role=queued.entry.role,
                         tier=queued.entry.tier or 1,requestedCount=queued.count or 1,spawnedCount=#signatures,
-                        shipSignatures=signatures,cost=queued.estimate.cost,queuedAt=queued.queuedAt,
+                        shipSignatures=signatures,cost=queued.estimate.cost,refundedCP=refund,queuedAt=queued.queuedAt,
                         placements=placements,
                         startedAt=queued.startedAt or queued.queuedAt,completedAt=now,
                         buildSeconds=now-(queued.startedAt or queued.queuedAt or now),
                         capacityWaitSeconds=queued.blockedAt and math.max(0,now-queued.blockedAt) or 0,
                         reason=failureReason},now)
-                    state.queue=nil
+                    if kind=="BLUE" and #signatures>0 then self:NotifyNewUnits(spawned) end
                 elseif queued.blockedAt==nil then
                     queued.blockedAt=now
                     self:EmitAIEvent("PRODUCTION",{action="BUILD_BLOCKED",producer="AI",faction=kind,
-                        class=queued.entry.class,count=queued.count or 1,cost=queued.estimate.cost,
+                        jobId=queued.id,class=queued.entry.class,count=queued.count or 1,cost=queued.estimate.cost,
                         reason="FLEET_CAP",finishTime=queued.finishTime},now)
                 end
             end
@@ -444,20 +588,75 @@ function RTS:UpdateAIProduction(now)
                 -- string.lower per hull - ran on every single frame, per
                 -- capped faction, for the rest of the match.
                 if self:CountFactionCombatants(kind)>=self:GetFleetCap(kind) then
+                    local request=kind=="BLUE" and state.AutoBuildRequest or nil
+                    if request then
+                        request.status="WAITING_FOR_CAP"
+                        state.savingRole="player-request:"..request.id
+                        state.savingSince=state.savingSince or request.requestedAt or now
+                        state.productionReserve=request.cost
+                    end
                     state.nextThink=now+(self.Config.AI.ThinkInterval or 8)
                 else
                     if state.playerEconomy then state.cp=self.CommandPoints end
-                    local choice,decision=self:ChooseAIBuild(kind,state,now)
+                    local choice,decision
+                    local request=kind=="BLUE" and state.AutoBuildRequest or nil
+                    local requestedEntry=request and self:GetAIRosterEntry("BLUE",request.class)
+                    if request and requestedEntry and request.tier<=tier then
+                        local estimate=self:GetPurchaseEstimate(request.class,request.tier,request.count)
+                        state.savingRole="player-request:"..request.id
+                        state.savingSince=state.savingSince or request.requestedAt or now
+                        state.productionReserve=estimate and estimate.cost or request.cost
+                        local fitsCap=self:CountCommittedCombatants("BLUE")+request.count<=self:GetFleetCap("BLUE")
+                        if not fitsCap then
+                            request.status="WAITING_FOR_CAP"
+                            decision={faction=kind,tier=tier,commandPoints=state.cp,
+                                reason="WAITING_FOR_PLAYER_AUTO_BUILD_CAP",requestedClass=request.class,
+                                requestedCost=estimate and estimate.cost or request.cost,options={}}
+                        elseif estimate and state.cp>=estimate.cost then
+                            choice={entry=requestedEntry,estimate=estimate,count=request.count,
+                                category=requestedEntry.role or "fighter",autoBuildRequestId=request.id}
+                            decision={faction=kind,tier=tier,commandPoints=state.cp,reason="PLAYER_AUTO_BUILD_REQUEST",
+                                requestedClass=request.class,requestedCost=estimate.cost,options={}}
+                        else
+                            -- Emergency counter-purchases can temporarily outrank
+                            -- the request. Otherwise keep the shared CP bank intact
+                            -- until the requested hull is affordable.
+                            request.status="SAVING"
+                            local emergency=self.AIProductionEmergency and self.AIProductionEmergency[kind]
+                            local urgent=emergency and emergency.emergency==true
+                                and now-(emergency.time or now)<=math.max(24,(self.Config.AI.StrategicOrderInterval or 12)*2)
+                            if urgent then
+                                choice,decision=self:ChooseAIBuild(kind,state,now)
+                                if decision then decision.autoBuildRequestPending=request.class end
+                            else
+                                decision={faction=kind,tier=tier,commandPoints=state.cp,
+                                    reason="SAVING_FOR_PLAYER_AUTO_BUILD",requestedClass=request.class,
+                                    requestedCost=estimate and estimate.cost or request.cost,options={}}
+                            end
+                        end
+                    else
+                        if request then
+                            request.status="INVALIDATED"; state.LastAutoBuildRequest=request; state.AutoBuildRequest=nil
+                            self:EmitAIEvent("PRODUCTION",{action="AUTO_BUILD_REJECTED",producer="PLAYER",faction="BLUE",
+                                class=request.class,reason=requestedEntry and "TIER_LOCKED" or "NOT_IN_ROSTER"},now)
+                        end
+                        choice,decision=self:ChooseAIBuild(kind,state,now)
+                    end
                     if decision then self:EmitAIEvent("AI_BUILD_DECISION",decision,now) end
                     if choice then
                         local before=state.cp
                         state.cp=state.cp-choice.estimate.cost; if state.playerEconomy then self.CommandPoints=state.cp end
                         local speed=difficulty.aiBuildSpeed or 1; local buildTime=choice.estimate.time*(duration.buildTimeScale or 1)*self:GetBuildTimeMultiplier(kind)/math.max(.25,speed)
-                        state.queue={entry=choice.entry,estimate=choice.estimate,count=choice.count or 1,
-                            queuedAt=now,startedAt=now,finishTime=now+buildTime}
+                        state.queue={id=self:NextProductionJobId(),entry=choice.entry,estimate=choice.estimate,count=choice.count or 1,
+                            queuedAt=now,startedAt=now,finishTime=now+buildTime,
+                            autoBuildRequestId=choice.autoBuildRequestId}
+                        if choice.autoBuildRequestId and request then
+                            request.status="BUILDING"; request.queuedAt=now
+                            state.savingRole=nil; state.savingSince=nil; state.productionReserve=0
+                        end
                         self:RecordAIEconomyFlow(kind,"productionSpend",choice.estimate.cost)
                         self:EmitAIEvent("PRODUCTION",{action="QUEUE_ACCEPTED",producer="AI",faction=kind,
-                            class=choice.entry.class,role=choice.category,tier=choice.entry.tier or 1,
+                            jobId=state.queue.id,class=choice.entry.class,role=choice.category,tier=choice.entry.tier or 1,
                             count=choice.count or 1,cost=choice.estimate.cost,buildSeconds=buildTime,
                             cpBefore=before,cpAfter=state.cp,queuedAt=now,
                             selectionProbability=decision and decision.selectedProbability},now)

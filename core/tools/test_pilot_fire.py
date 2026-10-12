@@ -2,7 +2,7 @@
 the manual capital-turret-fire path that lives behind the same call.
 
 The turret path used to have zero coverage: nothing in this file ever set
-PilotTurretGroups, so UpdatePilotTurretFire returned at fs2rts_pilot.lua:195-198
+PilotTurretGroups, so UpdatePilotTurretFire returned at fs2rts_pilot/turret_targeting.lua:96-99
 before it ever read Config.Pilot.TurretFireLatches at :201. That left the whole
 manual-fire feature -- the pcall(turretTrigger,...) wrapper, both TurretFire*
 config keys, and the per-turret PrimaryTriggerDown write -- unexercised.
@@ -23,6 +23,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "data/scripts"
 # data/scripts/fs2rts_util.lua.
 UTIL_STUB = r'''
 ba=ba or {}
+mn=mn or {} -- mission library boundary; directive events are covered by the full-runtime suite
 local Vec={}; Vec.__index=Vec
 function Vec.__add(a,b) return ba.createVector(a.x+b.x,a.y+b.y,a.z+b.z) end
 function Vec.__sub(a,b) return ba.createVector(a.x-b.x,a.y-b.y,a.z-b.z) end
@@ -30,6 +31,7 @@ function Vec.__mul(a,b) return ba.createVector(a.x*b,a.y*b,a.z*b) end
 function Vec.__div(a,b) return ba.createVector(a.x/b,a.y/b,a.z/b) end
 function Vec.__unm(a) return ba.createVector(-a.x,-a.y,-a.z) end
 ba.createVector=ba.createVector or function(x,y,z) return setmetatable({x=x,y=y,z=z},Vec) end
+function Vec:getDistance(other) return math.sqrt((self.x-other.x)^2+(self.y-other.y)^2+(self.z-other.z)^2) end
 local function objValid(o) return o~=nil and o:isValid() end
 package.preload.fs2rts_util=function()
   return {AI_FACTION_ORDER={'BLUE','RED','GOLD'},sortedNumericKeys=function(t)
@@ -116,6 +118,43 @@ class PilotFireTests(unittest.TestCase):
           assert(R.ship.PrimaryTriggerDown==false,'primary trigger remained held after release')
         ''')
 
+    def test_paused_pilot_does_not_issue_fire_or_maneuver_commands(self):
+        self.lua.execute('''
+          R.Paused=true; R.ship.PrimaryTriggerDown=true; R.ship.Physics.AfterburnerActive=true
+          local calls=0
+          R.ship.doManeuver=function() calls=calls+1 end
+          R.ship.firePrimary=function() calls=calls+1 end
+          R.ship.fireSecondary=function() calls=calls+1 end
+          R.ship.fireCountermeasure=function() calls=calls+1 end
+          R.ControlInfo.PrimaryCount=1; R.ControlInfo.SecondaryCount=1; R.ControlInfo.CountermeasureCount=1
+          R:UpdatePilotMode(.033)
+          assert(calls==0,'direct control issued simulation commands while paused')
+          assert(not R.ship.PrimaryTriggerDown and not R.ship.Physics.AfterburnerActive)
+          R.Paused=false; R:UpdatePilotMode(.033)
+          assert(calls>=3,'resuming did not restore direct control')
+        ''')
+
+    def test_withdrawal_approach_pilot_cannot_fire(self):
+        self.lua.execute('''
+          R.IsShipWithdrawing=function() return true end
+          R.ControlInfo.PrimaryCount=1; R.ControlInfo.SecondaryCount=1
+          R.ControlInfo.CountermeasureCount=1
+          local before=R.ship.fired or 0
+          R:UpdatePilotMode(.033)
+          assert((R.ship.fired or 0)==before and R.ship.PrimaryTriggerDown==false,
+            'possessed extraction ship fired primaries while approaching withdrawal')
+        ''')
+
+    def test_targeting_possessed_hull_clears_previous_combat_target(self):
+        self.lua.execute('''
+          function R.ship:getSignature() return 10 end
+          local observer=R:GetObserver()
+          observer.Target=R.ship
+          R.ship.Target={isValid=function() return true end,getSignature=function() return 20 end}
+          R:UpdatePilotMode(.033)
+          assert(R.ship.Target==nil,'self-targeting preserved a stale combat target')
+        ''')
+
 
 # A capital with two weapon families: one unlocked laser turret, one laser
 # turret that was ALREADY TurretLocked before possession, and one harpoon
@@ -153,16 +192,24 @@ R.UpdatePilotTurretFire=function(self,primaryDown,secondaryDown)
   return realTurretFire(self,primaryDown,secondaryDown)
 end
 R.IsPlayerEnemy=function(self,s) return s~=nil and s.team=='RED' end
+R.AreEnemies=function(self,a,b) return a.team~=b.team end
+R.GetFactionKey=function(self,s) return s and s.team end
+R.GetShipRole=function(self,s) return s and s.role end
+R.GetWeaponFiringRange=function(self,w) return w.Range end
+R.FindShipBySignature=function(self,id) return id==99 and self.target or nil end
+R.GetShipList=function(self) return {self.ship,self.target} end
+R.IsFiniteVector=function(self,p) return p~=nil and p.x==p.x and p.y==p.y and p.z==p.z end
+R.GetBattleMapHalfExtent=function() return 20000 end
 R.SetStatus=function(self,text,secs) self.statusText=text; self.statusAt=secs end
 R.UINowValue=0
 R.UINow=function(self) return self.UINowValue end
-local target={valid=true,team='RED',signature=99}
+local target={valid=true,HitpointsLeft=100,team='RED',signature=99,Position=ba.createVector(0,0,3000)}
 function target:getSignature() return self.signature end
 function target:isValid() return self.valid end
 function target:getBreedName() return 'Ship' end
 function target:isDying() return false end
 local function bank(name)
-  local weapon={Name=name,isValid=function() return true end}
+  local weapon={Name=name,Range=10000,isValid=function() return true end,isBeam=function() return false end}
   return {WeaponClass=weapon,isValid=function() return true end}
 end
 local function turret(name,locked)
@@ -170,6 +217,11 @@ local function turret(name,locked)
   function s:isValid() return self.valid end
   function s:isTurret() return true end
   function s:targetingOverride(v) self.overridden=v; return true end
+  s.WorldPosition=ba.createVector(0,0,0)
+  function s:rotateTurret(aim) self.aim=aim; return true end
+  function s:isTargetInFOV() return true end
+  function s:isPositionInFOV() return true end
+  function s:getNextFiringPosition() return self.WorldPosition,ba.createVector(0,0,1) end
   -- FSO's only subsystem-level trigger is fireWeapon(slot, flakRange, overrideVec):
   -- there is no firePrimary and no PrimaryTriggerDown on l_Subsystem (the latter
   -- is a SHIP property). slot is a flat index over the turret's own weapon list,
@@ -198,6 +250,7 @@ function observer:isDying() return false end
 local ship={valid=true,Name='Blue Capital',Class={Name='GTD Hecate'},team='BLUE',Target=target,
   HitpointsLeft=100,AfterburnerFuelLeft=0,PrimaryBanks=banks(),SecondaryBanks=banks(),
   Physics={VelocityMax={z=100},Velocity={z=0},AfterburnerActive=false}}
+ship.Position=ba.createVector(0,0,0); ship.Orientation={getFvec=function() return ba.createVector(0,0,1) end}
 function ship:isValid() return self.valid end
 function ship:getSignature() return 7 end
 function ship:getBreedName() return 'Ship' end
@@ -209,11 +262,111 @@ ship[1]=turret('Laser',false); ship[2]=turret('Laser',true); ship[3]=turret('Har
 R.ship=ship; R.target=target; R.observer=observer
 R.GetPossessedShip=function() return ship end; R.GetObserver=function() return observer end
 R.MirrorPilotTelemetryToObserver=function() end
+require 'fs2rts_fleet_life'; R.Withdrawals={}; R.AllowWithdrawal={}
 '''
 
 
 class CapitalTurretFireTests(unittest.TestCase):
-    """fs2rts_pilot.lua:193-222. Turret grouping, latched vs held fire, group
+    def test_projectile_battery_uses_target_vector_instead_of_resting_barrel_and_reports_cycle(self):
+        self.lua.execute('''
+          mn.getMissionTime=function() return R.UINowValue end
+          R:InitializePilotTurretGroups(R.ship)
+          local turret=R.ship[1]
+          local weapon=turret.PrimaryBanks[1].WeaponClass
+          weapon.Speed=1000; weapon.LifeMax=10; weapon.FireWait=3
+          local actual=turret.fireWeapon
+          turret.fireWeapon=function(self,slot,range,direction) self.firedDirection=direction; return actual(self,slot,range,direction) end
+          R.target.Position=ba.createVector(3000,0,3000)
+          R:UpdatePilotTurretFire(true,false)
+          assert(turret.primaryFires==1 and turret.firedDirection and turret.firedDirection.x>.7 and turret.firedDirection.z>.7,'projectile fires in default barrel direction while aiming elsewhere')
+          turret.getNextFiringPosition=function() return turret.WorldPosition,ba.createVector(.70710678,0,.70710678) end
+          R:UpdatePilotTurretFire(true,false)
+          assert(turret.primaryFires==2,'aligned battery never fires')
+          local entry
+          for _,g in ipairs(R.PilotTurretGroups) do for _,e in ipairs(g.turrets) do if e.subsystem==turret then entry=e end end end
+          assert(entry.cooldowns and entry.cooldowns[1]==3,'successful shot has no weapon cycle telemetry')
+        ''')
+
+    def test_battery_search_reads_turret_origin_once_and_rejects_out_of_range_before_iff(self):
+        self.lua.execute('''
+          R:InitializePilotTurretGroups(R.ship)
+          local entry=R.PilotTurretGroups[1].turrets[1]
+          local turret=entry.subsystem; local origin=turret.WorldPosition
+          turret.WorldPosition=nil; local reads=0
+          setmetatable(turret,{__index=function(_,key)
+            if key=='WorldPosition' then reads=reads+1; return origin end
+          end})
+          turret.getNextFiringPosition=function() return origin,ba.createVector(0,0,1) end
+          local enemies=R.AreEnemies; local checks=0
+          R.AreEnemies=function(self,a,b) checks=checks+1; return enemies(self,a,b) end
+          R.target.Position=ba.createVector(0,0,3000)
+          R.PilotBatteryCandidates={at=0,ships={R.target,R.target,R.target}}
+          assert(R:GetPilotBatteryTarget(R.ship,entry,nil)==R.target)
+          assert(reads==1,'battery search repeats native turret origin reads')
+          checks=0; R.UINowValue=1; R.target.Position=ba.createVector(0,0,30000)
+          R.PilotBatteryCandidates={at=1,ships={R.target}}
+          assert(R:GetPilotBatteryTarget(R.ship,entry,R.target)==nil)
+          assert(checks==0,'out-of-range candidates repeat IFF queries')
+        ''')
+
+    def test_automatic_pilot_gunners_respect_passage_but_direct_target_still_fires(self):
+        self.lua.execute('''
+          R:InitializePilotTurretGroups(R.ship)
+          R.Withdrawals={[99]={faction='RED',inCorridor=true}}
+          local entry=R.PilotTurretGroups[1].turrets[1]
+          assert(R:CanAutoEngage(R.ship,R.target)==false,'passage fixture is not protected')
+          assert(R:GetPilotBatteryTarget(R.ship,entry,nil)==nil,
+            'automatic capital battery reacquired a permitted passage target')
+          assert(R:GetPilotBatteryTarget(R.ship,entry,R.target)==R.target,
+            'explicitly selected passage target could not be intercepted')
+          R.GetShipRole=function() return 'fighter' end
+          entry.flakWeapon={Range=10000}
+          assert(R:GetPilotFlakTarget(R.ship,entry,nil)==nil,
+            'automatic flak fallback reacquired a permitted passage target')
+          assert(R:GetPilotFlakTarget(R.ship,entry,R.target)==R.target,
+            'explicitly selected passage fighter could not be intercepted by flak')
+        ''')
+
+    def test_native_fire_buttons_work_without_ship_bank_counts_and_flak_uses_target_distance(self):
+        self.lua.execute('''
+          R:InitializePilotTurretGroups(R.ship)
+          R.ControlInfo={Forward=0,ForwardCruise=0,PrimaryCount=0,SecondaryCount=0,
+            pollAllButtons=function() return 0,0,0,0 end,getButtonControlNumber=function() return -1 end}
+          R.IsPilotControlDown=function(self,buttons,name) return name=='FIRE_PRIMARY' end
+          R:UpdatePilotMode(.033)
+          assert(R.ship[1].primaryFires==1 and R.ship[3].primaryFires==1,'native trigger depends on nonexistent capital ship banks')
+          assert(R.ship[1].lastFlak==3000,'flak explodes at 100m rather than the target distance')
+          assert(R.ship[1].TurretLocked and R.ship[3].TurretLocked,'native AI retains trigger ownership')
+          local before=R.ship[1].primaryFires
+          R.IsPilotControlDown=function() return false end
+          R:UpdatePilotMode(.033)
+          assert(R.ship[1].primaryFires==before,'release still fires')
+        ''')
+
+    def test_secondary_status_uses_the_same_throttle_as_primary_fire(self):
+        self.lua.execute('''
+          R:InitializePilotTurretGroups(R.ship)
+          R.UINowValue=10; R:UpdatePilotTurretFire(false,true)
+          R.UINowValue=10.2; R:UpdatePilotTurretFire(false,true)
+          assert(R.PilotTurretFireStatusAt==10,'held secondary input refreshed status every frame')
+          R.UINowValue=10.5; R:UpdatePilotTurretFire(false,true)
+          assert(R.PilotTurretFireStatusAt==10.5)
+          R:UpdatePilotTurretFire(false,false)
+          R.UINowValue=10.6; R:UpdatePilotTurretFire(false,true)
+          assert(R.PilotTurretFireStatusAt==10.6,'fresh secondary press failed to announce')
+        ''')
+
+    def test_secondary_trigger_fires_without_primary_trigger(self):
+        self.lua.execute('''
+          R:InitializePilotTurretGroups(R.ship)
+          R.PilotTurretGroupIndex=1
+          R:UpdatePilotTurretFire(false,true)
+          assert(R.ship[3].secondaryFires==1 and (R.ship[3].primaryFires or 0)==0,
+            'capital missiles require the primary trigger too')
+          assert(R.PilotTurretFiring)
+        ''')
+
+    """fs2rts_pilot/turret_targeting.lua:94-123. Turret grouping, latched vs held fire, group
     exclusivity, the pre-locked-turret veto, and the pcall wrapper."""
 
     def setUp(self):
@@ -247,7 +400,8 @@ class CapitalTurretFireTests(unittest.TestCase):
         # group's turrets pressed on each frame instead of firing once.
         self.check("""R:InitializePilotTurretGroups(R.ship)
           assert(#R.PilotTurretGroups==2,'turrets with equal weapons were not grouped')
-          assert(R.PilotTurretGroupIndex==1)
+          assert(R.PilotTurretGroupIndex==nil,'capital possession should start with all batteries enabled')
+          R.PilotTurretGroupIndex=1
           local group=R.PilotTurretGroups[1]
           assert(group.label=='Harpoon + Harpoon sec','groups are not ordered by label: '..group.label)
           R:UpdatePilotTurretFire(true,false)
@@ -286,6 +440,7 @@ class CapitalTurretFireTests(unittest.TestCase):
 
     def test_only_the_active_group_fires_and_all_groups_live_fires_every_turret(self):
         self.check("""R:InitializePilotTurretGroups(R.ship)
+          R.PilotTurretGroupIndex=1
           local laser=R.PilotTurretGroups[2]
           assert(laser.label=='Laser + Laser sec' and #laser.turrets==2,'laser group is wrong')
           R:UpdatePilotTurretFire(true,false)
@@ -308,7 +463,7 @@ class CapitalTurretFireTests(unittest.TestCase):
 
     def test_a_turret_locked_before_possession_never_fires(self):
         # ship[2] was TurretLocked before possession. entry.wasLocked is the
-        # veto at fs2rts_pilot.lua:207, and it must hold in all-groups mode too,
+        # veto at fs2rts_pilot/turret_targeting.lua:108, and it must hold in all-groups mode too,
         # which is the case where every group is live.
         self.check("""assert(R.ship[2].TurretLocked==true,'fixture precondition: the locked turret is not locked')
           R:InitializePilotTurretGroups(R.ship)
@@ -338,6 +493,7 @@ class CapitalTurretFireTests(unittest.TestCase):
         self.check("""R:InitializePilotTurretGroups(R.ship)
           R:UpdatePilotTurretFire(true,false)
           assert(R.PilotTurretFireLatched==true)
+          local previousGroups=R.PilotTurretGroups
           R.PilotTurretGroups=nil
           local before=writes(R.ship[3])
           R:UpdatePilotTurretFire(true,false)
@@ -346,6 +502,9 @@ class CapitalTurretFireTests(unittest.TestCase):
           assert(R.PilotTurretFiring==nil or R.PilotTurretFiring==false)
           -- With a stale latch left in place, edge-only mode would swallow the
           -- first press of the next capital. Prove the reset is what prevents it.
+          -- Restore the saved native lock ownership before reinitializing: the
+          -- prior groups are deliberately hidden only to exercise the guard.
+          R.PilotTurretGroups=previousGroups; R:RestorePilotTurretGroups()
           R:InitializePilotTurretGroups(R.ship)
           R.Config.Pilot.TurretFireLatches=false
           TRIG[R.ship[3]]=nil
@@ -353,33 +512,42 @@ class CapitalTurretFireTests(unittest.TestCase):
           assert(fires(R.ship[3])==1,
             'a stale latch swallowed the first press of the next capital: '..fires(R.ship[3]))""")
 
-    def test_secondary_fire_follows_the_active_group_only_while_firing(self):
+    def test_secondary_fire_uses_its_own_trigger_and_respects_group_and_native_locks(self):
         self.check("""R:InitializePilotTurretGroups(R.ship)
+          R.PilotTurretGroupIndex=1
           R:UpdatePilotTurretFire(true,true)
           assert(R.ship[3].secondaryFires==1,'the secondary trigger did not reach the active turret')
           assert(R.ship[1].secondaryFires==nil,'an inactive group got secondaries: '..tostring(R.ship[1].secondaryFires))
           R:UpdatePilotTurretFire(true,false)
           assert(R.ship[3].secondaryFires==1,'secondaries fired with the secondary button up')
+          local primaryFires=R.ship[3].primaryFires
           R:UpdatePilotTurretFire(false,true)
-          assert(R.ship[3].secondaryFires==1,'secondaries fired with primary released')""")
+          assert(R.ship[3].secondaryFires==2,'secondary trigger incorrectly required primary fire')
+          assert(R.ship[3].primaryFires==primaryFires,'secondary fire fired a primary bank')
+          R.PilotTurretGroupIndex=nil
+          R:UpdatePilotTurretFire(false,true)
+          assert(R.ship[1].secondaryFires==1 and R.ship[3].secondaryFires==3,
+            'all-groups mode did not fire both secondary banks')
+          assert(R.ship[2].secondaryFires==nil,'a turret locked before possession fired secondaries')
+          R:UpdatePilotTurretFire(false,false)
+          assert(R.ship[1].secondaryFires==1 and R.ship[3].secondaryFires==3,
+            'released secondary trigger kept firing')""")
 
     def test_a_turret_that_rejects_the_trigger_does_not_abort_the_frame(self):
-        # A capital can lose a turret subsystem to a destruction sequence
-        # mid-frame, which is why every turret call is wrapped in pcall. The
-        # wrapper must swallow the raise AND let the rest of the pass run.
+        # Inject at the real engine call; PrimaryTriggerDown is not a turret API.
         self.check("""R:InitializePilotTurretGroups(R.ship)
-          -- ship[3] is group 1 (Harpoon); the Laser group follows it in the
-          -- loop, so a raise on ship[3] must not stop ship[1] being written.
-          setmetatable(R.ship[3],{__newindex=function(tbl,k,v)
-            if k=='PrimaryTriggerDown' then error('subsystem deleted mid-frame',0) end
-            rawset(tbl,k,v) end})
+          R.PilotTurretGroupIndex=nil
+          local attempts=0; local realFire=R.ship[3].fireWeapon
+          R.ship[3].fireWeapon=function() attempts=attempts+1; assert(false,'injected native fire error') end
           R:UpdatePilotTurretFire(true,false)
+          assert(attempts==1,'failure injection was never reached')
           assert(R.PilotTurretFiring==true,'a raising turret aborted the whole fire pass')
-          assert(lastTrigger(R.ship[1])==false,
-            'the raising turret stopped the pass from reaching the next group')
+          assert(R.ship[1].primaryFires==1,'a failed turret prevented another live turret firing')
           -- One bad frame must not poison the next one.
+          R.ship[3].fireWeapon=realFire
           R:UpdatePilotTurretFire(true,false)
-          assert(lastTrigger(R.ship[1])==false,'a previous raise kept suppressing later frames')
+          assert(R.ship[1].primaryFires==2 and R.ship[3].primaryFires==1,
+            'a previous failure suppressed later frames')
           assert(R.PilotTurretFiring==true)""")
 
     def test_status_line_is_announced_and_rate_limited_to_half_a_second(self):
@@ -409,7 +577,7 @@ class CapitalTurretFireTests(unittest.TestCase):
           assert(R.statusText=='MANUAL TURRET FIRE ACTIVE','missing config key did not fall back: '..tostring(R.statusText))""")
 
     def test_update_pilot_mode_drives_the_turret_fire_path_end_to_end(self):
-        # The wiring at fs2rts_pilot.lua:633: holding primary in pilot mode must
+        # The wiring at fs2rts_pilot/possession_state.lua:34: holding primary in pilot mode must
         # reach the capital's turrets, not just the hull's own banks.
         self.check("""R:InitializePilotTurretGroups(R.ship)
           R.ControlInfo={Forward=0,ForwardCruise=0,Heading=0,Pitch=0,Bank=0,Vertical=0,Sideways=0,

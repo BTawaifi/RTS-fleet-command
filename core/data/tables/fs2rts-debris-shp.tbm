@@ -1,0 +1,244 @@
+#Ship Classes
+$Name: GTC Fenris
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTD Hades
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: NTF Iceni
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: NTF Boadicea
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+; Type wreckage so command armor can bound impact damage without changing
+; collision physics or debris damage against ordinary ships.
+$Name: GTF Myrmidon
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTF Perseus
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTF Ulysses
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTF Hercules
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTF Loki
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTF Hercules Mark II
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTF Pegasus
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTF Ares
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTF Erinyes
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTB Artemis
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTB Boanerges
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTB Medusa
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTB Ursa
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTB Zeus
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTC Aeolus
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTC Leviathan
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTCv Deimos
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTD Hecate
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTD Orion
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTVA Colossus
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SF Mara
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SF Dragon
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SF Basilisk
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SF Manticore
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SF Aeshma
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SF Astaroth
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SB Nephilim
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SB Taurvi
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SB Nahema
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SB Seraphim
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SC Cain
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SC Rakshasa
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SC Lilith
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SCv Moloch
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SD Ravana
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SD Demon
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SJ Sathanas
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SD Lucifer
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GVF Tauret
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GVF Horus
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GVF Seth
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GVF Thoth
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GVF Serapis
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GVF Ptah
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GVB Bakha
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GVB Sekhmet
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GVB Osiris
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GVC Aten
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GVC Mentu
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GVCv Sobek
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GVD Typhon
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GVD Hatshepsut
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTSG Watchdog
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GVSG Ankh
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: SSG Trident
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+$Name: GTI Arcadia
++nocreate
+$Debris:
+    +Damage Type: RTS Debris Impact
+#End

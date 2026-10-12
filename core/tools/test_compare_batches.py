@@ -165,12 +165,15 @@ def write_match(batch: Path, index: int, records, truncate_last: bool = False,
            / "probe" / "data")
     run.mkdir(parents=True, exist_ok=True)
     path = run / f"rts-ai-20260930-{index:06d}.jsonl"
+    records = [dict(record, sequence=i+1) for i, record in enumerate(records)]
     text = "".join(json.dumps(r) + "\n" for r in records)
     if truncate_last:
         # Drop the newline AND most of the final record, the way a killed
         # process leaves a partial write.
         text = text[: text.rfind("\n") + 1] + '{"schema":2,"event":"FACTION","ti'
     path.write_text(text, encoding="utf-8")
+    from test_run_evidence import freeze_fixture
+    freeze_fixture(batch, sorted({p.parent.parent.parent for p in batch.rglob('rts-ai-*.jsonl')}))
     return path
 
 
@@ -235,11 +238,13 @@ def test_engine_result_absence_is_not_a_failure(tmp_path):
                faction("BLUE", 20.0, 400.0, 0.0, 50.0)]
     batch = tmp_path / "noengine"
     write_match(batch, 0, records)
+    for result in batch.rglob('engine-result.json'):
+        result.unlink()
     loaded = cb.load_batch(batch, "baseline")
 
     assert len(loaded) == 1
     assert loaded[0]["engine_result_path"] is None
-    assert loaded[0]["termination"] == "telemetry-only (simulation cap)"
+    assert loaded[0]["termination"] == "telemetry-only (termination unverified)"
     assert loaded[0]["vector"]["engine_result"] == 0.0
     assert loaded[0]["vector"]["records"] == 2
 
@@ -306,7 +311,7 @@ def test_unequal_match_counts_are_reported_not_fatal(tmp_path):
 
     report = cb.build_report(base_matches, cand_matches, base, cand)
     assert any("UNEQUAL MATCH COUNTS" in w for w in report["warnings"])
-    assert report["verdict"]["overall"] == "pass"
+    assert report["verdict"]["overall"] == "not_evaluated"
 
     row = next(r for r in report["metric_rows"] if r["metric"] == "cp_spent_flow")
     assert row["baseline_matches"] == 2
@@ -331,7 +336,7 @@ def run_cli(*argv):
     """Run the CLI as a subprocess from the repo root, proving the paths work
     from there as well as from the tools directory."""
     return subprocess.run(
-        [sys.executable, str(TOOLS / "compare_batches.py"), *[str(a) for a in argv]],
+        [sys.executable, str(TOOLS / "compare_batches.py"), '--until', '20', *[str(a) for a in argv]],
         cwd=str(REPO_ROOT), capture_output=True, text=True)
 
 
@@ -341,7 +346,7 @@ def test_fail_on_exits_nonzero_when_metric_regresses(tmp_path):
 
     out = tmp_path / "regress.json"
     result = run_cli(base, cand, "--json", out, "--no-per-match", "--no-histograms",
-                     "--fail-on", "cp_spent_flow")
+                     "--fail-on", "cp_spent_flow", "--polarity", "cp_spent_flow=higher")
     assert result.returncode == 1, result.stdout + result.stderr
     assert "FAIL cp_spent_flow" in result.stdout
 
@@ -356,20 +361,18 @@ def test_fail_on_exits_zero_when_metric_improves(tmp_path):
     cand = make_two_spends(tmp_path, "c4", 4, 900.0)
 
     result = run_cli(base, cand, "--no-per-match", "--no-histograms",
-                     "--fail-on", "cp_spent_flow")
+                     "--fail-on", "cp_spent_flow", "--polarity", "cp_spent_flow=higher")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "overall: PASS" in result.stdout
 
 
 def test_polarity_override_flips_the_verdict(tmp_path):
-    """cp_spent_flow is declared 'higher is better'. A user who believes the
-    opposite for their experiment must be able to say so, and get the opposite
-    verdict and the opposite exit code."""
+    """Explicit experiment goals can request either direction; counts alone have none."""
     base = make_two_spends(tmp_path, "b5", 4, 900.0)
     cand = make_two_spends(tmp_path, "c5", 4, 200.0)
 
     normal = run_cli(base, cand, "--no-per-match", "--no-histograms",
-                     "--fail-on", "cp_spent_flow")
+                     "--fail-on", "cp_spent_flow", "--polarity", "cp_spent_flow=higher")
     assert normal.returncode == 1
 
     flipped = run_cli(base, cand, "--no-per-match", "--no-histograms",
@@ -378,15 +381,16 @@ def test_polarity_override_flips_the_verdict(tmp_path):
     assert "better" in flipped.stdout
 
 
-def test_polarity_none_never_fails(tmp_path):
+def test_polarity_none_cannot_silently_disable_a_gate(tmp_path):
     base = make_two_spends(tmp_path, "b6", 4, 900.0)
     cand = make_two_spends(tmp_path, "c6", 4, 200.0)
     result = run_cli(base, cand, "--no-per-match", "--no-histograms",
                      "--fail-on", "cp_spent_flow", "--polarity", "cp_spent_flow=none")
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert 'explicit direction' in result.stderr
 
 
-def test_inconclusive_metric_does_not_fail_the_gate(tmp_path):
+def test_inconclusive_metric_cannot_pass_the_gate(tmp_path):
     """Four matches per side, but every match has the same value, so a changed
     value on the candidate side is a real separation. Give both sides huge
     spread instead: a small median shift inside the spread must not fail."""
@@ -400,8 +404,8 @@ def test_inconclusive_metric_does_not_fail_the_gate(tmp_path):
                                   faction("BLUE", 20.0, 900.0, 0.0, 10.0)])
 
     result = run_cli(base, cand, "--no-per-match", "--no-histograms",
-                     "--fail-on", "cp_spent_flow")
-    assert result.returncode == 0, result.stdout + result.stderr
+                     "--fail-on", "cp_spent_flow", "--polarity", "cp_spent_flow=higher")
+    assert result.returncode == 2, result.stdout + result.stderr
     assert "INCONCLUSIVE cp_spent_flow" in result.stdout
 
 
@@ -423,10 +427,10 @@ def test_cli_runs_from_the_tools_directory(tmp_path):
     cand = make_two_spends(tmp_path, "c9", 2, 400.0)
     result = subprocess.run(
         [sys.executable, str(TOOLS / "compare_batches.py"), str(base), str(cand),
-         "--no-per-match", "--no-histograms", "--fail-on", "cp_spent_flow"],
+         "--no-per-match", "--no-histograms"],
         cwd=str(TOOLS), capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "overall: PASS" in result.stdout
+    assert "overall: NOT_EVALUATED" in result.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -539,12 +543,12 @@ def test_cp_spend_ledger_reconciles_against_the_interval_flow(tmp_path):
     CP movement silently ceasing to be recorded, which used to surface only as
     a slowly growing gap between the flow and the purchase events."""
     records = [
-        faction("BLUE", 10.0, 1000.0, 300.0, 10.0, flow_cumulative=300.0),
         cp_spend("BLUE", 10.0, 300.0),
-        faction("BLUE", 40.0, 700.0, 625.0, 10.0, flow_cumulative=925.0),   # upgrade
+        faction("BLUE", 10.0, 1000.0, 300.0, 10.0, flow_cumulative=300.0),
         cp_spend("BLUE", 40.0, 625.0),
-        faction("GOLD", 40.0, 900.0, 750.0, 10.0, flow_cumulative=750.0),   # ability
+        faction("BLUE", 40.0, 700.0, 625.0, 10.0, flow_cumulative=925.0),   # upgrade
         cp_spend("GOLD", 40.0, 750.0),
+        faction("GOLD", 40.0, 900.0, 750.0, 10.0, flow_cumulative=750.0),   # ability
     ]
     path = write_match(tmp_path / "ledger", 0, records)
     match = cb.stream_match(path)
@@ -904,8 +908,8 @@ def test_every_declared_metric_is_produced_by_the_vector(tmp_path):
 def test_quiet_suppresses_per_match_and_histograms(tmp_path):
     base = make_two_spends(tmp_path, "qb", 3, 300.0)
     cand = make_two_spends(tmp_path, "qc", 3, 900.0)
-    loud = run_cli(base, cand, "--fail-on", "cp_spent_flow")
-    quiet = run_cli(base, cand, "--fail-on", "cp_spent_flow", "--quiet")
+    loud = run_cli(base, cand)
+    quiet = run_cli(base, cand, "--quiet")
     assert quiet.returncode == 0, quiet.stdout + quiet.stderr
     assert "PER-MATCH VALUES" not in quiet.stdout
     assert "HISTOGRAM SHARES" not in quiet.stdout
@@ -915,14 +919,14 @@ def test_quiet_suppresses_per_match_and_histograms(tmp_path):
     assert len(quiet.stdout) < len(loud.stdout)
     # The metric table and the verdict survive, which is the point of the mode.
     assert "cp_spent_flow" in quiet.stdout
-    assert "overall: PASS" in quiet.stdout
+    assert "overall: NOT_EVALUATED" in quiet.stdout
 
 
 def test_json_report_is_complete_and_machine_readable(tmp_path):
     base = make_two_spends(tmp_path, "jb", 2, 300.0)
     cand = make_two_spends(tmp_path, "jc", 3, 900.0)
     out = tmp_path / "nested" / "report.json"
-    result = run_cli(base, cand, "--json", out, "--quiet", "--fail-on", "idle_fraction_mean")
+    result = run_cli(base, cand, "--json", out, "--quiet")
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload["tool"] == "compare_batches"
@@ -930,17 +934,17 @@ def test_json_report_is_complete_and_machine_readable(tmp_path):
     assert payload["candidate"]["matches"] == 3
     assert len(payload["metric_rows"]) == len(cb.METRICS)
     for row in payload["metric_rows"]:
-        assert row["verdict"] in ("pass", "fail", "inconclusive")
+        assert row["verdict"] == "not_evaluated"
         assert row["polarity"] in ("higher", "lower", "none")
         assert "baseline_median" in row and "candidate_median" in row
-    assert payload["verdict"]["overall"] in ("pass", "fail")
-    assert payload["verdict"]["gated_metrics"] == ["idle_fraction_mean"]
+    assert payload["verdict"]["overall"] == "not_evaluated"
+    assert payload["verdict"]["gated_metrics"] == []
     first = payload["baseline"]["per_match"][0]
     for key in ("worker", "attempt", "path", "termination", "engine_result",
                 "records", "vector", "histograms", "events", "factions"):
         assert key in first
-    assert first["engine_result"] is False
-    assert first["termination"] == "telemetry-only (simulation cap)"
+    assert first["engine_result"] is True
+    assert first['evidence']['verified']
 
 
 def test_polarity_override_is_recorded_in_the_json(tmp_path):
@@ -954,7 +958,7 @@ def test_polarity_override_is_recorded_in_the_json(tmp_path):
     row = next(r for r in payload["metric_rows"] if r["metric"] == "cp_spent_flow")
     assert row["polarity"] == "lower"
     assert row["polarity_overridden"] is True
-    assert row["declared_polarity"] == "higher"
+    assert row["declared_polarity"] == "none"
 
 
 def test_list_metrics_runs_without_batches():
@@ -981,7 +985,49 @@ def test_empty_batch_is_reported_not_crashed(tmp_path):
     assert loaded == []
     report = cb.build_report(loaded, cb.load_batch(small, "candidate"), empty, small)
     assert any("no telemetry files" in w for w in report["warnings"])
-    assert report["verdict"]["overall"] == "pass"
+    assert report["verdict"]["overall"] == "insufficient_evidence"
+
+
+def test_report_without_acceptance_criteria_cannot_claim_pass(tmp_path):
+    base=make_two_spends(tmp_path,'report-only',2,300)
+    result=run_cli(base,base,'--quiet')
+    assert result.returncode==0
+    assert 'overall: NOT_EVALUATED' in result.stdout and 'overall: PASS' not in result.stdout
+
+
+def test_one_run_cannot_pass_a_comparison_gate(tmp_path):
+    base=make_two_spends(tmp_path,'one-base',1,100)
+    candidate=make_two_spends(tmp_path,'one-candidate',1,1000)
+    result=run_cli(base,candidate,'--fail-on','cp_spent_flow','--polarity','cp_spent_flow=higher','--quiet')
+    assert result.returncode==2
+    assert 'overall: INSUFFICIENT_EVIDENCE' in result.stdout
+
+
+def test_none_direction_cannot_be_a_gate(tmp_path):
+    base=make_two_spends(tmp_path,'no-direction',2,300)
+    result=run_cli(base,base,'--fail-on','sentry_builds','--quiet')
+    assert result.returncode==2
+    assert 'explicit direction' in result.stderr
+
+
+def test_context_metrics_do_not_encode_gameplay_preferences():
+    assert all(spec.polarity=='none' for spec in cb.METRICS), 'diagnostic counts still pretend to be universal quality targets'
+
+
+def test_programmatic_gate_without_direction_cannot_claim_pass(tmp_path):
+    base=make_two_spends(tmp_path,'programmatic',2,300)
+    matches=cb.load_batch(base,'baseline')
+    report=cb.build_report(matches,matches,base,base,fail_on=['sentry_builds'])
+    assert report['verdict']['overall']=='insufficient_evidence'
+
+
+def test_corrupt_telemetry_cannot_pass_an_explicit_gate(tmp_path):
+    base=make_two_spends(tmp_path,'clean',2,100)
+    candidate=make_two_spends(tmp_path,'corrupt',2,1000)
+    path=next(candidate.rglob('rts-ai-*.jsonl'))
+    path.write_text(path.read_text()+'broken record\n',encoding='utf-8')
+    result=run_cli(base,candidate,'--fail-on','cp_spent_flow','--polarity','cp_spent_flow=higher','--quiet')
+    assert result.returncode==2 and 'overall: INSUFFICIENT_EVIDENCE' in result.stdout
 
 
 def test_missing_directory_is_a_clean_error(tmp_path):

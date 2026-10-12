@@ -1,69 +1,16 @@
-"""Compare two headless RTS batches and flag AI regressions.
+"""Describe recorded batch metrics; gate only explicitly chosen directions.
 
-Loads a metric vector per match from each batch's rts-ai-*.jsonl telemetry,
-prints baseline vs candidate side by side with a delta and an explicit
-better/worse direction, and emits a machine-readable pass/fail verdict per
-metric so a change can be gated in CI.
+All default metric directions are neutral. No selected criteria means
+NOT_EVALUATED; empty/corrupt/one-run gated input means INSUFFICIENT_EVIDENCE.
+Median/MAD separation is a heuristic, not statistical gameplay confidence.
 
-    python core/tools/compare_batches.py <baseline-dir> <candidate-dir> \
-        [--json out.json] [--fail-on <metric>]...
+Flows are interval values; gauges/cumulative counts are not summed as flows.
+Ledger publication cutoffs, service spending and build events must be aligned.
+A result-file path is presence only; completion is not inferred from silence.
+Legacy repairUnlocked means ARMOR L2+, not current passive-repair availability.
+Assigned offense is intent, not useful damage or a completed objective.
 
-Design notes that matter for correctness:
-
-* engine-result.json is NOT required. A headless batch ends on the simulation
-  cap, so the engine never gets to write its result file. A match with
-  telemetry but no engine-result.json is a normal, reportable state, not a
-  crash. It is recorded as termination="telemetry-only (simulation cap)".
-
-* data.economy.flow.productionSpend is an INTERVAL flow, not a cumulative
-  counter. The last FACTION record of a match reports 0.0 because nothing was
-  spent in the final sample interval. This tool therefore never reads a single
-  FACTION record to obtain a total. It sums the interval over the record
-  series, and independently sums PRODUCTION event costs, and reports the
-  difference between the two as cp_spent_flow_gap so the reconciliation is
-  visible rather than assumed.
-
-  That gap is NEGATIVE BY DESIGN and is not a defect. Station upgrades
-  (BuyUpgrade) and the faction ability (QueueOrbitalStrike, 750 CP) deduct CP
-  through the same SpendFactionCP chokepoint but publish no purchase event of
-  their own, so the event-sourced total cannot reach the flow. On the
-  session-fix-20260930 batch that gap was 8.8-10.0% of productionSpend per
-  faction, and every individual residual resolved to a single clean upgrade
-  price (625, 750, 875, 1400, 1750, 4200). The assertion that must hold is
-  cp_spend_drift: CP_SPEND is one record per CP movement through the same
-  chokepoint, so it and the flow are two views of the same number and any drift
-  means a CP movement is no longer being recorded. cp_upgrade_spend sizes the
-  expected gap from the FACTION record's own upgrade levels.
-
-  FLEET_SERVICE_WORK.spent is counted too. It is CP out of the same bank and it
-  lands in the same interval flow, so excluding it made a reconcilable total
-  look short. Its sibling totalSpent is a per-ship running total and is
-  deliberately not summed.
-
-* STATION_REPAIR reporting 0 hull restored is normally the ARMOR L2 gate
-  (fs2rts_station.lua only repairs below that level), or a station that never sat
-  below the ceiling its scarHull sets. Both are reported next to the number, so
-  a zero is readable as a gate rather than as a broken emitter. repairUnlocked
-  and station_repair_below_ceiling are what make that distinction; without them
-  the metric was uninterpretable.
-
-* FACTION.losses is CUMULATIVE per sample (the emitter passes AIStats.losses
-  through and never resets it), so only the last sample is read.
-  FACTION.replacementValueByClass is SURVIVING fleet value built from the same
-  walk as composition, so it is not a loss cost despite the name.
-  FACTION.received is cumulative. FACTION.offense is a GAUGE - the fleet value
-  currently on PRIMARY/ESCORT missions, rebuilt every sample - and is
-  deliberately never summed here. COUNTERS carries no faction field and is
-  cumulative, so only the last record is kept.
-
-* These runs are stochastic. A single match proves nothing, so the aggregate
-  verdict is computed on the median of the per-match values, per-match values
-  are printed so outliers are visible, and a metric whose per-match spread
-  overlaps across batches is reported as inconclusive instead of better/worse.
-
-* Files stream line by line. Nothing retains the parsed record list; the
-  per-faction state is a fixed set of scalars plus bounded counters and
-  24-bucket downsampled series.
+See docs/AI_ACCEPTANCE_AND_INVARIANTS.md before accepting a tuning change.
 """
 
 from __future__ import annotations
@@ -77,8 +24,9 @@ import statistics
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
+from run_evidence import inspect_run, comparison_issues, valid_record, is_finite_number
 
-SCHEMA = 1
+SCHEMA = 3
 SERIES_BUCKETS = 24
 TAIL_TOLERANT = True
 
@@ -118,15 +66,15 @@ METRICS = [
     Metric("truncated_tail", "truncated tail", "none", "telemetry",
            "1 when the file's last line is a partial write. Normal for an in-flight run."),
     Metric("engine_result", "engine-result.json", "none", "telemetry",
-           "0 for these batches: matches end on the sim cap so the engine never writes it."),
+           "Whether a native result file was available. Missing result is unknown completion, not a gameplay pass."),
     Metric("factions", "factions per match", "none", "telemetry",
            "Distinct factions seen in FACTION records."),
 
     # -- economy ---------------------------------------------------------
-    Metric("cp_spent_flow", "CP spent (flow sum)", "higher", "economy",
+    Metric("cp_spent_flow", "CP spent (flow sum)", "none", "economy",
            "Sum of economy.flow.productionSpend over the whole FACTION series. "
            "Interval flow summed, never read off the last record."),
-    Metric("cp_spent_production", "CP spent (PRODUCTION)", "higher", "economy",
+    Metric("cp_spent_production", "CP spent (PRODUCTION)", "none", "economy",
            "Sum of PRODUCTION event cost for unit queues. Independent cross-check "
            "of the flow sum."),
     Metric("sentry_spend", "CP spent on sentries", "none", "economy",
@@ -137,7 +85,7 @@ METRICS = [
            "lost station-defence layer, and the telemetry alone cannot tell."),
     Metric("sentry_builds", "sentry builds started", "none", "economy",
            "SENTRY_BUILD BUILD_STARTED events."),
-    Metric("cp_spent_events_total", "CP spent (all events)", "higher", "economy",
+    Metric("cp_spent_events_total", "CP spent (all events)", "none", "economy",
            "Unit production, sentry construction and fleet service labour. The "
            "event-sourced total; station upgrades and the faction ability are the "
            "remaining event-free paths, sized by cp_upgrade_spend."),
@@ -155,16 +103,15 @@ METRICS = [
            "written by the same chokepoint, so any non-zero drift on a batch that carries "
            "CP_SPEND means a CP movement is no longer being recorded and the spend total is "
            "silently under-reporting."),
-    Metric("cp_flow_cumulative", "CP spent (running total)", "higher", "economy",
+    Metric("cp_flow_cumulative", "CP spent (running total)", "none", "economy",
            "Last economy.flowCumulative.productionSpend per faction, added together. The "
-           "running total behind the interval flow, so unlike the summed intervals it "
-           "includes spend made after a match's final FACTION record."),
+           "snapshot omits spend after publication; reconciliation uses the matching ledger prefix."),
     Metric("cp_upgrade_spend", "CP spent on station upgrades", "none", "economy",
            "Cumulative upgradeSpend from the FACTION record, derived from the upgrade levels "
            "the faction actually holds. This is the bulk of the expected flow/event gap."),
-    Metric("cp_spend_rate", "CP spent per sim-second", "higher", "economy",
+    Metric("cp_spend_rate", "CP spent per sim-second", "none", "economy",
            "cp_spent_flow / duration. Normalizes matches that ran to different caps."),
-    Metric("cp_income_total", "CP income (flow sum)", "higher", "economy",
+    Metric("cp_income_total", "CP income (flow sum)", "none", "economy",
            "Sum of economy.flow.income. Same interval-vs-cumulative trap as spend."),
     Metric("cp_bounty_total", "CP bounty (flow sum)", "none", "economy",
            "Sum of economy.flow.bounty. Higher means the AI killed more enemy ships."),
@@ -177,114 +124,109 @@ METRICS = [
            "Max observed economy.commandPoints. Exposes banking-for-a-target stalls."),
     Metric("queue_depth_mean", "queue depth (mean)", "none", "economy",
            "Mean economy.queueDepth over FACTION samples."),
-    Metric("queue_blocked_samples", "queue blocked on cap", "lower", "economy",
+    Metric("queue_blocked_samples", "queue blocked on cap", "none", "economy",
            "FACTION samples where economy.queue.waitingForCapacity was true. "
            "Non-zero means the AI wants to build past its fleet cap."),
 
     # -- fleet -----------------------------------------------------------
-    Metric("combatants_final", "combatants at end", "higher", "fleet",
+    Metric("combatants_final", "combatants at end", "none", "fleet",
            "Last observed economy.combatants, summed over factions."),
-    Metric("combatants_mean", "combatants (mean sample)", "higher", "fleet",
+    Metric("combatants_mean", "combatants (mean sample)", "none", "fleet",
            "Mean economy.combatants over FACTION samples."),
-    Metric("combatants_max", "combatants (peak)", "higher", "fleet",
+    Metric("combatants_max", "combatants (peak)", "none", "fleet",
            "Max economy.combatants over FACTION samples."),
     Metric("fleet_cap_final", "fleet cap at end", "none", "fleet",
            "Last observed economy.fleetCap."),
-    Metric("cap_utilisation_mean", "fleet cap utilisation", "higher", "fleet",
-           "Mean of combatants / fleetCap. A low value with a high idle count is a "
-           "production stall, not a doctrine choice."),
-    Metric("idle_mean", "idle ships (mean)", "lower", "fleet",
+    Metric("cap_utilisation_mean", "fleet cap utilisation", "none", "fleet",
+           "Mean of combatants / fleetCap. Interpret alongside hull roles, values, capacity and saving state."),
+    Metric("idle_mean", "idle ships (mean)", "none", "fleet",
            "Mean FACTION idle count. Idle ships are built but doing nothing."),
-    Metric("idle_max", "idle ships (worst faction)", "lower", "fleet",
+    Metric("idle_max", "idle ships (worst faction)", "none", "fleet",
            "Max idle count seen at any single sample in any one faction. Catches a "
            "faction that builds a fleet and then never uses it."),
-    Metric("idle_fraction_mean", "idle fraction of fleet", "lower", "fleet",
+    Metric("idle_fraction_mean", "idle fraction of fleet", "none", "fleet",
            "idle / max(combatants, 1), averaged over FACTION samples."),
-    Metric("idle_final", "idle ships at end", "lower", "fleet",
+    Metric("idle_final", "idle ships at end", "none", "fleet",
            "Last observed idle count."),
-    Metric("engaged_mean", "engaged ships (mean)", "higher", "fleet",
-           "Mean FACTION engaged count. The clearest single 'is the AI actually "
-           "fighting' number."),
-    Metric("stalled_mean", "stalled ships (mean)", "lower", "fleet",
+    Metric("engaged_mean", "engaged ships (mean)", "none", "fleet",
+           "Mean FACTION engaged count. Engagement activity alone does not establish useful combat."),
+    Metric("stalled_mean", "stalled ships (mean)", "none", "fleet",
            "Mean FACTION stalled count."),
-    Metric("mismatch_max", "objective mismatches (max)", "lower", "fleet",
+    Metric("mismatch_max", "objective mismatches (max)", "none", "fleet",
            "Max FACTION mismatch count. Non-zero means a unit's native goal "
            "disagrees with its assigned objective."),
-    Metric("unengaged_fraction", "unengaged share of unit-time", "lower", "fleet",
+    Metric("unengaged_fraction", "unengaged share of unit-time", "none", "fleet",
            "unengagedSeconds / unitSeconds at end of match. Time alive and not fighting."),
-    Metric("engagement_delay_mean", "first-engage delay (s)", "lower", "fleet",
+    Metric("engagement_delay_mean", "first-engage delay (s)", "none", "fleet",
            "engagementDelaySum / engagementSamples."),
-    Metric("replacement_value_final", "fleet value at end", "higher", "fleet",
+    Metric("replacement_value_final", "fleet value at end", "none", "fleet",
            "Last observed FACTION replacementValue, summed over factions. This is "
            "the surviving fleet, so it moves inversely with losses_value."),
 
     # -- losses and damage -----------------------------------------------
-    Metric("losses_units", "units lost", "lower", "losses",
+    Metric("losses_units", "units lost", "none", "losses",
            "Sum of the last FACTION losses dict per faction. Counts the AI's own "
            "casualties; this is an attrition measure, not a health measure."),
-    Metric("losses_value", "value of units lost", "lower", "losses",
+    Metric("losses_value", "value of units lost", "none", "losses",
            "Sum of LOSS event replacementCost. This is the value actually destroyed. "
            "Note: FACTION.replacementValueByClass is NOT this; it is the faction's "
            "surviving fleet value and sums to FACTION.replacementValue."),
-    Metric("losses_capital", "capital-class units lost", "lower", "losses",
-           "Losses of capital/heavy/juggernaut classes. Losing a capital is never good."),
-    Metric("loss_events", "LOSS events", "lower", "losses",
+    Metric("losses_capital", "capital-class units lost", "none", "losses",
+           "Losses of capital/heavy/juggernaut classes. Evaluate trades and objectives before judging the loss."),
+    Metric("loss_events", "LOSS events", "none", "losses",
            "Number of LOSS telemetry events (includes non-AI factions)."),
-    Metric("bounty_awarded", "bounty CP awarded", "higher", "losses",
+    Metric("bounty_awarded", "bounty CP awarded", "none", "losses",
            "Sum of LOSS bountyCP. Higher means the AI's kills paid out."),
-    Metric("station_hull_final_frac", "station hull at end", "higher", "losses",
+    Metric("station_hull_final_frac", "station hull at end", "none", "losses",
            "Last FACTION stationHull / stationMax, mean over factions."),
     Metric("station_beam_hits", "station beam hits", "none", "losses",
            "STATION_BEAM_HIT events. Beam damage landing on stations at all."),
     Metric("station_repairs", "station repair reports", "none", "losses",
            "STATION_REPAIR telemetry reports. Station upkeep activity."),
-    Metric("station_repaired_hull", "station hull restored", "higher", "losses",
+    Metric("station_repaired_hull", "station hull restored", "none", "losses",
            "sum of STATION_REPAIR.repaired. Zero with samples present means hull never fell "
            "below the ceiling scarHull sets, or ARMOR L2 was never bought - see "
            "station_repair_unlocked_factions."),
-    Metric("station_repaired_cumulative", "station hull restored (running)", "higher", "none",
+    Metric("station_repaired_cumulative", "station hull restored (running)", "none", "none",
            "Max STATION_REPAIR.totalRepaired per faction, added across factions. This is a "
            "cumulative gauge, so it is a max, never a sum."),
     Metric("station_repair_below_ceiling", "repair-eligible reports", "none", "none",
            "STATION_REPAIR samples where hull sat below repairCeiling, i.e. damage the station "
            "was allowed to undo."),
     Metric("station_repair_unlocked_factions", "factions at ARMOR L2+", "none", "none",
-           "Factions whose FACTION.economy.repairUnlocked is true. Station self-repair is gated "
-           "on ARMOR L2, so a zero with this at 0 is the gate, not a broken emitter."),
-    Metric("station_hull_min_frac", "station hull (worst)", "higher", "losses",
+           "Legacy repairUnlocked flag tracks ARMOR L2+. Current stations already repair below L2 at a lower rate."),
+    Metric("station_hull_min_frac", "station hull (worst)", "none", "losses",
            "Min FACTION stationHull / stationMax. Catches a station that nearly died."),
-    Metric("station_hull_mean_frac", "station hull (mean)", "higher", "losses",
+    Metric("station_hull_mean_frac", "station hull (mean)", "none", "losses",
            "Mean FACTION stationHull / stationMax over samples."),
     Metric("damage_received_final", "damage received at end", "none", "losses",
            "Last FACTION received. Volume of incoming damage; context only, because "
            "it rises when the AI fights more, which is usually the goal."),
     Metric("damage_dealt_known", "samples with damageDealt", "none", "losses",
-           "FACTION samples where damageDealt is numeric. It is the STRING 'unknown' "
-           "in every observed record, so damage dealt is not measurable from this "
-           "telemetry. Informational, never gated."),
-    Metric("friendly_hits", "friendly-fire events", "lower", "losses",
+           "FACTION samples with numeric damageDealt. Check resolved-damage coverage and attribution before interpreting totals."),
+    Metric("friendly_hits", "friendly-fire events", "none", "losses",
            "FRIENDLY_HIT events."),
 
     # -- order execution -------------------------------------------------
     Metric("order_attempts", "order attempts", "none", "orders",
            "COUNTERS orders.attempts (cumulative, final sample)."),
-    Metric("order_success_rate", "order success rate", "higher", "orders",
+    Metric("order_success_rate", "order success rate", "none", "orders",
            "COUNTERS orders.success / orders.attempts."),
-    Metric("order_failed_rate", "order failure rate", "lower", "orders",
+    Metric("order_failed_rate", "order failure rate", "none", "orders",
            "COUNTERS orders.failed / orders.attempts."),
-    Metric("order_rejected_rate", "order rejection rate", "lower", "orders",
+    Metric("order_rejected_rate", "order rejection rate", "none", "orders",
            "COUNTERS orders.rejected / orders.attempts. Non-zero means the AI asked "
            "for something the engine refused."),
-    Metric("order_unchanged_rate", "order no-op rate", "lower", "orders",
+    Metric("order_unchanged_rate", "order no-op rate", "none", "orders",
            "COUNTERS orders.unchanged / orders.attempts. Orders that changed nothing."),
     Metric("order_reissue_rate", "order reissue rate", "none", "orders",
            "COUNTERS reissued / orders.attempts. Re-issuing the same order is churn "
            "but also a retry after a no-op, so polarity is left open."),
-    Metric("orders_per_1000s", "orders per 1000 sim-seconds", "higher", "orders",
+    Metric("orders_per_1000s", "orders per 1000 sim-seconds", "none", "orders",
            "COUNTERS orders.attempts normalized by duration."),
-    Metric("decision_switch_rate", "objective switch rate", "lower", "orders",
-           "COUNTERS switches / decisions. High churn means the planner cannot commit."),
-    Metric("decision_retain_rate", "objective retain rate", "higher", "orders",
+    Metric("decision_switch_rate", "objective switch rate", "none", "orders",
+           "COUNTERS switches / decisions. Interpret objective progress and changing threats before judging switching."),
+    Metric("decision_retain_rate", "objective retain rate", "none", "orders",
            "COUNTERS retained / decisions. The complement of switching."),
     Metric("native_change_rate", "native goal change rate", "none", "orders",
            "COUNTERS nativeChanges / decisions. Engine-side churn, not planner churn."),
@@ -297,10 +239,10 @@ METRICS = [
     # -- build decisions -------------------------------------------------
     Metric("build_decisions", "build decisions", "none", "build",
            "AI_BUILD_DECISION events."),
-    Metric("build_purchase_rate", "build purchase rate", "higher", "build",
+    Metric("build_purchase_rate", "build purchase rate", "none", "build",
            "reason in {PURCHASE_SELECTED, EMERGENCY_DEFENSE_PURCHASE} / build decisions. "
            "The direct 'did it actually buy anything' signal."),
-    Metric("build_insufficient_rate", "insufficient-CP rate", "lower", "build",
+    Metric("build_insufficient_rate", "insufficient-CP rate", "none", "build",
            "reason == INSUFFICIENT_CP / build decisions."),
     Metric("build_saving_rate", "saving-for-role rate", "none", "build",
            "reason == SAVING_FOR_DESIRED_ROLE / build decisions. High and constant is "
@@ -320,11 +262,11 @@ METRICS = [
     # -- execution modes -------------------------------------------------
     Metric("exec_total", "EXECUTION events", "none", "execution",
            "Number of EXECUTION telemetry events."),
-    Metric("exec_no_objective_rate", "no-objective rate", "lower", "execution",
+    Metric("exec_no_objective_rate", "no-objective rate", "none", "execution",
            "status == NO_OBJECTIVE / EXECUTION events. The ship had no job."),
-    Metric("exec_idle_mode_rate", "idle-mode rate", "lower", "execution",
+    Metric("exec_idle_mode_rate", "idle-mode rate", "none", "execution",
            "mode == IDLE / EXECUTION events."),
-    Metric("exec_unknown_goal_rate", "unknown-goal rate", "lower", "execution",
+    Metric("exec_unknown_goal_rate", "unknown-goal rate", "none", "execution",
            "goalPresent == 'unknown' / EXECUTION events. The engine had no goal to "
            "report; usually co-occurs with NO_OBJECTIVE."),
     Metric("exec_pursuit_rate", "pursuit rate", "none", "execution",
@@ -333,11 +275,11 @@ METRICS = [
     # -- service and operations -------------------------------------------
     Metric("service_events", "fleet service events", "none", "service",
            "FLEET_SERVICE events."),
-    Metric("service_interrupted", "service interrupted", "lower", "service",
+    Metric("service_interrupted", "service interrupted", "none", "service",
            "FLEET_SERVICE_INTERRUPTED events. A repair that had to be abandoned."),
     Metric("service_work_events", "service work events", "none", "service",
            "FLEET_SERVICE_WORK events. Repair throughput."),
-    Metric("service_spent", "service labour spent", "higher", "service",
+    Metric("service_spent", "service labour spent", "none", "service",
            "Sum of FLEET_SERVICE_WORK totalSpent. Higher means ships actually got "
            "repaired, not just routed to the station."),
     Metric("operation_transitions", "operation transitions", "none", "operations",
@@ -369,16 +311,11 @@ HISTOGRAMS = {
 
 def num(value):
     """Telemetry encodes numbers as floats and everything else as strings."""
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        result = float(value)
-        return result if math.isfinite(result) else None
-    return None
+    return float(value) if is_finite_number(value) else None
 
 
 def safe_div(numerator, denominator, default=0.0):
-    if not denominator:
+    if numerator is None or not denominator:
         return default
     return numerator / denominator
 
@@ -683,7 +620,7 @@ def fold_faction(acc, data, time_value):
         acc.station_hull_damage = max(acc.station_hull_damage, damaged)
 
 
-def stream_match(path, workers=1):
+def stream_match(path, workers=1, until=None):
     """Stream one telemetry file into a compact match accumulator.
 
     Tolerates a truncated final line: a run that was killed mid-write leaves a
@@ -709,6 +646,27 @@ def stream_match(path, workers=1):
     station_beam_hits = 0
     first_time = None
     latest_counters = {}
+    observed = Counter()
+    event_samples = Counter()
+    sequence_valid = True
+    previous_sequence = None
+    previous_time = None
+    ledger_at_publish = {}
+    ledger_by_faction = defaultdict(float)
+    global_result = None
+
+    def observe(event, value, prefix=''):
+        if value is not None:
+            observed[(event, '@' + prefix)] += 1
+        if isinstance(value, dict):
+            for key, child in value.items():
+                observe(event, child, prefix + '.' + str(key) if prefix else str(key))
+        elif isinstance(value,bool):
+            observed[(event, '?' + prefix)] += 1
+        elif num(value) is not None:
+            observed[(event, prefix)] += 1
+            if (num(value) or 0) > 0:
+                observed[(event, '+' + prefix)] += 1
 
     with path.open(encoding="utf-8", errors="replace") as stream:
         for line in stream:
@@ -724,8 +682,21 @@ def stream_match(path, workers=1):
                 if len(malformed_positions) < 5:
                     malformed_positions.append(records + 1)
                 continue
-            if not isinstance(record, dict):
+            if not valid_record(record):
                 malformed += 1
+                continue
+            time_value = num(record.get('time'))
+            if time_value is None:
+                malformed += 1
+                continue
+            sequence = num(record.get('sequence'))
+            if sequence is None or sequence != int(sequence) or (previous_sequence is None and sequence != 1) or (previous_sequence is not None and sequence != previous_sequence + 1):
+                sequence_valid = False
+            previous_sequence = sequence
+            if previous_time is not None and time_value < previous_time:
+                sequence_valid = False
+            previous_time = time_value
+            if until is not None and time_value > until:
                 continue
             last_line_had_newline = True
             records += 1
@@ -739,6 +710,10 @@ def stream_match(path, workers=1):
             data = record.get("data")
             if not isinstance(data, dict):
                 data = {}
+            event_samples[event] += 1
+            observe(event, data)
+            if event == 'BATTLE_END' and data.get('globalResolved') is True:
+                global_result = data.get('victorFaction')
 
             if event == "FACTION":
                 name = data.get("faction")
@@ -748,6 +723,7 @@ def stream_match(path, workers=1):
                 if acc is None:
                     acc = factions[name] = FactionAcc(str(name))
                 fold_faction(acc, data, time_value)
+                ledger_at_publish[str(name)] = ledger_by_faction.get(str(name), 0.0)
                 # The interval flow for THIS record, before fold_faction folded
                 # it into the faction running total.
                 flow_spend_total += num(((data.get("economy") or {}).get("flow") or {}).get("productionSpend")) or 0.0
@@ -894,6 +870,7 @@ def stream_match(path, workers=1):
                     amount = num(data.get("amount"))
                     if amount is not None:
                         cp_spend_ledger += amount
+                        ledger_by_faction[str(data.get('faction'))] += amount
                         cp_spend_entries += 1
             elif event == "FLEET_SERVICE_INTERRUPTED":
                 name = data.get("faction") or "UNKNOWN"
@@ -993,6 +970,10 @@ def stream_match(path, workers=1):
         "sentry_builds": sentry_builds,
         "station_beam_hits": station_beam_hits,
         "counters": latest_counters,
+        "observed": observed, "event_samples": event_samples,
+        "sequence_valid": sequence_valid and records > 0,
+        "ledger_at_publish": sum(ledger_at_publish.values()),
+        "global_result": global_result,
     }
 
 
@@ -1156,7 +1137,7 @@ def _match_vector(match):
     # Undefined, not zero, on a batch that predates either record: there is no
     # second view to compare against, and reporting the raw -flow would dress
     # every legacy batch up as a catastrophic reconciliation failure.
-    vec["cp_spend_drift"] = (match["cp_spend_ledger"] - match["flow_cumulative_total"]
+    vec["cp_spend_drift"] = (match["ledger_at_publish"] - match["flow_cumulative_total"]
                              if match["cp_spend_entries"] and match["flow_cumulative_total"] else 0.0)
     vec["cp_flow_cumulative"] = match["flow_cumulative_total"]
     vec["cp_upgrade_spend"] = float(sum(match["upgrade_spend_last"].values()))
@@ -1286,25 +1267,29 @@ def _attempt_for(path):
     return "?"
 
 
-def load_batch(batch_dir, label):
+def load_batch(batch_dir, label, until=None):
     matches = discover_matches(batch_dir)
     loaded = []
     for info in matches:
-        match = stream_match(info["path"])
+        match = stream_match(info["path"], until=until)
         vec = _match_vector(match)
         # engine-result.json is optional. Its absence is the normal state for a
         # batch that ended on the simulation cap, and must not be reported as
         # a crash or a failure.
         vec["engine_result"] = 1.0 if info["engine_result"] else 0.0
         loaded.append({
+            "evidence": inspect_run(info['run_dir']),
+            "coverage": metric_coverage(match, vec),
+            "sequence_valid": match['sequence_valid'], "until": until,
+            "global_result": match['global_result'],
             "label": label,
             "batch": str(Path(batch_dir).resolve()),
             "worker": info["worker"],
             "attempt": info["attempt"],
             "path": str(info["path"]),
             "engine_result_path": (str(info["engine_result"]) if info["engine_result"] else None),
-            "termination": ("engine-result" if info["engine_result"]
-                            else "telemetry-only (simulation cap)"),
+            "termination": ("result file present (completion unverified)" if info["engine_result"]
+                            else "telemetry-only (termination unverified)"),
             "vector": vec,
             "histograms": match_histograms(match),
             "events": dict(match["events"]),
@@ -1339,6 +1324,95 @@ def load_batch(batch_dir, label):
         })
     return loaded
 
+
+
+def metric_coverage(match, vector):
+    """Only observed fields support a metric; absent events do not prove zero."""
+    observed, samples = match['observed'], match['event_samples']
+    def fields(event, *paths):
+        return samples[event] > 0 and all(observed[(event, p)] == samples[event] for p in paths)
+    result = {key: False for key in vector}
+    for key in ('duration_seconds', 'records', 'malformed_lines', 'truncated_tail', 'engine_result'):
+        result[key] = True
+    requirements = {
+    "cp_spent_flow": "economy.flow.productionSpend",
+    "cp_spend_rate": "economy.flow.productionSpend",
+    "cp_income_total": "economy.flow.income",
+    "cp_bounty_total": "economy.flow.bounty",
+    "bounty_awarded": "economy.flow.bounty",
+    "cp_refund_total": "economy.flow.refund",
+    "cp_banked_final": "economy.commandPoints",
+    "cp_banked_max": "economy.commandPoints",
+    "queue_depth_mean": "economy.queueDepth",
+    "fleet_cap_final": "economy.fleetCap",
+    "combatants_final": "economy.combatants",
+    "combatants_mean": "economy.combatants",
+    "combatants_max": "economy.combatants",
+    "idle_mean": "idle",
+    "idle_max": "idle",
+    "idle_final": "idle",
+    "engaged_mean": "engaged",
+    "stalled_mean": "stalled",
+    "mismatch_max": "mismatch",
+    "replacement_value_final": "replacementValue",
+    "damage_received_final": "received",
+    "cp_flow_cumulative": "economy.flowCumulative.productionSpend",
+    "cp_upgrade_spend": "economy.upgradeSpend",
+    "can_push_rate": "?plan.canPush"
+}
+    for key, path in requirements.items():
+        result[key] = fields('FACTION', path)
+    result['factions'] = samples['FACTION'] > 0
+    for key in ('station_hull_final_frac', 'station_hull_min_frac', 'station_hull_mean_frac'):
+        result[key] = fields('FACTION', 'stationHull', '+stationMax')
+    result['cap_utilisation_mean'] = fields('FACTION', 'economy.combatants', 'economy.fleetCap') and all(a.cap_sum > 0 for a in match['factions'].values())
+    result['idle_fraction_mean'] = fields('FACTION', 'idle', 'economy.combatants') and all(a.combatants_sum > 0 for a in match['factions'].values())
+    result['engagement_delay_mean'] = fields('FACTION', 'engagementDelaySum', 'engagementSamples') and sum(a.engagement_samples for a in match['factions'].values()) > 0
+    result['unengaged_fraction'] = fields('FACTION', 'unitSeconds', 'unengagedSeconds') and sum(a.unit_seconds_last for a in match['factions'].values()) > 0
+    result['order_attempts'] = fields('COUNTERS', 'orders.attempts')
+    for key, path in {'order_success_rate':'orders.success', 'order_failed_rate':'orders.failed',
+                      'order_rejected_rate':'orders.rejected', 'order_unchanged_rate':'orders.unchanged',
+                      'order_reissue_rate':'reissued'}.items():
+        result[key] = fields('COUNTERS', path, 'orders.attempts') and vector['order_attempts'] > 0
+    result['orders_per_1000s'] = result['order_attempts'] and match['duration'] > 0
+    for key, path in {'decision_switch_rate':'switches', 'decision_retain_rate':'retained', 'native_change_rate':'nativeChanges'}.items():
+        result[key] = fields('COUNTERS', path, 'decisions') and (num(match['counters'].get('decisions')) or 0) > 0
+    result['cp_spend_ledger'] = fields('CP_SPEND', 'amount')
+    result['cp_spend_drift'] = result['cp_flow_cumulative'] and result['cp_spend_ledger'] and match['sequence_valid']
+    result['queue_blocked_samples'] = fields('FACTION', '?economy.queue.waitingForCapacity')
+    result['losses_units'] = fields('FACTION', '@losses')
+    result['losses_capital'] = result['losses_units'] and fields('PRODUCTION', '@role', '@class')
+    result['losses_value'] = fields('LOSS', 'replacementCost')
+    result['damage_dealt_known'] = fields('FACTION', 'damageDealt')
+    result['cp_spent_production'] = fields('PRODUCTION', 'cost', '@action')
+    result['queued_orders_total'] = fields('PRODUCTION', '@action')
+    result['sentry_spend'] = fields('SENTRY_BUILD', 'cost', '@action')
+    result['sentry_builds'] = fields('SENTRY_BUILD', '@action')
+    result['service_spent'] = fields('FLEET_SERVICE_WORK', 'spent')
+    result['cp_spent_events_total'] = all(result[k] for k in ('cp_spent_production','sentry_spend','service_spent'))
+    result['cp_spent_flow_gap'] = result['cp_spent_events_total'] and result['cp_spent_flow']
+    result['decisions_total'] = samples['DECISION'] > 0
+    for key in ('build_purchase_rate','build_insufficient_rate','build_saving_rate'):
+        result[key] = fields('AI_BUILD_DECISION', '@reason')
+    for key, path in {'build_affordable_mean':'affordableOptions', 'build_unlocked_mean':'unlockedOptions',
+                      'build_bank_shortfall_mean':'bankTarget'}.items():
+        result[key] = fields('AI_BUILD_DECISION', path, 'commandPoints')
+    result['build_decisions_per_1000s'] = samples['AI_BUILD_DECISION'] > 0 and match['duration'] > 0
+    for key, path in {'exec_no_objective_rate':'@status', 'exec_idle_mode_rate':'@mode',
+                      'exec_unknown_goal_rate':'@goalPresent', 'exec_pursuit_rate':'?pursuit'}.items():
+        result[key] = fields('EXECUTION', path)
+    result['operation_withdraw_share'] = fields('OPERATION', '@phase')
+    result['station_repaired_hull'] = fields('STATION_REPAIR', 'repaired')
+    result['station_repaired_cumulative'] = fields('STATION_REPAIR', 'totalRepaired')
+    result['station_repair_below_ceiling'] = fields('STATION_REPAIR', 'hull', 'repairCeiling')
+    result['station_repair_unlocked_factions'] = fields('FACTION', '?economy.repairUnlocked')
+    for key, event in {'exec_total':'EXECUTION', 'build_decisions':'AI_BUILD_DECISION',
+                       'service_events':'FLEET_SERVICE', 'service_interrupted':'FLEET_SERVICE_INTERRUPTED',
+                       'service_work_events':'FLEET_SERVICE_WORK', 'operation_transitions':'OPERATION',
+                       'loss_events':'LOSS', 'station_beam_hits':'STATION_BEAM_HIT',
+                       'friendly_hits':'FRIENDLY_HIT', 'station_repairs':'STATION_REPAIR'}.items():
+        result[key] = samples[event] > 0
+    return result
 
 def median(values):
     if not values:
@@ -1426,13 +1500,25 @@ def build_report(base_matches, cand_matches, base_dir, cand_dir,
                  rel_tol=0.05, abs_tol=1e-9, polarity_overrides=None, fail_on=None):
     polarity_overrides = polarity_overrides or {}
     fail_on = fail_on or []
+    for key,direction in polarity_overrides.items():
+        if key not in METRIC_BY_KEY or direction not in ('higher','lower','none'):
+            raise ValueError(f'Invalid metric direction: {key}={direction}')
 
     rows = []
+    if not math.isfinite(rel_tol) or rel_tol < 0 or not math.isfinite(abs_tol) or abs_tol < 0:
+        raise ValueError('Tolerances must be finite and nonnegative')
+    if any(key not in METRIC_BY_KEY for key in fail_on):
+        raise ValueError('Unknown gated metric')
     for spec in METRICS:
         key = spec.key
         base_values = [m["vector"].get(key, 0.0) for m in base_matches]
         cand_values = [m["vector"].get(key, 0.0) for m in cand_matches]
         row = compare_metric(key, base_values, cand_values, rel_tol, abs_tol)
+        coverage = all(m.get('coverage', {}).get(key, False) for m in base_matches + cand_matches)
+        row['coverage_complete'] = coverage
+        if not coverage:
+            row.update(baseline_median=None, candidate_median=None, delta=None, rel_delta=None,
+                       separated=False, raw_direction='unknown')
         row["label"] = spec.label
         row["group"] = spec.group
         row["help"] = spec.help
@@ -1445,7 +1531,7 @@ def build_report(base_matches, cand_matches, base_dir, cand_dir,
             row["verdict"] = verdict_for(row, polarity)
         else:
             row["gated"] = False
-            row["verdict"] = "pass" if _no_regression(row, polarity) else "fail"
+            row["verdict"] = "not_evaluated"
         row["display"] = _display(row, polarity)
         rows.append(row)
 
@@ -1503,8 +1589,8 @@ def build_report(base_matches, cand_matches, base_dir, cand_dir,
                 f"another ({', '.join(f'{v:.0f}s' for v in sorted(cluster))} vs "
                 f"the rest). Totals that scale with match length (CP spent, CP "
                 f"income, order attempts, fleet value, service labour) are "
-                f"dominated by this, not by AI behaviour. Trust the per-1000s "
-                f"and rate metrics, or compare like-for-like length bands.")
+                f"confounded by duration. Rates are context, not a correction for "
+                f"all phase/survivor bias; compare matched windows or actual outcomes.")
     if base_matches and cand_matches:
         base_durations = [m["vector"]["duration_seconds"] for m in base_matches]
         cand_durations = [m["vector"]["duration_seconds"] for m in cand_matches]
@@ -1533,8 +1619,33 @@ def build_report(base_matches, cand_matches, base_dir, cand_dir,
             f"{len(malformed)} match(es) contain unparseable lines that are not a "
             f"truncated tail.")
 
+    invalid = not base_matches or not cand_matches or bool(truncated or malformed)
+    if gated:
+        evidence_issues = comparison_issues(base_matches, cand_matches)
+        warnings.extend(evidence_issues)
+        if evidence_issues or any(not row['coverage_complete'] for row in gated):
+            invalid = True
+            warnings.append('Acceptance requires complete selected-metric coverage and matched frozen runs.')
+    if any(row['verdict']=='not_evaluated' for row in gated):
+        invalid=True
+        warnings.append('Selected metrics require an explicit direction; no acceptance decision was made.')
+    if gated and (len(base_matches)<2 or len(cand_matches)<2):
+        invalid=True
+        warnings.append('A one-run comparison cannot estimate variation; acceptance is not evaluated.')
+    if invalid:
+        overall='insufficient_evidence'
+    elif not gated:
+        overall='not_evaluated'
+    elif failures:
+        overall='fail'
+    elif any(row['verdict']=='inconclusive' for row in gated):
+        overall='inconclusive'
+    else:
+        overall='pass'
+
     return {
         "schema": SCHEMA,
+        "vector_semantics": "legacy arithmetic; coverage=false means unknown, never observed zero; metric rows use null",
         "tool": "compare_batches",
         "baseline": {
             "dir": str(Path(base_dir).resolve()),
@@ -1542,6 +1653,8 @@ def build_report(base_matches, cand_matches, base_dir, cand_dir,
             "per_match": [
                 {"worker": m["worker"], "attempt": m["attempt"], "path": m["path"],
                  "termination": m["termination"],
+                 "evidence": m.get('evidence'), "coverage": m.get('coverage'),
+                 "global_result": m.get('global_result'), "until": m.get('until'),
                  "engine_result": m["vector"]["engine_result"] == 1.0,
                  "records": m["vector"]["records"],
                  "malformed_lines": m["vector"]["malformed_lines"],
@@ -1557,6 +1670,8 @@ def build_report(base_matches, cand_matches, base_dir, cand_dir,
             "per_match": [
                 {"worker": m["worker"], "attempt": m["attempt"], "path": m["path"],
                  "termination": m["termination"],
+                 "evidence": m.get('evidence'), "coverage": m.get('coverage'),
+                 "global_result": m.get('global_result'), "until": m.get('until'),
                  "engine_result": m["vector"]["engine_result"] == 1.0,
                  "records": m["vector"]["records"],
                  "malformed_lines": m["vector"]["malformed_lines"],
@@ -1571,7 +1686,8 @@ def build_report(base_matches, cand_matches, base_dir, cand_dir,
         "histogram_rows": hist_rows,
         "warnings": warnings,
         "verdict": {
-            "overall": "fail" if failures else "pass",
+            "overall": overall,
+            "scope": "selected recorded metrics only; median/MAD heuristic, not statistical gameplay acceptance",
             "gated_metrics": [r["metric"] for r in gated],
             "failures": [{"metric": r["metric"], "verdict": r["verdict"],
                           "baseline_median": r["baseline_median"],
@@ -1584,17 +1700,9 @@ def build_report(base_matches, cand_matches, base_dir, cand_dir,
     }
 
 
-def _no_regression(row, polarity):
-    if row["separated"] and polarity == "higher" and row["delta"] < 0:
-        return False
-    if row["separated"] and polarity == "lower" and row["delta"] > 0:
-        return False
-    return True
-
-
 def verdict_for(row, polarity):
     if polarity == "none":
-        return "pass"
+        return "not_evaluated"
     if not row["separated"]:
         return "inconclusive"
     delta = row["delta"]
@@ -1608,6 +1716,8 @@ def verdict_for(row, polarity):
 
 
 def _display(row, polarity):
+    if row['delta'] is None:
+        return 'unknown'
     if polarity == "higher":
         return "better" if row["delta"] > 0 else ("worse" if row["delta"] < 0 else "flat")
     if polarity == "lower":
@@ -1727,6 +1837,7 @@ def print_report(report, show_per_match=True, show_histograms=True,
     verdict = report["verdict"]
     out.append("VERDICT")
     out.append(f"  overall: {verdict['overall'].upper()}")
+    out.append(f"  scope: {verdict['scope']}")
     if verdict["gated_metrics"]:
         out.append(f"  gated on: {', '.join(verdict['gated_metrics'])}")
     else:
@@ -1791,6 +1902,7 @@ def main(argv=None):
                              "neutral (default 0.05)")
     parser.add_argument("--abs-tol", type=float, default=1e-9,
                         help="absolute delta below which a metric is called neutral")
+    parser.add_argument('--until', type=float, help='common mission-time cutoff for metric gates')
     parser.add_argument("--list-metrics", action="store_true",
                         help="print every metric, its declared polarity and its meaning")
     parser.add_argument("--no-per-match", action="store_true",
@@ -1819,9 +1931,14 @@ def main(argv=None):
                              f"use --list-metrics to see the names")
 
     overrides = parse_polarity(args.polarity)
+    unspecified=[key for key in args.fail_on if overrides.get(key,METRIC_BY_KEY[key].polarity)=='none']
+    if unspecified:
+        parser.error('gating requires an explicit direction: '+', '.join(unspecified)+'; use --polarity NAME=higher|lower')
 
-    base_matches = load_batch(args.baseline, "baseline")
-    cand_matches = load_batch(args.candidate, "candidate")
+    if args.until is not None and (not math.isfinite(args.until) or args.until <= 0):
+        parser.error('--until must be finite and positive')
+    base_matches = load_batch(args.baseline, "baseline", until=args.until)
+    cand_matches = load_batch(args.candidate, "candidate", until=args.until)
 
     report = build_report(
         base_matches, cand_matches, args.baseline, args.candidate,
@@ -1842,7 +1959,8 @@ def main(argv=None):
                                   default=str), encoding="utf-8")
         print(f"wrote {out}")
 
-    return 1 if report["verdict"]["overall"] == "fail" else 0
+    verdict=report["verdict"]["overall"]
+    return 1 if verdict=='fail' else 2 if verdict in ('insufficient_evidence','inconclusive') else 0
 
 
 if __name__ == "__main__":

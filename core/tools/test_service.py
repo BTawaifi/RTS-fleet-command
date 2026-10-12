@@ -12,13 +12,21 @@ stations.BLUE.Orientation={getFvec=function() return ba.createVector(0,0,1) end}
 local c=class('Service fighter'); r.ShipCostMap[c.Name]={cost=1000,time=10}
 unit=ship('Fleet test',c,ba.createVector(0,0,-1400),mn.Teams.friendly)
 unit.role='fighter'
-unit.SecondaryBanks={{AmmoMax=100,AmmoLeft=0}}; unit.HitpointsLeft=400
+unit.SecondaryBanks={{AmmoMax=100,AmmoLeft=0,isValid=function() return true end,
+  WeaponClass={Range=5000,Speed=500,LifeMax=10,isValid=function() return true end,isBeam=function() return false end}}}; unit.HitpointsLeft=400
 unit.Orders={}; unit.given=0
 function unit:clearOrders() self.Orders={} end
 function unit:giveOrder(order,target)
   self.given=self.given+1
   self.Orders={{Target=target,isValid=function() return true end,getType=function() return order end}}
   return true
+end
+function serviceHull(name,role)
+  local s=ship(name,class(name),unit.Position,mn.Teams.friendly)
+  s.role=role; s.Orders={}; s.given=0
+  s.clearOrders=unit.clearOrders; s.giveOrder=unit.giveOrder
+  r.ShipCostMap[s.Class.Name]={cost=1000,time=10}
+  return s
 end
 -- GetOrCreateMoveWaypoint is deliberately NOT faked here. It owns the
 -- self.MoveWaypoints cache and the FreeMoveWaypoints pool, and it decides
@@ -35,6 +43,85 @@ end
 '''
 
 class ServiceTests(unittest.TestCase):
+    def test_repair_pad_side_stays_inside_the_arena(self):
+        """The pad sits behind the station, opposite the ship. A station near the map
+        edge with the ship on its inward side put the pad outside the arena, and the
+        clamp then parked every hull on the boundary. The approach must flip to the
+        side whose pad is inside the arena."""
+        lua = LuaRuntime(unpack_returned_tuples=True)
+        lua.globals().scripts_path = SCRIPTS.resolve().as_posix()
+        lua.execute('package.path=scripts_path.."/?.lua;"..package.path')
+        lua.execute(SETUP)
+        lua.execute(EXTRA)
+        result = lua.execute(r"""
+          r.GetCommandArenaHalfExtent=function() return 10000 end
+          stations.BLUE.Position=ba.createVector(9000,0,0)
+          local hull=ship('edge pad hull',class('Service fighter'),ba.createVector(9800,0,0),mn.Teams.friendly)
+          local ax,az=r:GetServiceApproach(hull,stations.BLUE,nil)
+          local p=ba.createVector(9000-ax*2000,0,9000*0-az*2000)
+          local bounded=r:ClampCommandPoint(p,0)
+          return tostring(bounded~=nil and bounded:getDistance(p)<=.01)
+        """)
+        self.assertEqual(result, "true", "the repair pad lands outside the arena")
+
+    def test_simultaneous_recovery_weighs_estimated_crew_exposure_without_size_first_retreat(self):
+        self.check('''
+          r.Config.Station.FleetService.Slots=2
+          r.BuildStrategicThreatSnapshot=function() return {} end; r.BuildAIContext=function() end
+          r.GetFleetLocalThreat=function() return nil end
+          local capital=serviceHull('Crewed capital','capital')
+          local second=serviceHull('Another small crew','fighter'); second.HitpointsLeft=250
+          unit.HitpointsLeft=250; unit.SecondaryBanks[1].AmmoLeft=100; capital.HitpointsLeft=250
+          assert(r:BeginFleetService(unit,'STATION_SERVICE',0,true))
+          assert(r:BeginFleetService(capital,'STATION_SERVICE',0,true))
+          assert(r:BeginFleetService(second,'STATION_SERVICE',0,true))
+          unit.Position=r:GetFleetServicePoint(unit,stations.BLUE,nil,0,1)
+          capital.Position=r:GetFleetServicePoint(capital,stations.BLUE,nil,0,1)
+          second.Position=r:GetFleetServicePoint(second,stations.BLUE,nil,0,1)
+          r:UpdateFleetServices(0); r:UpdateFleetServices(10)
+          assert(capital.HitpointsLeft>250 and unit.HitpointsLeft==250,'same-time recovery ignored the larger estimated crew exposure')
+          capital.HitpointsLeft=650
+          r.NextFleetServiceThink=0; r:UpdateFleetServices(12); r:UpdateFleetServices(14)
+          assert(unit.HitpointsLeft>250 and second.HitpointsLeft>250 and capital.HitpointsLeft==650,
+            'size-first priority denied two more seriously injured small crews')
+          assert(r:GetCrewExposureEstimate(capital)==3 and r:GetCrewExposureEstimate(unit)==1,'crew priorities masquerade as head counts')
+        ''')
+
+    def test_older_service_admission_keeps_priority_over_later_larger_crew(self):
+        self.check('''
+          r.Config.Station.FleetService.Slots=2
+          r.BuildStrategicThreatSnapshot=function() return {} end; r.BuildAIContext=function() end
+          r.GetFleetLocalThreat=function() return nil end
+          local capital=serviceHull('Later capital','capital'); capital.HitpointsLeft=250
+          unit.HitpointsLeft=250; unit.SecondaryBanks[1].AmmoLeft=100
+          r:BeginFleetService(unit,'STATION_SERVICE',0,true); r:BeginFleetService(capital,'STATION_SERVICE',1,true)
+          unit.Position=r:GetFleetServicePoint(unit,stations.BLUE,nil,0,1)
+          capital.Position=r:GetFleetServicePoint(capital,stations.BLUE,nil,0,1)
+          r:UpdateFleetServices(1); r:UpdateFleetServices(10)
+          assert(unit.HitpointsLeft>250 and capital.HitpointsLeft==250,'larger later arrivals starved an older small crew')
+        ''')
+
+    def test_automatic_service_releases_when_remembered_attacker_is_no_longer_local(self):
+        self.check('''
+          local threat=ship('Departing attacker',class('SF Mara'),unit.Position,mn.Teams.hostile)
+          local nearby=true
+          r.BuildStrategicThreatSnapshot=function() return {} end; r.BuildAIContext=function() end
+          r.GetFleetLocalThreat=function(self,s) return s==unit and nearby and threat or nil end
+          r.AILocalStrength=function() return 100,1000 end
+          r.AITargetedBy={[unit.signature]={RED={[threat.signature]=threat}}}
+          unit.HitpointsLeft=200
+          r:UpdateFleetServices(0)
+          local visit=r.FleetServices[unit.signature]
+          assert(visit and visit.threatSignature==threat.signature)
+          unit.Position=r:GetFleetServicePoint(unit,stations.BLUE,nil,visit.padApproachX,visit.padApproachZ)
+          unit.HitpointsLeft=1000; unit.SecondaryBanks[1].AmmoLeft=100
+          r:UpdateFleetServices(25)
+          assert(r.FleetServices[unit.signature],'ready hull ignored a genuinely nearby armed threat')
+          nearby=false; threat.Position=ba.createVector(60000,0,60000)
+          r:UpdateFleetServices(35)
+          assert(not r.FleetServices[unit.signature],'living but distant cached attacker permanently blocked ready/rejoin')
+        ''')
+
     def setUp(self):
         self.lua=LuaRuntime(unpack_returned_tuples=True)
         self.lua.globals().scripts_path=SCRIPTS.resolve().as_posix()
@@ -42,6 +129,164 @@ class ServiceTests(unittest.TestCase):
         self.lua.execute(SETUP+EXTRA)
 
     def check(self,code): self.lua.execute(code)
+
+    def test_healthy_idle_units_skip_threat_scans_but_service_admission_samples_danger(self):
+        self.check('''
+          unit.HitpointsLeft=1000; unit.SecondaryBanks[1].AmmoLeft=100
+          r.BuildStrategicThreatSnapshot=function() return {} end; r.BuildAIContext=function() end
+          local scans=0
+          r.GetFleetLocalThreat=function(self,s) if s==unit then scans=scans+1 end return nil end
+          r:UpdateFleetServices(0)
+          assert(scans==0 and not r.FleetServices[unit.signature])
+          unit.HitpointsLeft=390; r.NextFleetServiceThink=0; r:UpdateFleetServices(2)
+          assert(scans>0 and r.FleetServices[unit.signature])
+          local previous=scans; r.NextFleetServiceThink=0; r:UpdateFleetServices(4)
+          assert(scans>previous,'active service must retain danger checks')
+        ''')
+
+    def test_service_builds_its_context_only_when_danger_is_consumed(self):
+        self.check('''
+          unit.HitpointsLeft=1000; unit.SecondaryBanks[1].AmmoLeft=100
+          local builds,contexts,stationQueries=0,0,0
+          r.BuildStrategicThreatSnapshot=function() builds=builds+1; return {} end
+          r.BuildAIContext=function() contexts=contexts+1 end
+          r.GetFactionThreats=function() stationQueries=stationQueries+1; return {} end
+          r.GetFleetLocalThreat=function(self,s)
+            assert(self.StrategicThreatSnapshot,'danger read without context')
+            return nil
+          end
+          r:UpdateFleetServices(0)
+          assert(builds==0 and contexts==0 and stationQueries==0,'healthy fleet eagerly builds weapons context')
+          unit.HitpointsLeft=390; r.NextFleetServiceThink=0; r:UpdateFleetServices(2)
+          assert(builds==1 and contexts==1 and r.FleetServices[unit.signature])
+          assert(not r.StrategicThreatSnapshot and not r.AIProfileIndex,'owned service context leaked')
+          r.NextFleetServiceThink=0; r:UpdateFleetServices(4)
+          assert(builds==2 and contexts==2 and stationQueries>0,'active service lost fresh danger context')
+          local borrowed={}; r.StrategicThreatSnapshot=borrowed
+          r.NextFleetServiceThink=0; r:UpdateFleetServices(6)
+          assert(builds==2 and r.StrategicThreatSnapshot==borrowed,'service rebuilt or cleared borrowed context')
+        ''')
+
+    def test_healthy_focused_units_defer_strength_scan_until_recovery_is_possible(self):
+        self.check('''
+          unit.HitpointsLeft=1000; unit.SecondaryBanks[1].AmmoLeft=100
+          r.BuildStrategicThreatSnapshot=function() return {} end; r.BuildAIContext=function() end
+          r.IsFleetFocusedByHostiles=function() return true end
+          local threat=ship('Focused attacker',class('SF Mara'),unit.Position,mn.Teams.hostile)
+          local scans=0
+          r.GetFleetLocalThreat=function(self,s) if s==unit then scans=scans+1 end return threat end
+          r.AILocalStrength=function() return 100,1000 end
+          r:UpdateFleetServices(0)
+          assert(scans==0 and not r.FleetServices[unit.signature],'healthy focus triggers unusable local-strength work')
+          unit.HitpointsLeft=390; r.NextFleetServiceThink=0; r:UpdateFleetServices(2)
+          assert(scans>0 and r.FleetServices[unit.signature],'damaged focused hull missed automatic recovery')
+        ''')
+
+    def test_service_immediately_withdraws_and_repairs_a_lost_inbound_goal(self):
+        self.check('''
+          unit.Position=ba.createVector(0,0,-6000)
+          unit.flags={}
+          function unit:setFlag(value,name) self.flags[name]=value end
+          unit:giveOrder(ORDER_ATTACK,stations.RED)
+          r.Selected={unit.signature}; r.SelectedShips={unit}
+          r.GetSelectedFriendlyShips=function() return {unit} end
+          r:ServiceSelected()
+          assert(unit.Orders[1]:getType()==ORDER_WAYPOINTS_ONCE,'service click leaves the attack goal running')
+          assert(unit:getFlag('no-dynamic'),'incoming damage can divert service travel')
+          local before=unit.given
+          unit:giveOrder(ORDER_ATTACK,stations.RED)
+          work(2)
+          assert(unit.Orders[1]:getType()==ORDER_WAYPOINTS_ONCE and unit.given>before,'cached destination hides stolen service goal')
+          r:CancelFleetServiceForShip(unit)
+          assert(not unit:getFlag('no-dynamic'),'service leaves permanent native AI suppression')
+        ''')
+
+    def test_critical_damage_does_not_override_a_live_player_command(self):
+        self.check('''
+          local threat=ship('Attacker',class('Enemy'),unit.Position,mn.Teams.hostile)
+          unit.HitpointsLeft=100; r.UserOrders[unit.signature]={kind='move',manual=true}
+          r.BuildStrategicThreatSnapshot=function() return {} end; r.BuildAIContext=function() end
+          r.GetFleetLocalThreat=function() return threat end
+          r.AILocalStrength=function() return 100,1000 end
+          r:UpdateFleetServices(0)
+          assert(not r.FleetServices[unit.signature],'automatic self preservation takes away the repeated player move')
+        ''')
+
+    def test_irreversible_withdrawal_cannot_be_recalled_for_service(self):
+        self.check('''r.IsShipWithdrawing=function(self,s) return s==unit end
+          assert(not r:BeginFleetService(unit,'HULL_LOW',0,false),
+            'a committed withdrawal was diverted into local service')
+          assert(not r.FleetServices[unit.signature])''')
+
+    def test_manual_service_repairs_fully_despite_a_nearby_contact_and_can_run_four_visitors(self):
+        self.check('''
+          local threat=ship('Nearby contact',class('Enemy'),unit.Position,mn.Teams.hostile)
+          unit.HitpointsLeft=900; unit.SecondaryBanks[1].AmmoLeft=100
+          r:BeginFleetService(unit,'STATION_SERVICE',0,true); work(0)
+          for t=10,40,2 do if r.FleetServices[unit.signature] then work(t,4,threat) end end
+          assert(unit.HitpointsLeft==1000 and not r.FleetServices[unit.signature],'manual refit sticks at 90 percent or a nearby contact blocks it')
+          assert(r.Config.Station.FleetService.Slots==4,'depot only has single or double ship capacity')
+        ''')
+
+    def test_manual_refit_starts_on_the_next_tick_at_the_pad_without_travel_backlog(self):
+        self.check('''
+          r:BeginFleetService(unit,'STATION_SERVICE',0,true); work(0)
+          work(1)
+          assert(unit.HitpointsLeft==404,'manual service at the depot does not start directly')
+          assert(unit.SecondaryBanks[1].AmmoLeft==4,'manual rearm at the depot waits for an artificial arrival timer')
+        ''')
+
+    def test_parallel_capitals_reserve_distinct_pads_with_hull_clearance(self):
+        self.check('''
+          unit.role='capital'; unit.Class.Model.Radius=700; unit.Position=ba.createVector(0,0,-6000)
+          local c=class('Service capital'); c.Model.Radius=700
+          local other=ship('Second capital',c,unit.Position,mn.Teams.friendly); other.role='capital'
+          other.signature=unit.signature+5
+          other.Orders={}; function other:clearOrders() self.Orders={} end
+          function other:giveOrder(kind,target) self.Orders={{Target=target,isValid=function() return true end,getType=function() return kind end}}; return true end
+          r:BeginFleetService(unit,'STATION_SERVICE',0,true); r:BeginFleetService(other,'STATION_SERVICE',0,true)
+          local a=r:GetFleetServicePoint(unit,stations.BLUE,nil,0,1)
+          local b=r:GetFleetServicePoint(other,stations.BLUE,nil,0,1)
+          assert(a:getDistance(b)>1400,'parallel capital refit pads overlap or signatures alias the same pad')
+          unit.Position=a; other.Position=b
+          local first=r:ServiceFleetShip(unit,r.FleetServices[unit.signature],stations.BLUE,0,4,nil)
+          local second=r:ServiceFleetShip(other,r.FleetServices[other.signature],stations.BLUE,0,4-first,nil)
+          assert(first==2 and second==2,'one capital occupies the entire multi-ship depot')
+        ''')
+
+    def test_large_refit_pads_do_not_overlap_when_clamped_at_the_arena_edge(self):
+        self.check('''
+          r.GetCommandArenaHalfExtent=function() return 13500 end
+          stations.BLUE.Position=ba.createVector(6500,0,-6500)
+          unit.role='capital'; unit.Class.Model.Radius=3200; unit.Position=stations.BLUE.Position+ba.createVector(0,0,-8000)
+          local c=class('Second large hull'); c.Model.Radius=3200
+          local other=ship('Second large hull',c,unit.Position,mn.Teams.friendly); other.role='capital'
+          other.Orders={}; function other:clearOrders() self.Orders={} end
+          function other:giveOrder(kind,target) self.Orders={{Target=target,isValid=function() return true end,getType=function() return kind end}}; return true end
+          r:BeginFleetService(unit,'STATION_SERVICE',0,true); r:BeginFleetService(other,'STATION_SERVICE',0,true)
+          local a=r:GetFleetServicePoint(unit,stations.BLUE,nil,0,1)
+          local b=r:GetFleetServicePoint(other,stations.BLUE,nil,0,1)
+          assert(a and b and a:getDistance(b)>6400,'arena clamping compresses two large hulls onto overlapping service pads')
+          assert(a:getDistance(r:GetFleetServicePoint(unit,stations.BLUE,nil,0,1))<1,'pad drifts while another visitor is booked')
+        ''')
+
+    def test_ammo_only_recall_books_capacity_without_parking_an_armed_fleet(self):
+        self.check('''
+          local function gun()
+            return {AmmoMax=0,isValid=function() return true end,WeaponClass={Range=2000,Speed=500,LifeMax=4,
+              isValid=function() return true end,isBeam=function() return false end}}
+          end
+          unit.PrimaryBanks={gun()}; unit.HitpointsLeft=1000
+          assert(r:CanStartAmmoService(unit,'fighter'),'empty depot refuses an ammo-only visit')
+          for i=1,r.Config.Station.FleetService.Slots do
+            local visitor=ship('visitor '..i,class('GTF Myrmidon'),stations.BLUE.Position,mn.Teams.friendly)
+            visitor.role='fighter'; r.FleetServices[visitor.signature]={phase='RETURNING'}
+          end
+          assert(not r:CanStartAmmoService(unit,'fighter'),'an armed fighter joins an unlimited rear-area queue')
+          assert(r:CanStartAmmoService(unit,'bomber'),'ordnance-dependent bomber is denied recovery')
+          unit.PrimaryBanks={}; unit[1]=nil; unit.SecondaryBanks[1].AmmoLeft=0
+          assert(r:CanStartAmmoService(unit,'fighter'),'unarmed craft is kept in combat')
+        ''')
 
     def test_paid_work_only_after_physical_arrival_and_quiet_deadline(self):
         self.check('''unit.Position=ba.createVector(0,0,-6000)
@@ -69,10 +314,19 @@ class ServiceTests(unittest.TestCase):
 
     def test_complete_service_releases_once_and_retains_manual_intent(self):
         self.check('''unit.HitpointsLeft=900; unit.SecondaryBanks[1].AmmoLeft=100
+          local starts,finishes=0,0
+          r.RecordServiceStart=function(self,s,t)
+            assert(self.FleetServices[s.signature] and t==0); starts=starts+1
+          end
+          r.RecordServiceFinish=function(self,s,t)
+            assert(self.FleetServices[s.signature] and t==20); finishes=finishes+1
+          end
           local resumes=0; r.ReissueUserOrder=function(self,s,o) assert(o.kind=='guard'); resumes=resumes+1 end
           r.UserOrders[unit.signature]={kind='guard'}; r:BeginFleetService(unit,'SELF_PRESERVATION',0)
+          assert(starts==1,'service history missed the entry transition')
           work(0); work(19.99); assert(r.FleetServices[unit.signature]); work(20)
-          assert(not r.FleetServices[unit.signature] and resumes==1 and r.FleetServiceCooldown[unit.signature]==50)''')
+          assert(not r.FleetServices[unit.signature] and resumes==1 and r.FleetServiceCooldown[unit.signature]==50)
+          assert(finishes==1,'service history missed completion or ran after record deletion')''')
 
     def test_station_death_rejects_healing_and_player_pilot_is_never_overridden(self):
         self.check('''r.PossessedSignature=unit.signature; assert(not r:BeginFleetService(unit,'HULL_LOW',0))
@@ -92,18 +346,24 @@ class ServiceTests(unittest.TestCase):
           assert(unit.Orders[1]:getType()==ORDER_STAY_STILL)
           assert(r.FleetServices[unit.signature])''')
 
-    def test_survival_requires_persistent_disadvantage_but_critical_damage_immediate(self):
+    def test_healthy_outmatched_ships_keep_fighting_and_damaged_ships_service(self):
         self.check('''unit.HitpointsLeft=1000; unit.SecondaryBanks[1].AmmoLeft=100
           r.StrategicThreatSnapshot={}; r.BuildStrategicThreatSnapshot=function() return {} end; r.BuildAIContext=function() end
           local threat=ship('Local enemy',class('Enemy fighter'),unit.Position,mn.Teams.hostile)
           r.GetFleetLocalThreat=function(self,s) return s==unit and threat or nil end
           r.AILocalStrength=function() return 100,250 end
           r.AITargetedBy={[unit.signature]={RED={[threat.signature]=threat}}}
-          r:UpdateFleetServices(0); r:UpdateFleetServices(2); r:UpdateFleetServices(4)
-          assert(not r.FleetServices[unit.signature]); r:UpdateFleetServices(6)
-          assert(r.FleetServices[unit.signature].reason=='OUTMATCHED')
+          r:UpdateFleetServices(0); r:UpdateFleetServices(2); r:UpdateFleetServices(4); r:UpdateFleetServices(6)
+          assert(not r.FleetServices[unit.signature],'healthy ships withdrew only because the local force ratio was bad')
+          unit.HitpointsLeft=390; r.NextFleetServiceThink=0; r:UpdateFleetServices(8)
+          -- Healthy pressure is no longer sampled for unusable recovery work;
+          -- crossing the hull threshold starts recovery immediately as HULL_LOW.
+          assert(r.FleetServices[unit.signature] and r.FleetServices[unit.signature].reason=='HULL_LOW',
+            'damaged outmatched ship did not self-service: '..tostring(r.FleetServices[unit.signature] and r.FleetServices[unit.signature].reason))
           r.FleetServices={}; r.NextFleetServiceThink=0; r.UserOrders[unit.signature]={kind='guard'}
           unit.HitpointsLeft=210; r:UpdateFleetServices(8)
+          assert(not r.FleetServices[unit.signature],'critical damage overrides the player guard')
+          r.UserOrders[unit.signature]=nil; r:UpdateFleetServices(9)
           assert(r.FleetServices[unit.signature].reason=='SELF_PRESERVATION')''')
 
     def test_completed_service_waypoint_does_not_convert_saved_move_to_hold(self):
@@ -153,7 +413,7 @@ class ServiceTests(unittest.TestCase):
           r:SetOrderPing(ba.createVector(0,0,-900),'move')
           assert(r.OrderPing~=nil and r.OrderPing.pos~=nil,'a valid pick must still ping')''')
 
-    def test_drag_move_keeps_manual_control_after_arrival_but_tap_move_does_not(self):
+    def test_drag_and_tap_moves_both_keep_manual_control_after_arrival(self):
         self.check('''local function spy(auto)
             -- Only installs the hand-off spies. Clearing UserOrders here would
             -- destroy the order under test and make OnWaypointsDone take its
@@ -165,7 +425,7 @@ class ServiceTests(unittest.TestCase):
             return function() return handed end
           end
           local face=ba.createVector(0,0,600)
-          r.IsFiniteVector=function() return true end; r.IsMovableFriendly=function() return true end
+          r.IsMovableFriendly=function() return true end
           r.GetSelectedFriendlyShips=function() return {unit} end
           r.GetSelectedFormation=function() return 'LINE_ABREAST' end
           r.ClampCommandPoint=function(self,p) return p,false end
@@ -182,14 +442,13 @@ class ServiceTests(unittest.TestCase):
           assert(order.manual==true and order.facing~=nil,
             'a drag-move lost manual control and its heading on arrival')
           assert(not handed(), 'a drag-move handed the ship back to the AI on arrival')
-          r.IsFiniteVector=function() return true end
           r:IssueMove(ba.createVector(0,0,-1400))
-          assert(not r.UserOrders[unit.signature].manual,
-            'a plain tap-to-move was wrongly tagged as a manual command')
+          assert(r.UserOrders[unit.signature].manual,
+            'a plain tap-to-move loses ownership')
           handed=spy(true); r:OnWaypointsDone(unit)
-          assert(handed(), 'a tap-to-move no longer returns to the default control')''')
+          assert(not handed() and r.UserOrders[unit.signature].kind=='hold', 'a tap-to-move returns to automatic combat')''')
 
-    def test_overwhelming_bad_fight_is_avoided_without_waiting_for_damage(self):
+    def test_healthy_ship_does_not_withdraw_from_an_overwhelming_local_fight(self):
         self.check('''unit.HitpointsLeft=1000; unit.SecondaryBanks[1].AmmoLeft=100
           r.BuildStrategicThreatSnapshot=function() return {} end; r.BuildAIContext=function() end
           local threat=ship('Severe enemy',class('Severe'),unit.Position,mn.Teams.hostile)
@@ -197,7 +456,8 @@ class ServiceTests(unittest.TestCase):
           r.AILocalStrength=function() return 100,500 end
           r.AITargetedBy={[unit.signature]={RED={[threat.signature]=threat}}}
           r:UpdateFleetServices(0)
-          assert(r.FleetServices[unit.signature].reason=='AVOID_OVERWHELMING_FIGHT')''')
+          assert(not r.FleetServices[unit.signature],
+            'healthy ship withdrew solely because a nearby group had higher combat value')''')
 
     def test_force_disadvantage_without_focus_or_damage_does_not_withdraw(self):
         self.check('''unit.HitpointsLeft=1000; unit.SecondaryBanks[1].AmmoLeft=100
@@ -211,15 +471,15 @@ class ServiceTests(unittest.TestCase):
             'mere local force ratio caused recovery with no targeting or recent damage')
           r.AITargetedBy={[unit.signature]={RED={[enemy.signature]=enemy}}}
           r.NextFleetServiceThink=0; r:UpdateFleetServices(14)
-          assert(r.FleetServices[unit.signature].reason=='AVOID_OVERWHELMING_FIGHT',
-            'actual hostile focus must still trigger immediate avoidance')
+          assert(not r.FleetServices[unit.signature],
+            'hostile focus alone should not make a healthy ship hide behind its station')
           r.FleetServices={}; r.NextFleetServiceThink=0; r.AITargetedBy={}
           unit.HitpointsLeft=200; r:UpdateFleetServices(16)
           assert(r.FleetServices[unit.signature].reason=='SELF_PRESERVATION',
             'critical damage remains an immediate retreat trigger')''')
 
     def test_service_retry_cooldown_blocks_danger_loop_but_not_critical_hull(self):
-        self.check('''unit.HitpointsLeft=1000; unit.SecondaryBanks[1].AmmoLeft=100
+        self.check('''unit.HitpointsLeft=350; unit.SecondaryBanks[1].AmmoLeft=100
           r.StrategicThreatSnapshot={}; r.BuildStrategicThreatSnapshot=function() return {} end; r.BuildAIContext=function() end
           local threat=ship('Persistent overwhelming enemy',class('Persistent threat'),unit.Position,mn.Teams.hostile)
           r.GetFleetLocalThreat=function(self,s) return s==unit and threat or nil end
@@ -231,8 +491,8 @@ class ServiceTests(unittest.TestCase):
           r:UpdateFleetServices(38)
           assert(not r.FleetServices[unit.signature],'ordinary danger bypassed service cooldown before deadline')
           r:UpdateFleetServices(40)
-          assert(r.FleetServices[unit.signature].reason=='AVOID_OVERWHELMING_FIGHT',
-            'persistent danger did not trigger after cooldown')
+          assert(r.FleetServices[unit.signature],
+            'damaged ship did not enter service when its retry deadline elapsed')
           r.FleetServices={}; r.NextFleetServiceThink=0; unit.HitpointsLeft=200
           r.FleetServiceCooldown[unit.signature]=100
           r:UpdateFleetServices(42)
@@ -250,22 +510,22 @@ class ServiceTests(unittest.TestCase):
           unit.HitpointsLeft=200; r:UpdateFleetServices(12)
           assert(r.FleetServices[unit.signature].reason=='SELF_PRESERVATION')''')
 
-    def test_station_attack_keeps_outmatched_defenders_in_the_fight(self):
+    def test_station_attack_does_not_block_damaged_outmatched_service(self):
         self.check('''unit.HitpointsLeft=1000; unit.SecondaryBanks[1].AmmoLeft=100
           r.StrategicThreatSnapshot={}; r.BuildStrategicThreatSnapshot=function() return {} end; r.BuildAIContext=function() end
           local threat=ship('Enemy pounding station',class('Enemy capital'),unit.Position,mn.Teams.hostile)
-          r.GetFleetLocalThreat=function(self,s) return s==unit and threat or nil end
+          r.GetFleetLocalThreat=function() return nil end
           r.AILocalStrength=function() return 100,1000 end
-          r.AITargetedBy={[unit.signature]={RED={[threat.signature]=threat}}}
-          r.GetFactionThreats=function() return {{attacking=true,capital=true}} end
+          r.AITargetedBy={}
+          r.GetFactionThreats=function() return {{attacking=true,capital=true,ship=threat}} end
           for t=0,12,2 do r:UpdateFleetServices(t) end
           assert(not r.FleetServices[unit.signature], 'base defense yielded to ordinary outmatched recovery')
-          r.GetFactionThreats=function() return {} end; r.NextFleetServiceThink=0
-          r:UpdateFleetServices(14)
-          assert(r.FleetServices[unit.signature].reason=='AVOID_OVERWHELMING_FIGHT',
-            'normal self-preservation resumed after the base threat ended')''')
+          unit.HitpointsLeft=390; r.GetFleetLocalThreat=function() return nil end
+          r.NextFleetServiceThink=0; r:UpdateFleetServices(14)
+          assert(r.FleetServices[unit.signature] and r.FleetServices[unit.signature].reason=='HULL_LOW',
+            'base defense overrode repair for a damaged ship: '..tostring(r.FleetServices[unit.signature] and r.FleetServices[unit.signature].reason))''')
 
-    def test_base_under_fire_aborts_docked_refit(self):
+    def test_station_attack_alone_does_not_interrupt_a_safe_docked_refit(self):
         self.check('''unit.HitpointsLeft=400; unit.SecondaryBanks[1].AmmoLeft=0
           assert(r:BeginFleetService(unit,'HULL_LOW',0)); work(100); work(112)
           assert(r.FleetServices[unit.signature].phase=='REPAIR_REARM',
@@ -276,12 +536,14 @@ class ServiceTests(unittest.TestCase):
           r.GetFleetLocalThreat=function() return nil end
           r.GetFactionThreats=function() return {{attacking=true,ship=threat}} end
           r.NextFleetServiceThink=0; r:UpdateFleetServices(114)
-          assert(not r.FleetServices[unit.signature],
-            'a docked refit kept running while its own station was under fire')
-          assert(r.FleetServiceCooldown[unit.signature]>114,
-            'interrupted service did not take a retry cooldown')''')
+          assert(r.FleetServices[unit.signature] and r.FleetServices[unit.signature].phase=='REPAIR_REARM',
+            'station attack alone cancelled safe, focused-free service')
+          r.AITargetedBy={[unit.signature]={RED={[threat.signature]=threat}}}
+          r.NextFleetServiceThink=0; r:UpdateFleetServices(116)
+          assert(not r.FleetServices[unit.signature] and r.FleetServiceCooldown[unit.signature]>116,
+            'directly focused docked visitor was not returned to combat')''')
 
-    def test_manual_service_survives_base_attack_but_a_stale_one_does_not(self):
+    def test_auto_and_manual_service_continue_when_base_attack_does_not_focus_visitor(self):
         self.check('''unit.HitpointsLeft=400; unit.SecondaryBanks[1].AmmoLeft=0
           assert(r:BeginFleetService(unit,'HULL_LOW',0)); work(100); work(112)
           r.StrategicThreatSnapshot={}; r.BuildStrategicThreatSnapshot=function() return {} end
@@ -290,7 +552,7 @@ class ServiceTests(unittest.TestCase):
           r.GetFleetLocalThreat=function() return nil end
           r.GetFactionThreats=function() return {{attacking=true,ship=threat}} end
           r.NextFleetServiceThink=0; r:UpdateFleetServices(114)
-          assert(not r.FleetServices[unit.signature],'precondition: automatic service was aborted')
+          assert(r.FleetServices[unit.signature],'base attack cancelled safe automatic service')
           r.GetFactionThreats=function() return {} end
           assert(r:BeginFleetService(unit,'STATION_SERVICE',120,true))
           r.UserOrders[unit.signature]={kind='service'}; work(122); work(134)

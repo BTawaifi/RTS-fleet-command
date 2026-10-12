@@ -45,7 +45,7 @@ class EscalationTests(unittest.TestCase):
           R={}; package.preload.fs2rts_state=function() return R end
           C=require "fs2rts_config"; R.Config=C
           require "fs2rts_factions"; require "fs2rts_production"; require "fs2rts_ai_production"
-          R.SetupActive=false; R.ScenarioStartTime=0; R.SetupDurationIndex=1
+          R.SetupActive=false; R.ScenarioStartTime=0
           R.GetFleetCap=function() return 64 end
           R.CountCommittedCombatants=function() return 0 end
           R.GetPurchaseEstimate=function(self,class,tier,count) return {cost=50,time=10} end
@@ -53,6 +53,7 @@ class EscalationTests(unittest.TestCase):
           R.testCounts={fighter=0,bomber=0,escort=0,capital=0,juggernaut=0,total=0}
           R.testValues={fighter=0,bomber=0,escort=0,capital=0,total=0}
           tb={ShipClasses={}}
+          R:SetFactionChoice('BLUE','GTVA')
           for _,kind in ipairs({'BLUE','RED','GOLD'}) do
             for _,entry in ipairs(R:GetAIRoster(kind)) do
               tb.ShipClasses[entry.class]={isValid=function() return true end}
@@ -116,14 +117,13 @@ class EscalationTests(unittest.TestCase):
           assert(#R.ledger==before,'ledger must stay silent when telemetry is off')
         ''')
 
-    def test_duration_profiles_reach_late_tier_five(self):
+    def test_single_escalation_schedule_reaches_tier_five(self):
         self.lua.execute('''
           R.ScenarioStartTime=0
           assert(R:GetCurrentEscalationTier(1379)==4)
           assert(R:GetCurrentEscalationTier(1380)==5)
-          R.SetupDurationIndex=2
-          assert(R:GetCurrentEscalationTier(2759)==4)
-          assert(R:GetCurrentEscalationTier(2760)==5)
+          assert(R.Config.Setup.Durations==nil and R.Config.Setup.DefaultDuration==nil)
+          assert(R:GetCurrentEscalationTier(100000)==5)
           assert(R.Config.ProductionClasses[#R.Config.ProductionClasses].tier==5)
         ''')
 
@@ -133,7 +133,7 @@ class EscalationTests(unittest.TestCase):
         control. Tiers must advance with mission time, and the removed clock must
         not come back."""
         self.lua.execute('''
-          R.ScenarioStartTime=0; R.SetupDurationIndex=nil
+          R.ScenarioStartTime=0
           assert(R.GetRealScenarioElapsed==nil and R.AdvanceRealElapsed==nil,
             'the wall-clock scenario timer is back; escalation will ignore time skip again')
           -- Default 30 MIN profile unlocks tiers at {0,240,570,1050,1380}.
@@ -152,6 +152,7 @@ class EscalationTests(unittest.TestCase):
 
     def test_ai_can_repeat_juggernauts_when_budget_allows(self):
         self.lua.execute('''
+          R:SetFactionChoice('BLUE','GTVA')
           R.GetCurrentEscalationTier=function() return 5 end
           local state={cp=10000}
           local selected,decision=R:ChooseAIBuild('BLUE',state,1500)
@@ -172,8 +173,8 @@ class EscalationTests(unittest.TestCase):
           assert(redSathanas and redSathanas.tier==5)
           assert(R.Config.CostFormula.GlobalMultiplier==1.25)
           assert(R.Config.CostFormula.RoleMultipliers.juggernaut==0.14)
-          assert(R.Config.CostFormula.ClassMultipliers['GVD Hatshepsut']==0.30)
-          assert(R.Config.CostFormula.ClassMultipliers['SD Ravana']==0.30)
+          assert(R.Config.CostFormula.ClassMultipliers['GVD Hatshepsut']==nil)
+          assert(R.Config.CostFormula.ClassMultipliers['SD Ravana']==nil)
           assert(R.Config.CostFormula.ClassMultipliers['GTVA Colossus']==0.50)
           assert(R.Config.CostFormula.ClassMultipliers['SJ Sathanas']==0.65)
           assert(R.Config.CostFormula.ClassMultipliers['SD Lucifer']==1.25)
@@ -197,13 +198,15 @@ class EscalationTests(unittest.TestCase):
           hull.Name='SD Ravana'; R.ShipCostRoleMap={}
           discounted=R:EstimateShipCost(hull)
           hull.Name='unadjusted'; standard=R:EstimateShipCost(hull)
-          assert(discounted.cost<standard.cost*0.31,'Ravana class price normalization was not applied')
+          assert(discounted.cost==standard.cost,'Ravana retains an unexplained faction-specific discount')
           R.AIStates={}; R.testCounts.juggernaut=4
           R.BuildQueue={{option={role='juggernaut',count=1}},{option={role='juggernaut',count=1}},
             {option={role='juggernaut',count=1}},{option={role='juggernaut',count=1}}}
           R.CommandPoints=100000
           R.GameStatus='ACTIVE'; R.SetupActive=false; R.Enabled=true
-          R.GetCarrier=function() return {} end; R.IsBuildOptionUnlocked=function() return true end
+          R.GetCarrier=function() return {HitpointsLeft=1,isValid=function() return true end,
+            getBreedName=function() return 'Ship' end,isDying=function() return false end} end
+          R.IsBuildOptionUnlocked=function() return true end
           R.CountCommittedCombatants=function() return 0 end; R.SetStatus=function(self,s) self.status=s end
           R.EmitAIEvent=function(self,n,d) self.lastEvent={name=n,data=d} end
           R.RecordAIEconomyFlow=function() end; R.FormatTime=function() return '' end
@@ -242,8 +245,64 @@ class EscalationTests(unittest.TestCase):
           assert(state.savingSince==0)
         ''')
 
+    def test_emergency_edge_survives_replaced_strategic_snapshots(self):
+        self.lua.execute('''
+          R.GetCurrentEscalationTier=function() return 3 end
+          R.GetPurchaseEstimate=function() return {cost=1000,time=10} end
+          local state={cp=0}
+          R:ChooseAIBuild('BLUE',state,0)
+          assert(state.savingSince==0)
+          R.AIProductionEmergency={BLUE={emergency=true,time=10}}
+          R:ChooseAIBuild('BLUE',state,10)
+          assert(state.savingSince==nil,'first emergency did not interrupt savings')
+          -- A request can establish a bank while that emergency is still live.
+          state.savingRole='player-request:1'; state.savingSince=11
+          R.AIProductionEmergency.BLUE={emergency=true,time=20}
+          local choice=R:ChooseAIBuild('BLUE',state,20)
+          assert(not choice and state.savingSince==11,
+            'refreshed sustained emergency restarted the producer savings clock')
+          R.AIProductionEmergency.BLUE={emergency=false,time=25}
+          R:ChooseAIBuild('BLUE',state,25)
+          R.AIProductionEmergency.BLUE={emergency=true,time=30}
+          R:ChooseAIBuild('BLUE',state,30)
+          assert(state.savingSince==nil,'quiet-to-emergency edge did not rearm')
+          R.AIProductionEmergency.BLUE={emergency=true,time=-100}
+          R:ChooseAIBuild('BLUE',state,40)
+          assert(state.savingSince==40,'stale emergency remained active')
+          R.AIProductionEmergency.BLUE={emergency=true,time=41}
+          R:ChooseAIBuild('BLUE',state,41)
+          assert(state.savingSince==nil,'fresh edge after stale evidence did not rearm')
+          local fresh={cp=0,savingRole='capital:3',savingSince=0}
+          R:ChooseAIBuild('BLUE',fresh,42)
+          assert(fresh.savingSince==nil,'new producer inherited another producer edge')
+          state.cp=1000
+          choice=R:ChooseAIBuild('BLUE',state,43)
+          assert(choice,'sustained emergency stopped an affordable defense purchase')
+        ''')
+
+    def test_classic_fleet_finishes_its_savings_when_no_current_tier_hull_exists(self):
+        self.lua.execute('''
+          R:SetFactionChoice('BLUE','GTA')
+          for _,entry in ipairs(R:GetAIRoster('BLUE')) do
+            tb.ShipClasses[entry.class]={isValid=function() return true end}
+          end
+          R.GetCurrentEscalationTier=function() return 5 end
+          R.Config.AI.CompositionTargets[5]={fighter=0,bomber=0,escort=0,capital=1}
+          local state={cp=10}
+          local choice,decision=R:ChooseAIBuild('BLUE',state,0)
+          assert(not choice and decision.desiredRole=='capital' and state.savingRole,
+            'precondition: classic fleet was not saving for a capital')
+          state.cp=50
+          math.random=function() return .999999 end
+          choice,decision=R:ChooseAIBuild('BLUE',state,1)
+          assert(choice and choice.category=='capital' and choice.entry.class=='GTD Orion',
+            'completed classic capital savings were spent on a cheaper role')
+          assert(not state.savingRole,'completed purchase kept the savings lock')
+        ''')
+
     def test_capital_savings_scale_by_escalation_and_remain_bounded(self):
         self.lua.execute('''
+          R:SetFactionChoice('BLUE','GTVA')
           local windows={[3]=600,[4]=900,[5]=600}
           for tier,seconds in pairs(windows) do
             R.GetCurrentEscalationTier=function() return tier end

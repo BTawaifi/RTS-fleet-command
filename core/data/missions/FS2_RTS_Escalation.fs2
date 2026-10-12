@@ -10,7 +10,7 @@ Playable demo mission for the FS2 RTS Fleet Command mod.
 $End Notes:
 
 $Mission Desc:
- XSTR("Command a Terran task force from a detached tactical camera. Defend Blue Arcadia, escalate through fleet tiers, and destroy the selected faction command stations.", -1)
+ XSTR("Choose Terran, Shivan or Vasudan forces, set the number of hostile factions, and command your fleet from a tactical camera. Destroy every opposing command station.", -1)
 $end_multi_text
 +Game Type Flags: 1
 +Flags: 1024
@@ -19,6 +19,7 @@ $end_multi_text
 +Disallow Support: 1
 +Hull Repair Ceiling: 0.000000
 +Subsystem Repair Ceiling: 100.000000
++All Teams Attack
 
 +Viewer pos: 0.000000, 6000.000000, -6000.000000
 +Viewer orient:
@@ -28,7 +29,7 @@ $end_multi_text
 
 $Starting wing names: ( "Alpha" "Beta" "Gamma" )
 $Team-versus-team wing names: ( "Alpha" "Zeta" )
-$AI Profile: FS2 RETAIL
+$AI Profile: RTS Fleet Command
 
 #Command Briefing
 
@@ -76,51 +77,6 @@ $Determination: 10
 +Respawn priority: 0
 +Score: 0
 
-$Name: RTS Blue Station
-$Class: GTI Arcadia
-$Team: Friendly
-$Location: -9000.000000, 0.000000, 0.000000
-$Orientation:
-    0.965926, 0.000000, 0.258819,
-    0.000000, 1.000000, 0.000000,
-    -0.258819, 0.000000, 0.965926
-$AI Behavior: None
-$Cargo 1:  XSTR("Fleet command carrier", -1)
-+Initial Hull: 100
-+Initial Shields: 100
-$Arrival Location: Hyperspace
-$Arrival Cue: ( true )
-$Departure Location: Hyperspace
-$Departure Cue: ( false )
-$Determination: 10
-+Flags: ( "cargo-known" "no-shields" "immobile" )
-+Flags2: ( )
-+Respawn priority: 0
-+Use Table Score:
-+Score: 1300
-
-$Name: RTS Red Station
-$Class: SI Arachnas
-$Team: Hostile
-$Location: 9000.000000, 0.000000, 0.000000
-$Orientation:
-    -0.965926, 0.000000, -0.258819,
-    0.000000, 1.000000, 0.000000,
-    0.258819, 0.000000, -0.965926
-$AI Behavior: None
-$Cargo 1: XSTR("Shivan command vessel", -1)
-+Initial Hull: 100
-$Arrival Location: Hyperspace
-$Arrival Cue: ( true )
-$Departure Location: Hyperspace
-$Departure Cue: ( false )
-$Determination: 10
-+Flags: ( "no-shields" "immobile" )
-+Flags2: ( )
-+Respawn priority: 0
-+Use Table Score:
-+Score: 840
-
 #Wings
 
 $Name: Alpha
@@ -138,13 +94,31 @@ $Ships: (
 
 #Events
 
-#Goals
+$Formula: ( when ( = 0 1 ) ( do-nothing ) )
++Name: RTS Pilot Task
++Repeat Count: 1
++Interval: 1
++Objective: XSTR("", -1)
 
-$Type: Primary
-+Name: Destroy Shivan Command
-$MessageNew: XSTR("Destroy the Red capital station. In three-faction mode, destroy the Gold station too.", -1)
-$end_multi_text
-$Formula: ( is-destroyed-delay 0 "RTS Red Station" )
+$Formula: ( when ( = 0 1 ) ( do-nothing ) )
++Name: RTS Pilot Target
++Repeat Count: 1
++Interval: 1
++Objective: XSTR("", -1)
+
+$Formula: ( when ( = 0 1 ) ( do-nothing ) )
++Name: RTS Pilot Phase
++Repeat Count: 1
++Interval: 1
++Objective: XSTR("", -1)
+
+$Formula: ( when ( = 0 1 ) ( do-nothing ) )
++Name: RTS Pilot Reason
++Repeat Count: 1
++Interval: 1
++Objective: XSTR("", -1)
+
+#Goals
 
 #Waypoints
 
@@ -156,6 +130,11 @@ $Formula: ( is-destroyed-delay 0 "RTS Red Station" )
 
 $Num stars: 700
 $Ambient light level: 7895160
++Nebula: Nebula01
++Color: Blue
++Pitch: 0
++Bank: 0
++Heading: 0
 $Bitmap List:
 $Sun: SunBlue
 +Angles: 0.785398 0.000000 0.785398
@@ -164,7 +143,7 @@ $Sun: SunBlue
 #Asteroid Fields
 
 #Music
-$Event Music: 2: Exodus
+$Event Music: None
 $Briefing Music: None
 
 #End

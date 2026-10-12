@@ -30,6 +30,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import killcheck
@@ -50,6 +51,11 @@ from killcheck import (
 )
 
 TOOLS = Path(__file__).resolve().parent
+
+
+def guard_path(guard):
+    """The script file that holds a guard's anchors (a part of a split module)."""
+    return killcheck.SCRIPTS / killcheck.target_rel(guard.file, guard.mutations)
 
 
 # ---------------------------------------------------------------------------
@@ -227,8 +233,8 @@ FIXTURE_TEST = (
     "        lua = load()\n"
     "        reserve = lua.execute(\n"
     "            'local m = require(\"fx\") return m.stationReserve(5000, 1200)')\n"
-    "        self.assertEqual(reserve, 5000 // 2 * 2,\n"
-    '                         "an arithmetic coincidence, not the guard")\n'
+    "        self.assertGreater(reserve, 0,\n"
+    '                           "positive with or without the cap")\n'
     "\n"
     "def test_untouched_second_guard(self):\n"
     '    """A guard with no test at all - UNCOVERED, a real finding."""\n'
@@ -461,19 +467,76 @@ class HangDetectionTests(unittest.TestCase):
         self.assertIn("test_hang.py::test_never_ends", hung_node_ids(out),
                       "a timeout must be distinguishable from a clean failure")
 
-    def test_a_hang_is_reported_with_its_own_verdict(self):
-        """A hang must stay distinguishable from a clean RED end to end."""
-        import inspect
-        run_guard = inspect.getsource(killcheck.KillCheck.run_guard)
-        self.assertIn("hung", run_guard,
-                      "run_guard must consult the hang set")
-        self.assertIn('elif key in hung:', run_guard)
+    def test_only_observed_assertions_can_kill_a_guard(self):
+        node = "test_fixture.py::RealTests::test_station_reserve_is_capped"
+        controls = [
+            (1, f"FAILED {node} - did not finish within 5s", "ERROR", "HUNG"),
+            (1, f"ERROR {node} - RuntimeError", "ERROR", "ERROR"),
+            (1, f"FAILED {node} - LuaError", "ERROR", "ERROR"),
+            (0, "1 skipped", "ERROR", "ERROR"),
+            (4, "runner could not start", "ERROR", "ERROR"),
+            (0, f"TEST_PASSED {node}[1]\nTEST_UNVERIFIED {node}[2]", "ERROR", "ERROR"),
+            (2, f"ASSERTION_FAILURE {node}", "ERROR", "ERROR"),
+            (0, f"TEST_PASSED {node}", "VACUOUS", "GREEN"),
+            (1, f"FAILED {node} - assert 1 == 2\nASSERTION_FAILURE {node}", "KILLED", "RED"),
+        ]
+        with tempfile.TemporaryDirectory() as folder:
+            core = build_fixture_mod(Path(folder))
+            with patch.object(killcheck, "CORE", core), KillCheck(fixture_guards()[:1]) as kc:
+                guard = fixture_guards()[0]
+                guard.tests = [node]
+                for code, output, verdict, test_verdict in controls:
+                    with self.subTest(output=output), patch.object(killcheck, "_run", return_value=(code, output)):
+                        result = kc.run_guard(guard, set())
+                        self.assertEqual(result.verdict, verdict)
+                        self.assertEqual(result.outcomes[0].verdict, test_verdict)
+                with patch.object(killcheck, "_run", return_value=(1, controls[-1][1])):
+                    self.assertEqual(kc.run_guard(guard, {node}).verdict, "ERROR")
 
-    def test_a_hung_test_still_counts_as_falsifying_the_guard(self):
-        """It must not report VACUOUS: the test demonstrably did not pass."""
-        import inspect
-        run_guard = inspect.getsource(killcheck.KillCheck.run_guard)
-        self.assertIn('("RED", "HUNG")', run_guard)
+    def test_runner_distinguishes_assertions_setup_errors_skips_and_passes(self):
+        source = (
+            "import pytest, unittest\nfrom lupa.lua51 import LuaRuntime\n"
+            "def test_pass(): assert True\n"
+            "def test_assertion(): assert 1 == 2\n"
+            "def test_exception(): raise RuntimeError('assertion is not the cause')\n"
+            "def test_lua_assertion(): LuaRuntime().execute('assert(false, \"deliberate assertion\")')\n"
+            "def test_lua_api_error(): LuaRuntime().execute('missing_api()')\n"
+            "@pytest.fixture\ndef broken(): raise AssertionError('setup failed')\n"
+            "def test_setup(broken): pass\n"
+            "@pytest.mark.skip\ndef test_skip(): pass\n"
+            "class TestUnit(unittest.TestCase):\n"
+            "    def test_assertion(self): self.assertEqual(1, 2)\n"
+            "@pytest.mark.parametrize('n', [1, 2])\n"
+            "def test_param(n): assert n > 0\n"
+            "@pytest.mark.parametrize('n', [1, 2])\n"
+            "def test_partial(n):\n"
+            "    if n == 2: pytest.skip('partial evidence')\n"
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            tools = Path(folder)
+            (tools / "test_evidence.py").write_text(source, encoding="utf-8")
+            code, output = killcheck._run(["test_evidence.py"], tools, timeout=30)
+        self.assertEqual(code, 1, output)
+        self.assertEqual(set(killcheck._ASSERTION_RE.findall(output)), {
+            "test_evidence.py::test_assertion", "test_evidence.py::TestUnit::test_assertion",
+            "test_evidence.py::test_lua_assertion"})
+        self.assertEqual(set(killcheck._PASSED_RE.findall(output)), {
+            "test_evidence.py::test_pass", "test_evidence.py::test_param[1]", "test_evidence.py::test_param[2]",
+            "test_evidence.py::test_partial[1]"})
+        self.assertEqual(set(killcheck._UNVERIFIED_RE.findall(output)), {
+            "test_evidence.py::test_exception", "test_evidence.py::test_setup", "test_evidence.py::test_skip",
+            "test_evidence.py::test_partial[2]", "test_evidence.py::test_lua_api_error"})
+
+    def test_missing_or_failed_baseline_cannot_supply_green_evidence(self):
+        with tempfile.TemporaryDirectory() as folder:
+            core = build_fixture_mod(Path(folder))
+            with patch.object(killcheck, "CORE", core), KillCheck(fixture_guards()[:1]) as kc:
+                node = kc._all_nodes()[0]
+                for response in ((0, "1 skipped"), (4, "runner failed"), (1, "FAILED test_fixture.py::bad"),
+                                 (0, f"TEST_PASSED {node}[1]\nTEST_UNVERIFIED {node}[2]")):
+                    with self.subTest(response=response), patch.object(killcheck, "_run", return_value=response):
+                        _, failed = kc.baseline()
+                        self.assertEqual(failed, set(kc._all_nodes()))
 
 
 class RealTreeSafetyTests(unittest.TestCase):
@@ -526,7 +589,7 @@ class RealTreeSafetyTests(unittest.TestCase):
         covering test GREEN and accuse it of being vacuous."""
         guard = next(g for g in killcheck.GUARDS
                      if g.name == "service_max_under_fire_seconds")
-        source = (killcheck.SCRIPTS / guard.file).read_text(encoding="utf-8")
+        source = guard_path(guard).read_text(encoding="utf-8")
         # Other agents are editing this file right now, so a read can land in
         # the middle of a write and miss the anchor. That is the harness
         # correctly refusing to falsify; retry rather than fail spuriously.
@@ -538,8 +601,7 @@ class RealTreeSafetyTests(unittest.TestCase):
                 break
             except MutationError:
                 time.sleep(2.0)
-                source = (killcheck.SCRIPTS / guard.file).read_text(
-                    encoding="utf-8")
+                source = guard_path(guard).read_text(encoding="utf-8")
         else:
             self.fail(f"{guard.name}: anchor never settled; another agent is "
                       f"actively editing {guard.file}")
@@ -590,17 +652,17 @@ class RealTreeSafetyTests(unittest.TestCase):
         """
         problems = []
         for guard in killcheck.GUARDS:
-            path = killcheck.SCRIPTS / guard.file
+            path = guard_path(guard)
             if not path.is_file():
                 problems.append(f"{guard.name}: no such file {path}")
                 continue
             text = path.read_text(encoding="utf-8")
             for mutation in guard.mutations:
-                anchor = getattr(mutation, "old", None) or mutation.block
+                anchor = killcheck.anchor_of(mutation)
                 count = text.count(anchor)
                 if count != 1:
                     problems.append(
-                        f"{guard.name} in {guard.file}: anchor matches {count} "
+                        f"{guard.name} in {path.name}: anchor matches {count} "
                         f"times, expected 1: {anchor[:90]!r}")
         self.assertEqual(problems, [], "\n  ".join(problems))
 
@@ -621,8 +683,7 @@ class RealTreeSafetyTests(unittest.TestCase):
             # Retry, as test_the_removal_actually_changes_the_sandbox_copy does.
             for _ in range(5):
                 try:
-                    original = (killcheck.SCRIPTS / guard.file).read_text(
-                        encoding="utf-8")
+                    original = guard_path(guard).read_text(encoding="utf-8")
                     text = original
                     for mutation in guard.mutations:
                         text = mutation.apply(text)
@@ -636,7 +697,7 @@ class RealTreeSafetyTests(unittest.TestCase):
                 continue
             if text == original:
                 no_ops.append(f"{guard.name}: mutation left "
-                              f"{guard.file} byte-identical")
+                              f"{guard_path(guard).name} byte-identical")
         self.assertEqual(no_ops, [], "\n  ".join(no_ops))
 
     def test_the_harness_exits_non_zero_when_a_guard_is_vacuous(self):
@@ -662,6 +723,8 @@ class RealTreeSafetyTests(unittest.TestCase):
         self.assertNotEqual(
             killcheck.report(clean, [], [], ["C:/somewhere/real.lua"]), 0,
             "a write outside the sandbox must make the harness exit non-zero")
+        self.assertNotEqual(killcheck.report(clean, ["data/scripts/changed.lua"], [], []), 0,
+                            "source drift must prevent a clean verification gate")
 
 
 class UnguardedConfigDiscoveryTests(unittest.TestCase):

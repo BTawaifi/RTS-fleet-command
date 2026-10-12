@@ -49,7 +49,7 @@ therefore reconstructed as follows, and the tool says which of the two it did:
     and selected flag, plus the chosen-vs-runner-up margin.
   * candidates absent -> the record still carries score, switchingCost,
     previousAge and reason, and those DO constrain the outcome. Retaining is
-    gated at fs2rts_ai_planning.lua:604 by
+    gated at fs2rts_ai_planning/battle_events.lua:15 by
         age < MinimumCommitmentSeconds  OR  challenger.score < incumbent.score + switchingCost
     so for an OBJECTIVE_RETAINED record with previousAge >= MinimumCommitmentSeconds
     the challenger's score is bounded above by score + switchingCost, and for a
@@ -63,7 +63,7 @@ OBJECTIVE_RETAINED record the score field belongs to the objective that was
 KEPT, and the rejected challenger's score is discarded. Read naively this
 inverts the explanation. Handled explicitly in the replay.
 
-WHY THE COMMIT SHARE IS THE HEADLINE NUMBER. fs2rts_ai_planning.lua:505 splits
+WHY THE COMMIT SHARE IS THE HEADLINE NUMBER. fs2rts_ai_planning/group_roles.lua:116 splits
 each group's value into exactly one of two buckets --
     if targetSignature==primarySignature then onBase=onBase+g.value
     else onGroups=onGroups+g.value end
@@ -93,7 +93,12 @@ import matplotlib.pyplot as plt          # noqa: E402
 import numpy as np                       # noqa: E402
 
 TELEMETRY_GLOB = "rts-ai-*.jsonl"
-FACTION_COLOR = {"BLUE": "#3f8fd0", "RED": "#d05252", "GOLD": "#d8ab35",
+FACTION_COLOR = {"BLUE": "#46dcff", "RED": "#ff4b4b", "GOLD": "#ffbe46",
+    **{f"FACTION_{i:02d}": color for i,color in enumerate((
+        "#2dbeff", "#46e669", "#c373ff", "#ff822d", "#ff64c3", "#bef046",
+        "#6e64ff", "#3ce1b9", "#ff735f", "#ebebeb", "#7dff32", "#ff37ff",
+        "#6496ff", "#dcc83c", "#9650dc", "#50e6e6", "#ff82e6", "#6e50c8",
+        "#ffaa50", "#78c84b", "#c8a0ff", "#ff5a23", "#78f0be", "#e66ea0"), start=4)},
                  "GRAY": "#9aa5ad"}
 DEFAULT_CELLS = 200
 DEFAULT_PAD = 4000.0
@@ -156,41 +161,41 @@ REASON_TEXT = {
 }
 REASON_SOURCE = {
     "OPERATION_ROLE_TARGET": "fs2rts_operations.lua:277",
-    "DEFEND_BASE": "fs2rts_strategy.lua:1197",
-    "COORDINATED_APPROACH": "fs2rts_ai_planning.lua:242",
-    "OPERATION_ASSEMBLE": "fs2rts_ai_planning.lua:643",
+    "DEFEND_BASE": "fs2rts_strategy/strategic_plan.lua:243",
+    "COORDINATED_APPROACH": "fs2rts_ai_planning/candidates.lua:130",
+    "OPERATION_ASSEMBLE": "fs2rts_ai_planning/battle_events.lua:54",
     "OPERATION_WITHDRAW": "fs2rts_operations.lua",
     "BREAKTHROUGH_EXPLOIT": "fs2rts_operations.lua:277",
-    "WEAPON_ROLE": "fs2rts_ai_planning.lua:216",
-    "TARGET_HIGH_VALUE": "fs2rts_ai_planning.lua:214",
-    "TARGET_LOW_VALUE": "fs2rts_ai_planning.lua:212",
-    "TARGET_BAD_ROLE_MATCH": "fs2rts_ai_planning.lua:209",
-    "TARGET_UNREACHABLE": "fs2rts_ai_planning.lua:245",
-    "TARGET_OVERCOMMITTED": "fs2rts_ai_planning.lua:244",
-    "PUSH_ENEMY_BASE": "fs2rts_ai_planning.lua:243",
-    "CAPITAL_THREAT_PREEMPTION": "fs2rts_strategy.lua:1193",
-    "INTERCEPT_IMMEDIATE_THREAT": "fs2rts_strategy.lua:1213",
-    "LOCAL_ENGAGEMENT": "fs2rts_strategy.lua:1285",
-    "LOCAL_INFERIORITY": "fs2rts_strategy.lua:1274",
-    "LOCAL_FORCE_DISADVANTAGE": "fs2rts_strategy.lua:1231",
-    "RETREAT": "fs2rts_strategy.lua:1263",
-    "WEAPONS_DISABLED": "fs2rts_strategy.lua:1268",
-    "ESCORT_HIGH_VALUE_UNIT": "fs2rts_strategy.lua:1270",
-    "ESCORT_BOMBER_STRIKE": "fs2rts_strategy.lua:1197",
-    "SUPPORT_ASSAULT": "fs2rts_strategy.lua:1276",
-    "FORMATION_RECOVERY": "fs2rts_strategy.lua:1278",
-    "LURE_UNDER_PRESSURE": "fs2rts_strategy.lua:1261",
-    "TRAP_LURE_PURSUIT": "fs2rts_strategy.lua:1194",
-    "PURSUER_LOCKED": "fs2rts_strategy.lua:1231",
-    "TAUNT_DECOY": "fs2rts_strategy.lua:1196",
-    "TAUNT_PROBE": "fs2rts_strategy.lua:1196",
+    "WEAPON_ROLE": "fs2rts_ai_planning/candidates.lua:104",
+    "TARGET_HIGH_VALUE": "fs2rts_ai_planning/candidates.lua:102",
+    "TARGET_LOW_VALUE": "fs2rts_ai_planning/candidates.lua:100",
+    "TARGET_BAD_ROLE_MATCH": "fs2rts_ai_planning/candidates.lua:97",
+    "TARGET_UNREACHABLE": "fs2rts_ai_planning/candidates.lua:133",
+    "TARGET_OVERCOMMITTED": "fs2rts_ai_planning/candidates.lua:132",
+    "PUSH_ENEMY_BASE": "fs2rts_ai_planning/candidates.lua:131",
+    "CAPITAL_THREAT_PREEMPTION": "fs2rts_strategy/strategic_plan.lua:239",
+    "INTERCEPT_IMMEDIATE_THREAT": "fs2rts_strategy/strategic_plan.lua:259",
+    "LOCAL_ENGAGEMENT": "fs2rts_strategy/strategic_plan.lua:331",
+    "LOCAL_INFERIORITY": "fs2rts_strategy/strategic_plan.lua:320",
+    "LOCAL_FORCE_DISADVANTAGE": "fs2rts_strategy/strategic_plan.lua:277",
+    "RETREAT": "fs2rts_strategy/strategic_plan.lua:309",
+    "WEAPONS_DISABLED": "fs2rts_strategy/strategic_plan.lua:314",
+    "ESCORT_HIGH_VALUE_UNIT": "fs2rts_strategy/strategic_plan.lua:316",
+    "ESCORT_BOMBER_STRIKE": "fs2rts_strategy/strategic_plan.lua:243",
+    "SUPPORT_ASSAULT": "fs2rts_strategy/strategic_plan.lua:322",
+    "FORMATION_RECOVERY": "fs2rts_strategy/strategic_plan.lua:324",
+    "LURE_UNDER_PRESSURE": "fs2rts_strategy/strategic_plan.lua:307",
+    "TRAP_LURE_PURSUIT": "fs2rts_strategy/strategic_plan.lua:240",
+    "PURSUER_LOCKED": "fs2rts_strategy/strategic_plan.lua:277",
+    "TAUNT_DECOY": "fs2rts_strategy/strategic_plan.lua:242",
+    "TAUNT_PROBE": "fs2rts_strategy/strategic_plan.lua:242",
     "SIEGE_TURRET_TARGET": "fs2rts_strategy.lua",
     "SUBSYSTEM_SUPPRESSION": "fs2rts_strategy.lua",
-    "OBJECTIVE_RETAINED": "fs2rts_ai_planning.lua:605",
-    "OBJECTIVE_NO_PROGRESS": "fs2rts_ai_planning.lua:608",
-    "COMMITMENT_EXPIRED": "fs2rts_strategy.lua:833",
-    "OUTSIDE_RELEASE_RADIUS": "fs2rts_strategy.lua:835",
-    "CAMPAIGN_FRONT_CHANGED": "fs2rts_ai_planning.lua:609",
+    "OBJECTIVE_RETAINED": "fs2rts_ai_planning/battle_events.lua:16",
+    "OBJECTIVE_NO_PROGRESS": "fs2rts_ai_planning/battle_events.lua:19",
+    "COMMITMENT_EXPIRED": "fs2rts_strategy/threats.lua:129",
+    "OUTSIDE_RELEASE_RADIUS": "fs2rts_strategy/threats.lua:131",
+    "CAMPAIGN_FRONT_CHANGED": "fs2rts_ai_planning/battle_events.lua:20",
 }
 REASON_LOCKED = {
     "CAPITAL_THREAT_PREEMPTION", "TRAP_LURE_PURSUIT", "RETREAT",
@@ -937,7 +942,7 @@ def candidate_rows(raw):
     Two shapes exist in this codebase and both are handled:
       * objective candidates from ScoreAIObjective -- target/mission/score/
         reason/factors{distance,coverage,superiority}/distance/eta/ratio
-        (fs2rts_ai_planning.lua:248)
+        (fs2rts_ai_planning/candidates.lua:136)
       * roster candidates from the production picker -- entry.class /
         entry.tier / entry.role / weight / telemetry.selectionWeight /
         telemetry.probability / telemetry.selected
@@ -981,7 +986,7 @@ def explain_decision(time, data, doctrine):
     `basis` names where each number came from:
       CANDIDATES     the real per-candidate table was in the record
       RETAIN_BOUND   no candidate list; the retain gate at
-                     fs2rts_ai_planning.lua:604 bounds the rejected challenger
+                     fs2rts_ai_planning/battle_events.lua:15 bounds the rejected challenger
       INERTIA        no candidate list; the retain was the age gate, so the
                      rejected challenger is unconstrained by score
       SCORE_ONLY     no candidate list and no retain; only the winner's score
@@ -1008,7 +1013,7 @@ def explain_decision(time, data, doctrine):
                 probabilities.append(row["probability"])
         if not any(row["selected"] for row in rows):
             # The emitter appends the chosen candidate last
-            # (fs2rts_ai_planning.lua:612); trust `selected` when present,
+            # (fs2rts_ai_planning/battle_events.lua:23); trust `selected` when present,
             # otherwise fall back to the highest score.
             best = max(rows, key=lambda r: (num(r["score"]) is not None, num(r["score"]) or 0.0))
             best["selected"] = True
@@ -1118,7 +1123,7 @@ def format_decision(view, doctrine, out):
                           gap or "-", mark))
     elif view["basis"] == "RETAIN_BOUND":
         out.append("    basis      no candidate list (DetailedDecisionTelemetry=false); "
-                   "bound from fs2rts_ai_planning.lua:604")
+                   "bound from fs2rts_ai_planning/battle_events.lua:15")
         out.append("      incumbent score %s, switching cost %s -> challenger < %s"
                    % (fmt(view["score"], 1), fmt(view["switchingCost"], 1),
                       fmt(view["runnerUp"]["upperBound"], 1)))

@@ -20,6 +20,7 @@ import unittest
 from pathlib import Path
 
 from lupa.lua51 import LuaRuntime
+from script_modules import module_text
 
 # test_service.py, test_hud_perf.py, test_hud_layout.py and
 # test_feature_request.py import SCRIPTS from here, so this stays import-time
@@ -59,16 +60,16 @@ ba.createOrientationFromVectors=function(fvec,uvec,rvec)
                  uvec=ba.createVector(0,1,0),rvec=ba.createVector(1,0,0)}}
   if uvec then o.vec.uvec=ba.createVector(uvec.x,uvec.y,uvec.z) end
   if rvec then o.vec.rvec=ba.createVector(rvec.x,rvec.y,rvec.z) end
+  -- Boundary double only: native rotation interpolation is exercised by the
+  -- player feedback probe. Station/economy tests need the returned handle.
+  function o:rotationalInterpolate(goal,t) return goal end
   return o
 end
 now=0; serial=0; ships={}; stations={}; spawnFails=false
 mn={getMissionTime=function() return now end, Ships={}, Teams={}}
 tb={ShipClasses={},FireballClasses={{}}}
--- The four RTS-owned sentry weapons are registered here with the reach and
--- damage values core/data/tables/fs2rts-sentry-wep.tbm actually declares, so
--- GetSentryWeaponRange reads real numbers in tests rather than falling back to
--- the config range and passing vacuously. test_sentry_loadout.py proves these
--- values match the shipped table file.
+-- Stock placeholder banks are supplied below. Native cannon/player-feedback
+-- probes verify actual table layouts, reach and firing; these doubles do not.
 local valid=function(self) return self.valid~=false end
 for _,name in ipairs({'friendly','hostile','neutral'}) do
   mn.Teams[name]={Name=name,isValid=valid,attacks=function(a,b) return a~=b end}
@@ -91,6 +92,7 @@ function ship(name,c,pos,team)
   function s:getFlag(flag) return self.flags and self.flags[flag] or false end
   function s:clearOrders() end
   function s:giveOrder() return true end
+  function s:setGuardRange(target,range) self.guardRange=range; return true end
   function s:setFlag() end
   function s:warpIn() end
   function s:vanish() self.valid=false end
@@ -174,7 +176,7 @@ r.GetFactionCommandShip=function(self,kind) return stations[kind] end
 r.GetCarrier=function() return stations.BLUE end
 r.GetShipRole=function(self,s) return s.role or 'capital' end
 r.GetCurrentEscalationTier=function() return tier or 4 end
-r.GetDurationProfile=function() return {buildTimeScale=1} end
+r.Config.Escalation.buildTimeScale=1
 r.AssignAIStrategicOrder=function() end
 r.EnableFullArsenal=function() end
 r.NativeGetSpawnFrame=r.GetSpawnFrame
@@ -209,6 +211,113 @@ class StationTests(unittest.TestCase):
     def check(self, code):
         self.lua.execute(code)
 
+    def test_bomber_progression_survives_global_tier_plateau_and_emergency(self):
+        self.check('''
+          class('SB Shaitan'); class('SB Nahema'); class('SB Seraphim'); class('SF Mara')
+          r.GetAIRoster=function() return {
+            {class='SB Shaitan',role='bomber',tier=1,weight=20},
+            {class='SB Nahema',role='bomber',tier=2,weight=1},
+            {class='SB Seraphim',role='bomber',tier=4,weight=20},
+            {class='SF Mara',role='fighter',tier=1,weight=40}} end
+          local costs={['SB Shaitan']=100,['SB Nahema']=300,['SB Seraphim']=400,['SF Mara']=100}
+          r.GetPurchaseEstimate=function(self,name) return {cost=costs[name],time=costs[name]/10} end
+          r.GetCurrentEscalationTier=function() return 3 end
+          r.CountAIRoleUnits=function() return {},{total=0} end
+          r.GetAICompositionTargets=function() return {bomber=1} end
+          r.GetFleetCap=function() return 40 end
+          r.CountCommittedCombatants=function() return 0 end
+          math.random=function() return 0 end -- Original weighting chooses the old bomber.
+          local choice,decision=r:ChooseAIBuild('RED',{cp=1000,income=10},0)
+          assert(choice.entry.class=='SB Nahema','later global tier discarded affordable bomber progression')
+          assert(decision.newestAffordableBomberTier==2,'locked later bomber affected selection')
+          r.AIProductionNeeds={RED={bomber=1,fighter=0}}
+          r.AIProductionEmergency={RED={emergency=true,time=0}}
+          choice,decision=r:ChooseAIBuild('RED',{cp=1000,income=10},0)
+          assert(choice.entry.class=='SB Nahema' and decision.emergencyRole=='bomber',
+            'emergency discarded affordable siege investment for faster old ordnance')
+          choice=r:ChooseAIBuild('RED',{cp=100,income=10},0)
+          assert(choice.entry.class=='SB Shaitan','unaffordable siege hull blocked emergency fallback')
+          r.AIProductionNeeds.RED={bomber=0,fighter=1}
+          choice,decision=r:ChooseAIBuild('RED',{cp=1000,income=10},0)
+          assert(choice.entry.class=='SF Mara' and decision.emergencyRole=='fighter',
+            'bomber progression displaced urgent fighter defense')
+          r.AIProductionEmergency={}
+          choice,decision=r:ChooseAIBuild('RED',{cp=150,income=10},0)
+          assert(choice==nil and decision.bankTarget==300,'old bomber drained the newer bomber saving goal')
+          choice=r:ChooseAIBuild('RED',{cp=150,income=0},0)
+          assert(choice.entry.class=='SB Shaitan','zero-income fleet waited for an unreachable bomber')
+          r.GetCurrentEscalationTier=function() return 1 end
+          choice=r:ChooseAIBuild('RED',{cp=1000,income=10},0)
+          assert(choice.entry.class=='SB Shaitan','early bomber became unavailable before siege unlock')
+        ''')
+
+    def test_armed_sentry_draws_world_boundary_and_hover_preview(self):
+        self.check('''
+          local lines,circles=0,0
+          gr={setColor=function() end,drawLine=function() lines=lines+1 end,
+            drawCircle=function() circles=circles+1 end,drawString=function() end,
+            getScreenWidth=function() return 1280 end,getScreenHeight=function() return 720 end,
+            getStringWidth=function(text) return #text*6 end,getStringHeight=function() return 9 end}
+          io={getMouseX=function() return 500 end,getMouseY=function() return 300 end}
+          r.ArmedCommand='sentry'; r.ArmedSentryIndex=1; r.PossessedSignature=nil
+          r.GetFactionColor=function() return 30,40,50 end
+          r.GetSentryRadius=function() return 2500 end
+          r.ScreenToPlane=function() return ba.createVector(1000,0,0) end
+          r.CheckSentrySpot=function() return nil end
+          r:DrawStationPlacementOverlay()
+          assert(lines>=128 and circles==1,
+            'armed sentry view must draw the base boundary and cursor placement preview')
+        ''')
+
+    def test_irreversible_withdrawal_cannot_receive_a_new_order(self):
+        self.check('''
+          local unit=ship('withdrawal fighter',class('GTF withdrawal fighter'),pos,mn.Teams.friendly)
+          r.IsFriendly=function(self,candidate) return candidate==unit end
+          r.IsCommandStation=function() return false end
+          r.IsStaticDefense=function() return false end
+          assert(r:IsMovableFriendly(unit),'uncommitted fighter unexpectedly immovable')
+          r.Withdrawals={[unit:getSignature()]={destination=pos}}
+          assert(not r:IsMovableFriendly(unit),
+            'RTS must not retask a ship after irreversible withdrawal ownership begins')
+        ''')
+
+    def test_withdrawal_waypoints_clear_the_destroyed_home_for_front_and_inside_starts(self):
+        self.check('''
+          local home=ba.createVector(0,0,0); local destination=ba.createVector(-18000,0,0)
+          r.GetFactionKey=function() return 'BLUE' end
+          r.ExtractionExtent=30000; r.ExtractionAreas={BLUE={home=home,homeRadius=2000}}
+          r.Withdrawals={}; r.MoveWaypoints={}; r.FreeMoveWaypoints={}
+          local radius=2000+100*1.05+300
+          local function route(startX,sig)
+            local unit=ship('route fighter '..sig,class('GTF route fighter '..sig),
+              ba.createVector(startX,0,0),mn.Teams.friendly)
+            unit.Radius=100; r.Withdrawals[unit:getSignature()]={faction='BLUE',destination=destination}
+            stations.BLUE.HitpointsLeft=0
+            assert(r:ConfigureMoveWaypoints(unit,destination),'withdrawal route failed to build')
+            local entry=r.MoveWaypoints[unit:getSignature()]
+            assert(entry.route,'route omitted a home-station detour')
+            local function lineDistance(a,b)
+              local dx,dy,dz=b.x-a.x,b.y-a.y,b.z-a.z
+              local len=dx*dx+dy*dy+dz*dz
+              local t=math.max(0,math.min(1,-(a.x*dx+a.y*dy+a.z*dz)/math.max(1,len)))
+              return math.sqrt((a.x+dx*t)^2+(a.y+dy*t)^2+(a.z+dz*t)^2)
+            end
+            local first=entry.route[1].Position
+            assert(first:getDistance(home)>=radius-1,'first withdrawal waypoint remains inside the destroyed base')
+            local previous=first
+            for i=2,#entry.route do
+              local point=entry.route[i].Position
+              assert(lineDistance(previous,point)>=radius-1,
+                'withdrawal waypoint segment crosses the destroyed station clearance')
+              previous=point
+            end
+            return unit
+          end
+          route(6000,8101) -- typical fleet position on the enemy-facing side
+          r.MoveWaypoints={}; r.FreeMoveWaypoints={}; r.Withdrawals={}
+          route(100,8102) -- a hull caught inside the station's clearance shell
+        ''')
+
     def test_purchase_deadline_and_no_double_charge(self):
         self.check("""assert(r:BuyUpgrade('BLUE','armor')); assert(r.CommandPoints==9375)
           assert(not r:BuyUpgrade('BLUE','logistics')); assert(r.CommandPoints==9375)
@@ -237,6 +346,48 @@ class StationTests(unittest.TestCase):
         self.check("""stations.BLUE.HitpointsLeft=0; r.StationState.BLUE.levels.command=3
           assert(not r:BuyUpgrade('BLUE','armor')); assert(not r:IsAbilityReady('BLUE'))
           assert(not r:PlaceSentry('BLUE',option,pos,false)); assert(r.CommandPoints==10000)""")
+
+    def test_ability_status_never_shows_negative_recharge(self):
+        self.check("""r.StationState.BLUE.levels.command=3; r.CommandPoints=10000
+          r.StationState.BLUE.abilityReadyAt=50
+          assert(r:GetAbilityStatus('BLUE',100)=='READY','expired cooldown is not ready')
+          r.AftermathActive=true
+          assert(r:GetAbilityStatus('BLUE',100)=='MATCH ENDED','aftermath reports a negative recharge')
+          r.AftermathActive=false; r.StationState.BLUE.abilityReadyAt=150
+          assert(r:GetAbilityStatus('BLUE',100)=='50s','active cooldown is not shown')
+          stations.BLUE.HitpointsLeft=0
+          assert(r:GetAbilityStatus('BLUE',100)=='STATION LOST','lost station reports recharge')""")
+
+    def test_command_stations_slowly_repair_after_the_quiet_delay(self):
+        self.check("""local state=r.StationState.BLUE; local station=stations.BLUE
+          state.levels.armor=0; state.lastDamageAt=-100; state.lastRepairTime=nil; state.lastHull=station.HitpointsLeft
+          station.HitpointsMax=10000; station.HitpointsLeft=10000
+          r:UpdateStations(0)
+          station.HitpointsLeft=6000; now=1; r:UpdateStations(now)
+          local deadline=now+r.Config.Station.ArmorRepairDelay
+          assert(station.HitpointsLeft==6000 and state.lastDamageAt==1,'station healed during an active attack')
+          r:UpdateStations(deadline); assert(station.HitpointsLeft==6000,'station healed before the quiet delay elapsed')
+          now=deadline+10; r:UpdateStations(now)
+          local expected=6000+10000*r.Config.Station.ArmorRepairPerSecond*.5*10
+          assert(math.abs(station.HitpointsLeft-expected)<.001,'unupgraded station did not slowly self-repair')
+          now=100000; r:UpdateStations(now)
+          assert(math.abs(station.HitpointsLeft-8400)<.001,'passive repair exceeded the existing scar ceiling')""")
+
+    def test_station_turrets_repair_after_quiet_but_not_during_survivor_phase(self):
+        self.check("""local state=r.StationState.BLUE; local station=stations.BLUE; local turret=station[1]
+          turret.HitpointsMax=1000; turret.HitpointsLeft=1000; state.lastTurretHits={}
+          state.lastDamageAt=-100; state.lastRepairTime=nil; r:UpdateStations(0)
+          turret.HitpointsLeft=0; now=1; r:UpdateStations(now)
+          local deadline=now+r.Config.Station.ArmorRepairDelay
+          assert(state.lastDamageAt==now,'turret damage did not restart the base quiet timer')
+          r:UpdateStations(deadline); assert(turret.HitpointsLeft==0,'destroyed turret repaired before quiet delay')
+          now=deadline+10; r:UpdateStations(now)
+          assert(math.abs(turret.HitpointsLeft-100)<.001,'station did not restore its damaged turret at service rate')
+          r.AftermathActive=true; turret.HitpointsLeft=50; now=now+1; r:UpdateStations(now)
+          assert(turret.HitpointsLeft==50,'station turrets repair during survivor-only aftermath')
+          r.AftermathActive=false; r:UpdateStations(now)
+          assert(turret.HitpointsLeft==50 and state.lastDamageAt==now,
+            'resuming after the match ignored damage sustained during the disabled repair phase')""")
 
     def test_damage_on_upgrade_completion_delays_repair(self):
         self.check("""r.StationState.BLUE.levels.armor=1; stations.BLUE.HitpointsMax=12000; stations.BLUE.HitpointsLeft=12000
@@ -285,8 +436,24 @@ class StationTests(unittest.TestCase):
           assert(r:ChooseAIFeintTarget('BLUE',primary,5000)==distant,
             'feint should avoid a fighter already engaged by its faction')
           r.AITargetedBy[distant:getSignature()]={BLUE={[probe:getSignature()]=probe}}
-          assert(r:ChooseAIFeintTarget('BLUE',primary,5000)==primary,
-            'feint should keep the primary objective when no decoy target is available')""")
+          assert(r:ChooseAIFeintTarget('BLUE',primary,5000)==nil,
+            'feint must not fall back to a base target fighters cannot damage')""")
+
+    def test_station_defense_ranks_base_capable_attackers_above_fighters(self):
+        self.check("""local base=stations.BLUE
+          local fighter=ship('attacking fighter',class('SF Mara'),base.Position+ba.createVector(0,0,2500),mn.Teams.hostile); fighter.role='fighter'; fighter.Target=base
+          local bomber=ship('attacking bomber',class('SB Nahema'),base.Position+ba.createVector(200,0,2500),mn.Teams.hostile); bomber.role='bomber'; bomber.Target=base
+          local capital=ship('attacking capital',class('SC Cain'),base.Position+ba.createVector(400,0,2500),mn.Teams.hostile); capital.role='capital'; capital.Target=base
+          local function threat(s,value) return {ship=s,armed=true,profile={value=value},mounts={{position=s.Position,range=6000,target=base}}} end
+          r.StrategicThreatSnapshot={threat(fighter,10000),threat(bomber,100),threat(capital,200)}
+          local threats,_,urgent=r:GetFactionThreats('BLUE',base,6500,{})
+          assert(urgent and threats[1].baseAttack and threats[2].baseAttack,
+            'bombers/capitals that target the station must sort ahead of fighters')
+          assert(threats[3].ship==fighter and not threats[3].urgent and not threats[3].attacking,
+            'an ineffective fighter station shot consumed the highest defense priority')
+          r.StrategicThreatSnapshot={threat(fighter,10000)}
+          local fighterOnly,_,fighterOnlyUrgent=r:GetFactionThreats('BLUE',base,6500,{})
+          assert(#fighterOnly==1 and not fighterOnlyUrgent,'harmless fighter fire triggered urgent base-defense recall')""")
 
 # ---- sentry reach and arc ------------------------------------------------
     # Both of these exist because a headless batch (capgate-20261001, 4 matches,
@@ -364,7 +531,7 @@ class StationTests(unittest.TestCase):
         The second assertion keeps the scan present, so the first cannot be
         satisfied by deleting the feature.
         """
-        source = (SCRIPTS / "fs2rts_station.lua").read_text(encoding="utf-8")
+        source = module_text(SCRIPTS, "fs2rts_station")
         # Strip Lua comments before asserting. The doc comment above the scan
         # quotes the crashing line verbatim so the next reader knows what not to
         # write, and a plain substring search would then match its own
@@ -428,6 +595,9 @@ class StationTests(unittest.TestCase):
         -- put a RED contact right next to where the sentry will be.
         local goldContact = ship('GOLD raider', class('GVF Tauret'), ba.createVector(-20000,0,-9000), stations.GOLD.Team)
         local redContact  = ship('RED raider', class('GTF Hercules'), ba.createVector(3000,0,900), stations.RED.Team)
+        local withdrawal = ship('RED withdrawal',class('GTF Perseus'),ba.createVector(4000,0,100),stations.RED.Team)
+        withdrawal.withdrawing=true
+        r.CanAutoEngage=function(self,a,b) return self:AreEnemies(a,b) and not b.withdrawing end
         assert(goldContact and redContact)
         local here = ba.createVector(4000,0,0)
         local x, z = r:SentryAimVector('BLUE', here)
@@ -446,7 +616,16 @@ class StationTests(unittest.TestCase):
           x, z, ex, ez, dot))
         local x2, z2 = r:SentryAimVector('BLUE', here)
         assert(math.abs(x2-x) < 1e-9 and math.abs(z2-z) < 1e-9,
-          'aim vector is not deterministic for an unchanged board')""")
+          'aim vector is not deterministic for an unchanged board')
+        local sentry=ship('aiming sentry',class('GTSG Watchdog'),here,mn.Teams.friendly)
+        r.GetFactionKeys=function() return {'BLUE'} end
+        r.GetFactionSentries=function(self,kind) return kind=='BLUE' and {sentry} or {} end
+        r.NextSentryAimUpdate=0; r:UpdateSentryAim(0)
+        local f=sentry.Orientation.vec.fvec
+        local liveDx,liveDz=redContact.Position.x-here.x,redContact.Position.z-here.z
+        local liveLen=math.sqrt(liveDx*liveDx+liveDz*liveDz)
+        assert((f.x*liveDx+f.z*liveDz)/liveLen>.999,
+          'active sentry tracking aimed at a withdrawn contact')""")
 
     def test_sentry_validation_refund_and_sell(self):
         self.check("""assert(not r:PlaceSentry('BLUE',option,ba.createVector(0,0,0),false))
@@ -478,7 +657,12 @@ class StationTests(unittest.TestCase):
           -- Move them out of the window rather than re-tuning the distances.
           stations.RED.Position=ba.createVector(400000,0,400000)
           stations.GOLD.Position=ba.createVector(-400000,0,-400000)
-          local beam=r:GetSentryOptions('BLUE')[4]; local pos=ba.createVector(1000,0,0)
+          -- The current roster uses cannons. Exercise the supported beam role
+          -- explicitly instead of assuming the fourth roster entry is a beam.
+          class('GTSG Mjolnir')
+          local beam={class='GTSG Mjolnir',tier=4,cost=3000,hull=3000,role='beam',range=12000}
+          r.Config.Station.Sentries.Classes.BLUE={beam}
+          local pos=ba.createVector(1000,0,0)
           local gun=r:PlaceSentry('BLUE',beam,pos,true); local turret=gun[1]; turret.TurretLocked=false
           -- Distances are derived from the beam's CONFIGURED range read off the
           -- option, not hardcoded: the reach is 12,000 m, so a fixed 9,000 m
@@ -486,9 +670,13 @@ class StationTests(unittest.TestCase):
           -- without ever exercising the lock.
           local far=pos.x+beam.range+2000; local near=pos.x+beam.range-2000
           local enemy=ship('distant base target',class('enemy base'),ba.createVector(far,0,0),mn.Teams.hostile)
+          r.Withdrawals={[enemy.signature]={faction='RED',inCorridor=true}}
+          r.AllowWithdrawal={BLUE=true}
           r:UpdateMjolnirRange(1); assert(turret.TurretLocked==true,'Mjolnir retained its unlimited native beam shot')
           enemy.Position=ba.createVector(near,0,0); r:UpdateMjolnirRange(3)
-          assert(turret.TurretLocked==false,'Mjolnir did not reacquire an in-range target')
+          assert(turret.TurretLocked==true,'Mjolnir unlocked for a withdrawing target')
+          r.AllowWithdrawal.BLUE=false; r:UpdateMjolnirRange(4)
+          assert(turret.TurretLocked==false,'Mjolnir did not reacquire a permitted in-range target')
           enemy.Position=ba.createVector(far,0,0); r:UpdateMjolnirRange(5)
           assert(turret.TurretLocked==true,'Mjolnir did not relock after the target left weapon range')""")
 
@@ -547,6 +735,9 @@ class StationTests(unittest.TestCase):
             'restart kept dying-station signatures; they outlive the mission that wrote them')
           -- recycled onto an unrelated live hull
           local fighter=ship('recycled signature holder',class('GTF Ares'),ba.createVector(5000,0,0),mn.Teams.friendly)
+          -- A recycled native signature has one current owner; old mission
+          -- handles are invalid. Keep ship-list and native lookup coherent.
+          red.valid=false; fighter.signature=red.signature
           fighter.Physics={VelocityMax=ba.createVector(0,0,100),AfterburnerVelocityMax=ba.createVector(0,0,150),
             Velocity=ba.createVector(3,4,5),RotationalVelocity=ba.createVector(6,7,8)}
           signatureObjects[red.signature]=fighter
@@ -578,7 +769,7 @@ class StationTests(unittest.TestCase):
             and r.PilotTurretAppliedGroupIndex==nil,'stale turret-group selection survived the restart')
           assert(r.PilotTurretFiring==false and r.PilotTurretFireLatched==false
             and r.PilotTurretFireStatusAt==nil,'stale turret fire state survived the restart')
-          assert(r.PilotTargetSubsystemIndex==1 and r.PilotTargetSubsystemCount==0,
+          assert(r.PilotTargetSubsystemIndex==0 and r.PilotTargetSubsystemCount==0,
             'stale target-subsystem cursor survived the restart')
           assert(r.PilotNativeWing==nil and r.PilotNativeWingLabel==nil,
             'the previous mission native wing survived the restart')""")
@@ -589,6 +780,7 @@ class StationTests(unittest.TestCase):
         first mission of 30 minutes silenced both records for the whole second
         one -- exactly the evidence stall_probe/analyze_batch read."""
         self.check("""local emitted={}; r.EmitAIEvent=function(self,name,data) emitted[#emitted+1]=name end
+          r.CombatTelemetryEnabled=true; r.AIEventSink=function() end
           local groups={{id='wing',role='fighter',mission='PRIMARY',value=100,units={}}}
           -- end of a long first mission
           r:EmitAICohesion('RED',groups,nil,nil,1800); r:EmitContestRecord('RED',groups,nil,nil,1800)
@@ -596,6 +788,7 @@ class StationTests(unittest.TestCase):
           assert(next(r.AIContestProgress)~=nil,'fixture did not record a progress row')
           r:ResetState(); emitted={}
           assert(next(r.AIContestProgress)==nil,'restart kept mission-time progress rows')
+          r.CombatTelemetryEnabled=true; r.AIEventSink=function() end
           -- second mission, mission time back near zero
           r:EmitAICohesion('RED',groups,nil,nil,0); r:EmitContestRecord('RED',groups,nil,nil,0)
           assert(emitted[1]=='COHESION','restart silenced COHESION for the whole second mission')
@@ -645,6 +838,37 @@ class StationTests(unittest.TestCase):
           r.CountCommittedCombatants=function() return 0 end
           assert(r:UseReinforcementJump('GOLD')); assert(not r:UseReinforcementJump('GOLD'))""")
 
+    def test_paid_reinforcement_rejects_short_bank_and_refunds_a_failed_creation(self):
+        self.check("""r.StationState.GOLD.levels.command=3
+          r.AIStates.GOLD.cp=r.Config.Station.Ability.GOLD.cost-1
+          local before=#ships
+          assert(not r:UseReinforcementJump('GOLD') and #ships==before)
+          assert(r.StationState.GOLD.abilityReadyAt==0)
+          r.AIStates.GOLD.cp=10000
+          r.SpawnFactionUnit=function() return nil end
+          assert(not r:UseReinforcementJump('GOLD'))
+          assert(r.AIStates.GOLD.cp==10000 and r.StationState.GOLD.abilityReadyAt==0,
+            'failed jump consumed CP or cooldown')""")
+
+    def test_paid_reinforcement_post_create_failure_does_not_refund_or_duplicate_a_hull(self):
+        self.check("""r.StationState.GOLD.levels.command=3
+          local realSpawn=r.SpawnFactionUnit; local before=#ships
+          r.SpawnFactionUnit=function(self,...)
+            realSpawn(self,...); assert(false,'injected after native hull creation')
+          end
+          assert(r:UseReinforcementJump('GOLD'))
+          assert(#ships==before+1 and r.AIStates.GOLD.cp==10000-r.Config.Station.Ability.GOLD.cost)
+          assert(r.StationState.GOLD.abilityReadyAt==now+300)
+          assert(not r:UseReinforcementJump('GOLD') and #ships==before+1,'failed initialization duplicated paid reinforcement')""")
+
+    def test_paid_reinforcement_order_failure_retires_the_purchase_before_retargeting(self):
+        self.check("""r.StationState.GOLD.levels.command=3
+          r.AssignAIStrategicOrder=function() assert(false,'injected targeting error') end
+          local before=#ships
+          assert(r:UseReinforcementJump('GOLD'))
+          assert(#ships==before+1 and r.AIStates.GOLD.cp==4000)
+          assert(not r:UseReinforcementJump('GOLD') and #ships==before+1)""")
+
     def test_surge_ets_refresh_and_strike_native_boundary(self):
         self.check("""local s=ship('red fighter',class('SF Mara'),stations.RED.Position,mn.Teams.hostile); s.role='fighter'
           s.Physics.VelocityMax=ba.createVector(10,20,100)
@@ -686,6 +910,7 @@ class StationTests(unittest.TestCase):
           for _,w in ipairs(widths) do
             for _,height in ipairs(heights) do
               gr={getScreenWidth=function() return w end,getScreenHeight=function() return height end,
+                loadTexture=function() return {isValid=function() return true end,getWidth=function() return 128 end,getHeight=function() return 128 end} end,drawImage=function() end,
                 setColor=function() end,drawString=function() end,drawRectangle=function() end}
               r.DrawButton=function() end; r.PanelTab='station'
               r.StationButtonRects=nil
@@ -715,7 +940,8 @@ class StationTests(unittest.TestCase):
           local ally=ship('retreat anchor',class('GTF Ares'),ba.createVector(-2000,0,0),mn.Teams.friendly)
           local before=#sexps
           assert(r:IssueStrategicOrder(s,ally,'retreat','RETREAT',0,true),'a RETREAT goal the engine accepted was reported as failed')
-          assert(#sexps==before+1 and sexps[#sexps]:find('ai%-fly%-to%-ship'),'no fly-to goal was submitted')
+          assert(#sexps==before+2 and sexps[before+1]:find('ai%-fly%-to%-ship')
+            and sexps[before+2]:find('set%-guard%-range'),'retreat lacks its fly-to or native guard-range SEXP')
           local entry=r.AIOrderState[s.signature]
           assert(entry and entry.mission=='RETREAT','the accepted order was not cached, so the next tick re-issued it forever')
           assert(entry.arrivalDistance==math.ceil((ally.Radius or 0)+(s.Radius or 0)+1400),
@@ -732,103 +958,29 @@ class StationTests(unittest.TestCase):
           assert(r.AIOrderState[other.signature]==nil,'a rejected SEXP was cached as a live order')
           mn.runSEXP=realRunSEXP""")
 
-    def test_strategic_weapon_range_is_nominal_for_a_beam_and_real_for_a_projectile(self):
-        """GetStrategicWeapons reports mount.range. FSO exposes no beam range to
-        scripting, so a beam mount used to report 0, and four call sites inherited
-        that zero: GetFactionThreats never saw a beam attacker inside its reach,
-        ScoreAIObjective charged the wrong ETA, AIRoleMatch refused every intercept
-        past 1,800 m, and GetFleetLocalThreat never saw a beam platform as a
-        threat at range. Measured consequence: escorts/heavies/juggernauts, the
-        only hulls with sustained DPS against a 132,600 HP station, stalled at a
-        p05 approach of 9,667 m while missile-armed fighters reached 1,251 m.
+    def test_strategic_beam_range_matches_native_firing_cap(self):
+        self.check("""local beam={Name="beam",Range=4000,Speed=1600,LifeMax=25,Damage=10,FireWait=1,
+          isValid=function() return true end,isBeam=function() return true end}
+          local s=ship("beam ship",class("GTD Orion"),pos,mn.Teams.hostile)
+          s.PrimaryBanks={{WeaponClass=beam,AmmoMax=0,isValid=function() return true end}}
+          s.SecondaryBanks={}; s[1]=nil; s.getFlag=function() return false end
+          r.GetShipRole=function() assert(false,"range must not come from ship role") end
+          local mounts,armed,isBeam,range=r:GetStrategicWeapons(s)
+          assert(armed and isBeam and range==4000 and mounts[1].range==4000,"AI would stop outside the real 4km beam firing envelope")
+          beam.Range=9000; beam.Speed=100; beam.LifeMax=50
+          assert(r:GetWeaponFiringRange(beam)==5000,"beam firing range ignores lifetime cap")
+          s.PrimaryBanks[1].AmmoMax=10; s.PrimaryBanks[1].AmmoLeft=0
+          local empty,ready,_,reach=r:GetStrategicWeapons(s)
+          assert(#empty==0 and not ready and reach==0,"empty magazine retains phantom reach")""")
 
-        Beams now report a nominal per-role reach (AI.Doctrine.BeamRangesByRole),
-        raised but never lowered by evidence from real hits. This pins the new
-        contract so a later rewrite cannot silently reintroduce the zero.
-        """
-        self.check("""local function weapon(beam,range,speed,life)
-            return {Name=beam and 'beam' or 'shot',Range=range,Speed=speed,LifeMax=life,Damage=10,
-              FireWait=1,FireRateMultiplier=1,isValid=function() return true end,
-              isBeam=function() return beam==true end}
-          end
-          local function hull(bank,className)
-            local s=ship('range probe',class(className or 'range probe'),pos,mn.Teams.hostile)
-            s.PrimaryBanks={}; s.SecondaryBanks={}
-            s.getFlag=function() return false end
-            if bank then s.PrimaryBanks={{WeaponClass=bank,AmmoMax=0,isValid=function() return true end}} end
-            s[1]=nil
-            return s
-          end
-          r.BeamRangeByClass=nil; r.BeamLearnedRange=nil
-          -- Every class in the roster must resolve to its own role's configured
-          -- reach, and a class absent from the roster must fall back to the
-          -- generic nominal. The role is derived from Config.ProductionClasses
-          -- by class name, not from GetShipRole: calling that from inside the
-          -- per-weapon loop was what made the engine hard-crash.
-          for _,option in ipairs(r.Config.ProductionClasses) do
-            local role=option.role; local value=r.Config.AI.Doctrine.BeamRangesByRole[role]
-            if type(value)=="number" then
-              r.BeamRangeByClass=nil
-              local h=ship('probe',class(option.class),pos,mn.Teams.hostile)
-              h.PrimaryBanks={{WeaponClass=weapon(true,5000,0,0),AmmoMax=0,isValid=function() return true end}}
-              h.SecondaryBanks={}; h.getFlag=function() return false end; h[1]=nil
-              assert(r:GetBeamMountRange(h)==value,
-                option.class..' ('..tostring(role)..') beam reach is '
-                  ..tostring(r:GetBeamMountRange(h))..', expected '..tostring(value))
-            end
-          end
-          r.BeamRangeByClass=nil
-          local stranger=ship('probe',class('not in the roster'),pos,mn.Teams.hostile)
-          assert(r:GetBeamNominalRange(stranger)==r.Config.AI.Doctrine.BeamNominalRange,
-            'a class outside the roster did not fall back to the generic nominal')
-          -- The reach is nominal per role and must never be learned from hits.
-          -- The learned variant read owner:getSignature() on a turret subsystem
-          -- and hard-crashed the engine at mission teardown, with no Lua error
-          -- and no output at all. Assert the plumbing is gone.
-          r.BeamRangeByClass=nil; r.BeamLearnedRange=nil
-          r.BeamRangeByClass={}
-          local probe=ship('probe',class('GVCv Sobek'),pos,mn.Teams.hostile)
-          r.BeamRangeByClass[probe.Class.Name]=6500
-          assert(r:GetBeamMountRange(probe)==6500,'the per-class reach cache was not used')
-          assert(r.BeamLearnedRange==nil,'learned beam reach came back')
-          r.BeamRangeByClass=nil
-          -- range is capped by the weapon's own lifetime, not the table cap.
-          r.BeamRangeByClass=nil
-          local shot=ship('shot',class('GTF Perseus'),pos,mn.Teams.hostile)
-          shot.PrimaryBanks={{WeaponClass=weapon(false,9000,100,50),AmmoMax=0,isValid=function() return true end}}
-          shot.SecondaryBanks={}; shot.getFlag=function() return false end; shot[1]=nil
-          local sm,sa,sbeam,smax,spower=r:GetStrategicWeapons(shot)
-          assert(sa==true and sbeam==false and #sm==1 and sm[1].beam==false)
-          assert(sm[1].range==5000,'projectile range was not min(Range,Speed*LifeMax): '..tostring(sm[1].range))
-          assert(smax==5000)
-          -- A beam and a projectile in the SAME bank list share one mount
-          -- entry (strategy.lua:368-393), so the entry is flagged beam while
-          -- still carrying the projectile reach. That combination is what
-          -- reaches the scoring code as range=5000, beam=true.
-          local mixed=ship('mixed probe',class('mixed probe'),pos,mn.Teams.hostile)
-          mixed.getFlag=function() return false end
-          mixed.PrimaryBanks={{WeaponClass=weapon(true,0,0,0),AmmoMax=0,isValid=function() return true end},
-            {WeaponClass=weapon(false,9000,100,50),AmmoMax=0,isValid=function() return true end}}
-          mixed.SecondaryBanks={}; mixed[1]=nil
-            local mm,_,mbeam,mmax=r:GetStrategicWeapons(mixed)
-            -- The mount reach is now the LARGER of the two, because the beam
-            -- half contributes its real nominal reach instead of a zeroed one.
-            -- The projectile half is still present, it is just no longer the
-            -- binding term; assert the reach is at least the projectile's.
-            assert(mbeam==true and mmax>=5000,
-              'a mixed battery lost its projectile reach: '..tostring(mmax))
-            assert(#mm==1 and mm[1].beam==true and mm[1].range==mmax,
-            'a mixed battery did not produce one beam-flagged mount at the projectile reach')
-          -- An unarmed bank (empty magazine) contributes no mount at all, so a
-          -- reload does not read as a threat with a phantom reach.
-          local dry=ship('dry probe',class('dry probe'),pos,mn.Teams.hostile)
-          dry.getFlag=function() return false end
-          dry.PrimaryBanks={{WeaponClass=weapon(false,9000,100,50),AmmoMax=10,AmmoLeft=0,
-            isValid=function() return true end}}
-          dry.SecondaryBanks={}; dry[1]=nil
-          local dm,da,dbeam,dmax=r:GetStrategicWeapons(dry)
-          assert(da==false and #dm==0 and dmax==0,
-            'a dry magazine still produced a mount at '..tostring(dmax))""")
+    def test_beam_firepower_uses_upstream_damage_interval_not_damage_per_second(self):
+        self.check("""local beam={Name='beam',Range=4000,Speed=1600,LifeMax=25,Damage=170,FireWait=1,BeamLife=1,BeamWarmup=0,BeamWarmdown=0,
+            isValid=function() return true end,isBeam=function() return true end}
+          local s=ship('beam power',class('GTD Orion'),pos,mn.Teams.hostile)
+          s.PrimaryBanks={{WeaponClass=beam,AmmoMax=0,isValid=function() return true end}}
+          s.SecondaryBanks={}; s[1]=nil; s.getFlag=function() return false end
+          local _,_,_,_,power=r:GetStrategicWeapons(s)
+          assert(math.abs(power-500)<.01,'170 damage per native 170ms interval was treated as 170 DPS')""")
 
     def test_set_time_scale_zero_only_stops_the_engine_clock_with_allow_zero(self):
         """allowZero is the single switch that lets the engine clock stop
@@ -988,14 +1140,11 @@ class StationTests(unittest.TestCase):
     # Capital-aware station gate (Station.AI.CapitalAwareInvestment)
     # ------------------------------------------------------------------
 
-    def test_capital_aware_investment_defaults_off(self):
-        # The flag is the ONLY thing that changes balance, so its default is a
-        # contract in its own right: with it off the station AI must behave
-        # exactly as it shipped, including buying the upgrade the fleet is
-        # saving for.
-        self.check("""assert(r.Config.Station.AI.CapitalAwareInvestment==false,
-          'CapitalAwareInvestment must ship off so the bank is NOT reallocated '
-          ..'until an A/B proves it; see docs/contracts/09-capital-gate.md')
+    def test_capital_aware_investment_defaults_on(self):
+        # Default policy protects the producer's declared savings goal. The
+        # flag-off control below still proves the old spending path separately.
+        self.check("""assert(r.Config.Station.AI.CapitalAwareInvestment==true,
+          'Station investment must respect an active fleet savings goal')
           assert(r.Config.Station.AI.StationReserveCap==1500,
             'StationReserveCap is load-bearing for sentry recovery and must not '
             ..'be retuned alongside the capital gate')""")
@@ -1005,7 +1154,8 @@ class StationTests(unittest.TestCase):
         # buys. This is what makes the flag-on test a falsification of the gate
         # rather than of the fixture.
         self.capitalGateFixture()
-        self.check("""stationAI(r,'RED',r.StationState.RED,stations.RED,200)
+        self.check("""r.Config.Station.AI.CapitalAwareInvestment=false
+          stationAI(r,'RED',r.StationState.RED,stations.RED,200)
           assert(r.StationState.RED.upgrade~=nil,
             'flag off must keep the shipped behaviour: the base spent 1400 CP on '
             ..'LOGISTICS L2 while the fleet was banking for its capital')
@@ -1054,8 +1204,46 @@ class StationTests(unittest.TestCase):
             ..'defence surviving it: '..tostring(r.StationState.RED.capitalGateSince))
           -- And the upgrade the same think would otherwise have bought is still
           -- there, unspent: cp is 2000, LOGISTICS L2 costs 1400 + 1500 reserve.
-          assert(r.AIStates.RED.cp==2000-375,
+          assert(r.AIStates.RED.cp==2000-r.Config.Station.Sentries.Classes.RED[1].cost,
             'flag on spent CP beyond the sentry: '..tostring(r.AIStates.RED.cp))""")
+
+    def test_pending_player_request_protects_a_funded_bank_until_capacity_opens(self):
+        self.check("""r.UpdateStationAI=stationAI; r.AutoPlayerMode=true
+          r.Config.Station.Sentries.Cap=0; r.Config.Station.Sentries.CapBonus=0
+          r.CommandPoints=10000; r.AIStates.BLUE={cp=10000,playerEconomy=true,queue=nil,
+            savingRole='player-request:1',productionReserve=1000,
+            AutoBuildRequest={id=1,class='requested hull',cost=1000,count=1,status='WAITING_FOR_CAP'}}
+          local c=class('station AI fighter'); r.ShipCostMap[c.Name]={cost=100,time=10}
+          r.GetAIRoster=function() return {{class=c.Name,tier=1,role='fighter'}} end
+          r.GetFleetCap=function() return 1 end; r.CountCommittedCombatants=function() return 1 end
+          r.GetScenarioElapsed=function() return 200 end
+          r.IsAbilityReady=function() return true end
+          r.GetFactionAbilityProfile=function() return {kind='surge',cost=750} end
+          local abilityUses=0; r.UseFactionAbility=function() abilityUses=abilityUses+1; return true end
+          r.StationState.BLUE.nextAIThink=0
+          stationAI(r,'BLUE',r.StationState.BLUE,stations.BLUE,0)
+          assert(r.StationState.BLUE.upgrade==nil and abilityUses==0 and r.CommandPoints==10000,
+            'funded request waiting for a fleet slot lost CP to station investments')
+          r.AIProductionEmergency={BLUE={emergency=true,time=8}}
+          r.StationState.BLUE.nextAIThink=0
+          stationAI(r,'BLUE',r.StationState.BLUE,stations.BLUE,8)
+          assert(abilityUses==1,'fresh base emergency did not override the request reserve')
+          -- The player may still cancel; without an active request the same
+          -- funded station AI proceeds normally.
+          r.StationState.BLUE.upgrade=nil
+          r.AIStates.BLUE.AutoBuildRequest=nil; r.AIStates.BLUE.savingRole=nil
+          r.AIStates.BLUE.productionReserve=0; r.AIProductionEmergency={}
+          r.StationState.BLUE.nextAIThink=0
+          stationAI(r,'BLUE',r.StationState.BLUE,stations.BLUE,16)
+          assert(abilityUses==2,'control fixture did not reach the paid ability path')
+          -- Critical base armor remains an exception while a request is held.
+          r.StationState.BLUE.upgrade=nil; r.StationState.BLUE.nextAIThink=0
+          r.AIStates.BLUE.AutoBuildRequest={id=2,class='requested hull',cost=1000,count=1,status='WAITING_FOR_CAP'}
+          r.AIStates.BLUE.savingRole='player-request:2'; r.AIStates.BLUE.productionReserve=1000
+          stations.BLUE.HitpointsLeft=3000
+          stationAI(r,'BLUE',r.StationState.BLUE,stations.BLUE,16)
+          assert(r.StationState.BLUE.upgrade and r.StationState.BLUE.upgrade.track=='armor',
+            'pending request blocked emergency station armor at critical hull')""")
 
     def test_capital_gate_releases_once_the_bank_can_afford_the_role(self):
         # First escape. The gate is a deferral of base investment WHILE the goal
@@ -1146,7 +1334,7 @@ class StationTests(unittest.TestCase):
         # matches, with the bank ceiling collapsing from ~13,000 CP to ~1,300.
         self.check("""assert(r.Config.AI.FieldCheapHullWhileSaving==false,
           'FieldCheapHullWhileSaving must ship off so the producer actually banks '
-          ..'toward its capital target; see docs/contracts/03-ai-production.md')""")
+          ..'toward its capital target; see docs/DEVELOPMENT.md')""")
 
     def test_station_upgrade_spend_routes_through_the_cp_ledger(self):
         # A station upgrade charges 625-4200 CP and used to emit NO event of its
@@ -1204,7 +1392,8 @@ class StationTests(unittest.TestCase):
           r.BuildQueue={{option={class='SF Mara',label='test hull',role='fighter',tier=1,
                                    cost=400,time=1,count=3},started=true,startTime=0,finishTime=1}}
           -- Must NOT propagate: an escaping error is the whole defect.
-          r:UpdateBuildQueue(2)
+          local recovered=pcall(r.UpdateBuildQueue,r,2)
+          assert(recovered,'the deliberately injected native spawn exception escaped the frame')
           assert(#r.BuildQueue==0,
             'the queue item survived a raising spawn: '..#r.BuildQueue
             ..' still queued, so the next frame will spawn the hulls again')
@@ -1284,9 +1473,10 @@ class StationTests(unittest.TestCase):
           assert(r:GetNativeObjectiveStatus(s,{targetSignature=stations.BLUE.signature,mission='PRIMARY'})=='NATIVE_TARGET_ACQUIRED')""")
 
     def test_campaign_reassignment_bypasses_old_base_retention(self):
-        self.check("""local s=ship('red',class('SF Mara'),stations.GOLD.Position,mn.Teams.hostile); s.role='fighter'
+        self.check("""local s=ship('red',class('SF Mara'),stations.GOLD.Position,mn.Teams.hostile); s.role='bomber'
+          local support=ship('red support',class('SC Cain'),s.Position,mn.Teams.hostile); support.role='capital'
           now=100; assert(r:IssueStrategicOrder(s,stations.GOLD,'old','PRIMARY',0,true))
-          local g={id='wing',units={s},role='fighter',value=100,minHull=1,spread=0}
+          local g={id='wing',units={s},role='bomber',value=100,minHull=1,spread=0}
           r:CommitAIGroup(g,stations.BLUE,'PRIMARY',stations.RED,{assaultPrimarySignature=stations.BLUE.signature},now,false)
           assert(g.target==stations.BLUE and g.reason=='CAMPAIGN_FRONT_CHANGED')""")
 
@@ -1374,12 +1564,13 @@ class StationTests(unittest.TestCase):
         self.check("""tier=4; class('old capital'); class('new capital')
           r.ShipCostMap['old capital']={cost=100,time=10}; r.ShipCostMap['new capital']={cost=1000,time=10}
           r.GetAIRoster=function() return {{class='old capital',tier=3,role='capital',weight=1},{class='new capital',tier=4,role='heavy',weight=1}} end
+          local goal=r:GetPurchaseEstimate('new capital',4,1).cost
           local state={cp=1000}
-          local choice,d=r:ChooseAIBuild('RED',state,0); assert(not choice and state.productionReserve==4500)
+          local choice,d=r:ChooseAIBuild('RED',state,0); assert(not choice and state.productionReserve==goal)
           choice,d=r:ChooseAIBuild('RED',state,899.99); assert(not choice)
           choice,d=r:ChooseAIBuild('RED',state,900)
           assert(choice and choice.entry.class=='old capital' and d.savingFallback and state.productionReserve==0)
-          state.cp=4500; choice,d=r:ChooseAIBuild('RED',state,128)
+          state.cp=goal; choice,d=r:ChooseAIBuild('RED',state,128)
           assert(choice.entry.class=='new capital' and state.productionReserve==0 and state.savingRole==nil)
           state={cp=1000}; r.AIStates.RED=state
           r:ChooseAIBuild('RED',state,0)
@@ -1387,6 +1578,113 @@ class StationTests(unittest.TestCase):
           for i=1,8 do ship('red '..i,class('SF Mara'),stations.RED.Position,mn.Teams.hostile) end
           stationAI(r,'RED',r.StationState.RED,stations.RED,0)
           assert(r.AIStates.RED.cp==1000 and #r:GetFactionSentries('RED')==0)""")
+
+    def test_auto_build_request_saves_shared_cp_and_completes_once(self):
+        self.check("""local entry=r:GetAIRoster('BLUE')[1]; assert(entry)
+          r.RosterIndex={}; class(entry.class); r.ShipCostMap[entry.class]={cost=1000,time=10}
+          r.AutoPlayerMode=true; r.CommandPoints=100
+          r.AIStates.BLUE={cp=100,playerEconomy=true,nextThink=0,queue=nil,serial=0}
+          r.GetFactionKeys=function() return {'BLUE'} end
+          r.GetFleetCap=function() return 1 end
+          local built=0
+          r.CountFactionCombatants=function() return built end
+          local committed=0; r.CountCommittedCombatants=function() return committed end
+          r.GetEscalationProfile=function() return {buildTimeScale=1} end
+          r.GetAIIncomeRamp=function() return 1 end; r.GetIncomeMultiplier=function() return 1 end
+          r.GetBuildTimeMultiplier=function() return 1 end; r.NotifyNewUnits=function() end
+          r.RecordAIEconomyFlow=function() end
+          committed=1; assert(r:RequestAutoBuild(entry.class),'full-cap request must be accepted for later build')
+          r:UpdateAIProduction(0)
+          assert(r.AIStates.BLUE.AutoBuildRequest and r.AIStates.BLUE.AutoBuildRequest.status=='WAITING_FOR_CAP' and not r.AIStates.BLUE.queue,
+            'the pending request was discarded instead of waiting for capacity')
+          assert(r:CancelAutoBuildRequest()); committed=0
+          local ok,request=r:RequestAutoBuild(entry.class)
+          assert(ok and request.status=='SAVING' and request.count==1)
+          assert(select(2,r:RequestAutoBuild(entry.class))=='REQUEST_ACTIVE'
+            and r.AIStates.BLUE.AutoBuildRequest==request,
+            'double-clicking the request button created/replaced a second request')
+          assert(not r:RequestAutoBuild('not in roster'))
+          local locked={class='locked test hull',tier=5,role='capital'}
+          class(locked.class); r.RosterIndex={}
+          r.GetAIRoster=function() return {entry,locked} end
+          assert(select(2,r:RequestAutoBuild(locked.class))=='TIER_LOCKED')
+          local ordinaryPurchases=0
+          r.ChooseAIBuild=function() ordinaryPurchases=ordinaryPurchases+1; return nil end
+          r:UpdateAIProduction(0)
+          assert(ordinaryPurchases==0,'ordinary producer ran while a specific request was saving')
+          assert(r.CommandPoints==100 and r.AIStates.BLUE.AutoBuildRequest and r.AIStates.BLUE.AutoBuildRequest.status=='SAVING')
+          assert(r.AIStates.BLUE.savingRole and r.AIStates.BLUE.productionReserve==request.cost,
+            'shared station investments were not told about the requested hull bank')
+          built=1; r.AIStates.BLUE.nextThink=8; r:UpdateAIProduction(8)
+          assert(request.status=='WAITING_FOR_CAP' and r.CommandPoints==100,
+            'a cap reached by an emergency purchase left the request mislabeled or drained')
+          built=0; local cost=request.cost; r.CommandPoints=cost; committed=1; r.AIStates.BLUE.nextThink=16
+          r:UpdateAIProduction(16)
+          assert(not r.AIStates.BLUE.queue and r.CommandPoints==cost
+            and request.status=='WAITING_FOR_CAP','request spent shared CP past a full fleet cap')
+          committed=0; r.AIStates.BLUE.nextThink=24; r:UpdateAIProduction(24)
+          assert(r.AIStates.BLUE.queue and r.AIStates.BLUE.queue.entry.class==entry.class)
+          assert(r.CommandPoints==0 and r.AIStates.BLUE.AutoBuildRequest.status=='BUILDING')
+          r.SpawnAIProduction=function(self,kind,queued,out)
+            local s=ship('requested hull',tb.ShipClasses[queued.entry.class],stations.BLUE.Position,stations.BLUE.Team)
+            built=1; return s,{s}
+          end
+          r:UpdateAIProduction(r.AIStates.BLUE.queue.finishTime)
+          assert(not r.AIStates.BLUE.AutoBuildRequest and r.AIStates.BLUE.LastAutoBuildRequest.status=='COMPLETE')
+          local completed=r.AIStates.BLUE.LastAutoBuildRequest
+          r:UpdateAIProduction(completed.completedAt+100)
+          assert(built==1 and r.AIStates.BLUE.LastAutoBuildRequest==completed,
+            'one request spawned twice or was not retired')""")
+
+    def test_auto_build_cancel_refunds_a_queued_request(self):
+        self.check("""local entry=r:GetAIRoster('BLUE')[1]; r.RosterIndex={}
+          class(entry.class); r.ShipCostMap[entry.class]={cost=1000,time=10}
+          r.AutoPlayerMode=true; r.CommandPoints=0
+          r.AIStates.BLUE={cp=0,playerEconomy=true,queue=nil}
+          local ok,request=r:RequestAutoBuild(entry.class); assert(ok)
+          assert(r:CancelAutoBuildRequest())
+          assert(not r.AIStates.BLUE.AutoBuildRequest and r.AIStates.BLUE.LastAutoBuildRequest.status=='CANCELLED')
+          r.CommandPoints=0; ok,request=r:RequestAutoBuild(entry.class); assert(ok)
+          r.AIStates.BLUE.queue={id=1,entry=entry,queuedAt=now,autoBuildRequestId=request.id,estimate={cost=request.cost}}
+          assert(r:CancelAutoBuildRequest())
+          assert(r.AIStates.BLUE.queue==nil and r.CommandPoints==request.cost,
+            'cancelling a paid in-flight request must refund exactly once')
+          assert(not r:CancelAutoBuildRequest())""")
+
+    def test_auto_build_request_fails_cleanly_when_its_station_is_destroyed(self):
+        self.check("""local entry=r:GetAIRoster('BLUE')[1]; r.RosterIndex={}
+          class(entry.class); r.ShipCostMap[entry.class]={cost=1000,time=10}
+          r.AutoPlayerMode=true; r.CommandPoints=5000
+          local request={id=1,class=entry.class,tier=entry.tier or 1,count=1,cost=1000,
+            status='WAITING_FOR_CAP',requestedAt=0}
+          r.AIStates.BLUE={cp=5000,playerEconomy=true,queue=nil,AutoBuildRequest=request}
+          r.GetFactionKeys=function() return {'BLUE'} end
+          stations.BLUE.dying=true
+          r:UpdateAIProduction(0)
+          assert(not r.AIStates.BLUE.AutoBuildRequest
+            and r.AIStates.BLUE.LastAutoBuildRequest.status=='FAILED'
+            and r.AIStates.BLUE.LastAutoBuildRequest.reason=='BASE_DESTROYED',
+            'destroyed station left a request displayed as saving/building')""")
+
+    def test_auto_build_request_survives_temporary_emergency_counter_purchase(self):
+        self.check("""local entry=r:GetAIRoster('BLUE')[1]; r.RosterIndex={}
+          class(entry.class); r.ShipCostMap[entry.class]={cost=1000,time=10}
+          class('emergency fighter'); r.ShipCostMap['emergency fighter']={cost=100,time=10}
+          r.AutoPlayerMode=true; r.CommandPoints=200
+          r.AIStates.BLUE={cp=200,playerEconomy=true,nextThink=0,queue=nil,serial=0}
+          r.GetFactionKeys=function() return {'BLUE'} end; r.GetFleetCap=function() return 10 end
+          r.CountFactionCombatants=function() return 0 end; r.CountCommittedCombatants=function() return 0 end
+          r.GetEscalationProfile=function() return {buildTimeScale=1} end
+          r.GetAIIncomeRamp=function() return 1 end; r.GetIncomeMultiplier=function() return 1 end
+          r.GetBuildTimeMultiplier=function() return 1 end; r.RecordAIEconomyFlow=function() end
+          local ok,request=r:RequestAutoBuild(entry.class); assert(ok)
+          r.AIProductionEmergency={BLUE={emergency=true,time=0}}
+          local counter={entry={class='emergency fighter',tier=1,role='fighter'},estimate={cost=100,time=10},count=1,category='fighter'}
+          r.ChooseAIBuild=function() return counter,{reason='EMERGENCY'} end
+          r:UpdateAIProduction(0)
+          assert(r.AIStates.BLUE.queue.entry.class=='emergency fighter')
+          assert(r.AIStates.BLUE.AutoBuildRequest==request and request.status=='SAVING',
+            'a temporary counter-buy discarded the player request')""")
 
     def test_station_emergency_breaks_capital_saving_for_fast_counter(self):
         self.check("""class('fast fighter'); class('fast bomber'); class('slow capital')
@@ -1425,7 +1723,7 @@ class StationTests(unittest.TestCase):
           -- cheap non-capital hull, so the purchase itself cannot be the
           -- assertion. The flag is set explicitly here so this test keeps
           -- testing the stale-emergency invariant independently of the saving
-          -- policy, which ships false - see docs/contracts/03-ai-production.md.
+          -- policy, which ships false - see docs/DEVELOPMENT.md.
           -- The saving that policy once "fixed" away from was the AI correctly
           -- banking toward a capital, not a production stall.
           assert(decision.emergencyRole==nil and decision.emergencyFallback~=true,
@@ -1495,14 +1793,13 @@ class StationTests(unittest.TestCase):
           assert(choice and choice.entry.class=='cheap fighter',
             'unreachable goal should still field a cheap hull alongside')
           assert(state.savingSince==0,'alongside purchase must not reset the clock')""")
-        # (3) Player-economy factions have no modelled income here (rate 0), so
-        # the shipped alongside behaviour must be preserved rather than making
-        # Blue stop producing.
+        # (3) Player Auto Mode uses the real shared income, not state.income=0.
         self.check(base % "true" + """
+          r.ActiveIncomePerSecond=20
           local state={cp=1000,income=0,playerEconomy=true}
-          local choice,d=r:ChooseAIBuild('RED',state,0)
-          assert(d.savingCanBank==false and choice and choice.entry.class=='cheap fighter',
-            'a faction with no modelled income must keep producing alongside')""")
+          local choice,d=r:ChooseAIBuild('BLUE',state,0)
+          assert(d.savingCanBank==true and not choice,
+            'player Auto Mode drains a reachable capital bank despite real shared income')""")
         # (4) Flag off: byte-identical to shipped - always alongside.
         self.check(base % "false" + """
           local state={cp=1000,income=20}
@@ -1558,6 +1855,9 @@ class StationTests(unittest.TestCase):
         # CAPITAL is actually committed to. Guard off, this never happens.
         self.check(base % "true" + """
           local state={cp=2500,income=10}
+          -- A reachable bounded savings goal must win even at the end of the
+          -- weighted draw; an uncontrolled draw made this test intermittent.
+          math.random=function() return .9999 end
           local choice,d=r:ChooseAIBuild('RED',state,0)
           assert(d.bankTarget==2000 and not d.savingFallback,'expected a normal purchase')
           assert(choice and choice.entry.class=='old capital',
@@ -1576,17 +1876,17 @@ class StationTests(unittest.TestCase):
           local _,d=r:ChooseAIBuild('RED',state,0)
           assert(d.bankTarget==13000,'reachable goal must not be lowered: '..tostring(d.bankTarget))
           assert(d.bankTargetUnreachable==nil)""")
-        # (4) A player-economy faction has no modelled income here (rate 0), so
-        # its target must be untouched rather than silently changed.
+        # (4) Blue Auto uses the player's active income, not state.income=0.
         self.check(base % "true" + """
           local state={cp=1000,income=0,playerEconomy=true}
-          local _,d=r:ChooseAIBuild('RED',state,0)
-          assert(d.bankTarget==13000,'player-economy target must be untouched: '..tostring(d.bankTarget))
-          assert(d.bankTargetUnreachable==nil)""")
+          r.ActiveIncomePerSecond=10
+          local _,d=r:ChooseAIBuild('BLUE',state,0)
+          assert(d.bankTarget==2000,'Blue Auto ignored player income when bounding the target')
+          assert(d.bankTargetUnreachable==true)""")
 
-    def test_bound_bank_target_defaults_off(self):
-        self.check("""assert(r.Config.AI.BoundBankTarget==false,
-          'BoundBankTarget must ship off so no balance changes without an A/B')""")
+    def test_bound_bank_target_defaults_on(self):
+        self.check("""assert(r.Config.AI.BoundBankTarget==true,
+          'Producer should choose a reachable roster price rather than starving for a newest-tier hull')""")
 
     def test_saving_clock_survives_fielding_a_cheap_hull(self):
         # Regression: FieldCheapHullWhileSaving + clearing savingSince on every
@@ -1759,17 +2059,26 @@ class StationTests(unittest.TestCase):
           local c=class('SF Mara'); r.ShipCostMap[c.Name]={cost=350,time=10}
           r.GetAIRoster=function() return {{class=c.Name,tier=1,role='fighter'}} end
           for i=1,8 do ship('red '..i,c,stations.RED.Position,mn.Teams.hostile) end
-          r.AIStates.RED.cp=1699
+          local reserve=4*350
+          local sentryPrice=r.Config.Station.Sentries.Classes.RED[1].cost
+          local insufficient=reserve+sentryPrice-1
+          r.AIStates.RED.cp=insufficient
           stationAI(r,'RED',r.StationState.RED,stations.RED,0)
-          assert(#r:GetFactionSentries('RED')==0 and r.AIStates.RED.cp==1699)
+          assert(#r:GetFactionSentries('RED')==0 and r.AIStates.RED.cp==insufficient)
           r.AIStates.RED.cp=10000
           for _,time in ipairs({8,16,24,32}) do stationAI(r,'RED',r.StationState.RED,stations.RED,time) end
           r:UpdateSentryConstruction(60)
           assert(#r:GetFactionSentries('RED')==2)
-          assert(r.AIStates.RED.cp==9250)""")
+          assert(r.AIStates.RED.cp==10000-2*sentryPrice)""")
 
     def test_ai_selects_flak_for_fighter_threats(self):
         self.check("""r.StationState.RED.levels.logistics=1
+          -- Supply a role-diverse roster for this selection test; the shipped
+          -- cannon-only roster has no flak candidate to choose.
+          class('SSG Rahu')
+          r.Config.Station.Sentries.Classes.RED={
+            {class='SSG Trident',tier=1,cost=375,hull=600,role='screen',range=11000},
+            {class='SSG Rahu',tier=1,cost=2000,hull=4000,role='flak',range=11500}}
           for i=1,8 do ship('red '..i,class('SF Mara'),stations.RED.Position,mn.Teams.hostile) end
           for i=1,3 do local s=ship('attacker '..i,class('GTF Myrmidon'),ba.createVector(10300,0,0),mn.Teams.friendly); s.role='fighter' end
           stationAI(r,'RED',r.StationState.RED,stations.RED,0)

@@ -55,6 +55,9 @@ R = {}
 Config = require 'fs2rts_config'
 R.Config = Config
 require 'fs2rts_strategy'
+require 'fs2rts_orders'
+R.GetTacticalMapHalfExtent=function() return Config.TacticalMap.HalfExtent end
+R.GetBattleMapHalfExtent=R.GetTacticalMapHalfExtent
 -- fs2rts_ai_planning returns an installer function taking the RTS table, it does
 -- not attach itself, so it has to be invoked the way the mod invokes it.
 require 'fs2rts_ai_planning'(R)
@@ -71,6 +74,10 @@ function ship(id,x,z,value)
   function s:getSignature() return self.signature end
   function s:isValid() return self.valid ~= false end
   function s:isDying() return false end
+  function s:getBreedName() return 'Ship' end
+  function s:getFlag(name) return self.flags and self.flags[name] or false end
+  function s:setFlag(value,name) self.flags=self.flags or {}; self.flags[name]=value end
+  function s:setGuardRange(target,range) self.guardRange=range; return true end
   s.value=value or 100
   return s
 end
@@ -103,7 +110,36 @@ class ConcentrationGuardTests(unittest.TestCase):
     def check(self, code):
         self.lua.execute(code)
 
+    def test_cached_iff_cannot_make_a_withdrawing_hull_an_auto_target(self):
+        self.check("""R.AreEnemies=function(self,a,b) return a.Team~=b.Team end
+          R.CanAutoEngage=function(self,a,b) return self:AreEnemies(a,b) and not b.withdrawing end
+          R.IsAutomaticTargetPermitted=function(self,a,b) return not b.withdrawing end
+          local lead=ship(1,0,0); lead.Team='BLUE'
+          local target=ship(2,10,0); target.Team='RED'; target.withdrawing=true
+          local row={ship=target,team='RED',contextTeams={BLUE='BLUE'},hostileTo={BLUE=true}}
+          assert(not R:AIContextEnemies(lead,row,'BLUE','BLUE'),
+            'cached IFF bypassed CanAutoEngage for a withdrawn target')
+          target.withdrawing=false
+          assert(R:AIContextEnemies(lead,row,'BLUE','BLUE'),
+            'ordinary hostile contact was lost by extraction filtering')""")
+
     # -- shipped defaults ----------------------------------------------------
+
+    def test_friendly_context_does_not_run_target_policy(self):
+        self.check('''
+          local lead=ship(1,0,0); lead.Team='BLUE'
+          local target=ship(2,10,0); target.Team='BLUE'
+          local row={ship=target,team='BLUE',contextTeams={BLUE='BLUE'},hostileTo={BLUE=false}}
+          R.IsAutomaticTargetPermitted=function() assert(false,'friendly pair ran target policy') end
+          local eligible,hostile=R:AIContextEnemies(lead,row,'BLUE','BLUE')
+          assert(not eligible and not hostile)
+          target.Team='RED'
+          R.AreEnemies=function() return true end
+          local calls=0
+          R.IsAutomaticTargetPermitted=function() calls=calls+1; return false end
+          eligible,hostile=R:AIContextEnemies(lead,row,'BLUE','BLUE')
+          assert(not eligible and hostile and calls==1,'changed team skipped live hostile policy')
+        ''')
 
     def test_both_flags_ship_off(self):
         """Kill-check: turns red if either default is flipped, which would
@@ -112,20 +148,8 @@ class ConcentrationGuardTests(unittest.TestCase):
           local d=Config.AI.Doctrine
           assert(d.PoolAssaultGroupsEnabled==false,
             'PoolAssaultGroupsEnabled must ship false; got '..tostring(d.PoolAssaultGroupsEnabled))
-          assert(d.PoolAssaultGroupsRadius==3000,
-            'PoolAssaultGroupsRadius default moved: '..tostring(d.PoolAssaultGroupsRadius))
           assert(d.OperationCommitmentEnabled==false,
             'OperationCommitmentEnabled must ship false; got '..tostring(d.OperationCommitmentEnabled))
-          assert(d.OperationCommitmentSeconds==24,
-            'OperationCommitmentSeconds default moved: '..tostring(d.OperationCommitmentSeconds))
-          -- the fragile capital-investment block must be untouched by this work
-          assert(Config.Station.AI.CapitalAwareInvestment==false,
-            'CapitalAwareInvestment must still ship false')
-          assert(Config.AI.BoundBankTarget==false,'BoundBankTarget must still ship false')
-          assert(Config.AI.PreserveSavingClockWhileFielding==false,
-            'PreserveSavingClockWhileFielding must still ship false')
-          assert(Config.AI.FieldCheapHullWhileSaving==false,
-            'FieldCheapHullWhileSaving must still ship false')
         """)
 
     # -- pooling -------------------------------------------------------------

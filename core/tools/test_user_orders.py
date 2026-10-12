@@ -37,6 +37,7 @@ R.makeShip=makeShip
 function R:GetSelectedFriendlyShips() return self.SelectedShips end
 function R:IsPlayerEnemy(s) return s~=nil and s.faction~="BLUE" end
 function R:IsFriendly(s) return s~=nil and s.faction=="BLUE" end
+function R:IsCommandStation() return false end
 function R:FindShipBySignature(sig) return self.ships[sig] end
 function R:GetLogicalWing(s) return self.wingBySignature[s.signature] end
 function R:SetStatus(s) self.status=s end
@@ -56,6 +57,10 @@ class UserOrderTests(unittest.TestCase):
         self.lua.execute('''
           R.Config={CarrierShip='Carrier',EnemyCommandShip='Red Base',ThirdCommandShip='Gold Base',ObserverShip='Observer'}
           require "fs2rts_orders"
+          require "fs2rts_strategy"
+          -- These fixtures are fighters. Load the real shared pursuit helpers;
+          -- capital pursuit has separate full-runtime and native regressions.
+          R.GetShipRole=function() return 'fighter' end
           R.IsStaticDefense=function() return false end
           R.ReturnToDefaultControl=function(self) self.returned=(self.returned or 0)+1 end
         ''')

@@ -417,6 +417,18 @@ class AnomalyPositiveTests(unittest.TestCase):
             self.assertEqual(found[0]["evidence"]["failed"], 5.0)
             self.assertEqual(found[0]["severity"], "critical")
 
+    def test_repeated_cumulative_mission_counts_are_not_summed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            records = [rec('COUNTERS', time, {'orders': {'byMission': {
+                'BLUE': {'INTERCEPT': {'success': 1946, 'failed': 5}},
+                'RED': {'SCREEN': {'success': 535, 'failed': 4}}}}})
+                for time in (30, 60, 90)]
+            write_run(tmp, 'cumulative-orders', records)
+            match = load(tmp)
+            self.assertEqual(match.faction('BLUE')['orders']['INTERCEPT']['failed'], 5)
+            self.assertEqual(match.faction('BLUE')['orders']['INTERCEPT']['success'], 1946)
+            self.assertEqual(match.faction('RED')['orders']['SCREEN']['failed'], 4)
+
     def test_reissue_storm_from_counter_deltas(self):
         with tempfile.TemporaryDirectory() as tmp:
             records = []
@@ -458,13 +470,28 @@ class AnomalyPositiveTests(unittest.TestCase):
             records = [faction_rec(step * 30, "GOLD", 100, 0, 0, 0) for step in range(10)]
             for index, time in enumerate((100, 130, 170, 900, 950)):
                 records.append(rec("FLEET_SERVICE", time, {
-                    "faction": "GOLD", "ship": 42, "phase": "RETURNING",
+                    "faction": "GOLD", "ship": 42, "phase": "RETURNING", "visit": index+1,
                     "reason": "HULL_LOW", "ammo": 0, "hull": 0.1}))
             write_run(tmp, "thrash", records)
             found = by_code(ait.detect_anomalies(load(tmp)), "SERVICE_THRASH", "GOLD")
             self.assertTrue(found)
             self.assertEqual(found[0]["evidence"]["ship"], 42)
             self.assertEqual(found[0]["evidence"]["entries"], 3)
+
+    def test_phase_changes_and_reapproach_are_not_new_service_admissions(self):
+        for visit in (None, 17):
+            with self.subTest(visit=visit), tempfile.TemporaryDirectory() as tmp:
+                records = [faction_rec(0, "BLUE", 100, 0, 0, 0)]
+                for time, phase in ((100, "RETURNING"), (130, "UNDER_FIRE"),
+                                    (150, "RETURNING"), (170, "REPAIR_REARM")):
+                    data = {"faction": "BLUE", "ship": 26, "phase": phase, "reason": "HULL_LOW"}
+                    if visit is not None:
+                        data["visit"] = visit
+                    records.append(rec("FLEET_SERVICE", time, data))
+                write_run(tmp, "single-visit", records)
+                match = load(tmp)
+                self.assertEqual(by_code(ait.detect_anomalies(match), "SERVICE_THRASH"), [])
+                self.assertEqual(match.faction("BLUE")["service_entries"][26], [100])
 
     def test_friendly_fire_cluster(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -623,6 +650,34 @@ class MalformedInputTests(unittest.TestCase):
 
 
 class TerminationTests(unittest.TestCase):
+    def test_global_contest_service_count_is_not_assigned_to_each_faction(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_run(tmp, "service-scope", [
+                faction_rec(0, "BLUE", 100, 0, 0, 0, servicing=1),
+                faction_rec(1, "RED", 100, 0, 0, 0, servicing=5),
+                rec("CONTEST", 2, {"faction": "BLUE", "servicedShips": 6}),
+                rec("CONTEST", 3, {"faction": "RED", "servicedShips": 6})])
+            match = load(tmp)
+            self.assertEqual(match.series("BLUE")[0]["service_max"], 1)
+            self.assertEqual(match.series("RED")[0]["service_max"], 5)
+
+    def test_engine_sidecar_overrides_proximity_and_partial_station_loss(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_run(tmp, "sidecar", [faction_rec(570, "BLUE", 1, 0, 0, 0),
+                rec("OUTCOME_CAUSE", 570, {"station": "RED", "killers": [], "snapshot": {}})])
+            match = load(tmp)
+            result = match.path.parents[2] / "engine-result.json"
+            result.write_text(json.dumps({"termination": "engine_failure", "time_limit_reached": False}), encoding="utf-8")
+            self.assertEqual(ait.termination_state(match, {"max_sim_time": 600})[0], "engine_failure")
+            result.write_text(json.dumps({"termination": "time_limit", "time_limit_reached": True, "simulated_seconds": 600}), encoding="utf-8")
+            state, detail = ait.termination_state(match, {"max_sim_time": 600})
+            self.assertEqual(state, "simulation_cap")
+            self.assertIn("confirms unresolved", detail)
+            result.write_text(json.dumps({"termination": "time_limit", "time_limit_reached": True,
+                "simulated_seconds": 90, "max_sim_time": 600}), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Contradictory cap"):
+                ait.termination_state(match, {"max_sim_time": 600})
+
     def test_simulation_cap_is_derived_without_engine_result(self):
         with tempfile.TemporaryDirectory() as tmp:
             write_run(tmp, "cap", [faction_rec(t, "BLUE", 1, 0, 0, 0)
@@ -663,6 +718,28 @@ class TerminationTests(unittest.TestCase):
 
 
 class CliTests(unittest.TestCase):
+    def test_brief_bounds_output_keeps_full_export_and_filters_factions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_run(tmp, "brief", [faction_rec(0, "BLUE", 100, 0, 0, 0),
+                faction_rec(30, "RED", 100, 0, 0, 0),
+                rec("COUNTERS", 31, {"orders": {"byMission": {"RED": {"SCREEN": {
+                    "success": 12, "failed": 7, "rejected": 1}}}}})])
+            export = Path(tmp) / "full.json"
+            result = self._run(tmp, tmp, "--brief", "--faction", "BLUE", "--json", str(export))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            brief = json.loads(result.stdout)["matches"][0]
+            self.assertEqual(set(brief["factions"]), {"BLUE"})
+            self.assertIn("rts-ai-", brief["trace"])
+            self.assertIsNone(brief["factions"]["BLUE"]["orders"], "missing counters must not mean zero failures")
+            self.assertLess(len(result.stdout), 2000)
+            full = json.loads(export.read_text(encoding="utf-8"))["matches"][0]
+            self.assertEqual(set(full["factions"]), {"BLUE", "RED"})
+            self.assertIn("series", full["factions"]["BLUE"])
+            red = self._run(tmp, tmp, "--brief", "--faction", "RED")
+            self.assertEqual(red.returncode, 0, red.stderr)
+            self.assertEqual(json.loads(red.stdout)["matches"][0]["factions"]["RED"]["orders"],
+                {"success": 12, "failed": 7, "rejected": 1})
+
     def _run(self, tmp, *args):
         script = str(Path(__file__).resolve().parent / "ai_timeline.py")
         return subprocess.run([sys.executable, script, *args], capture_output=True,

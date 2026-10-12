@@ -75,6 +75,7 @@ Config = require 'fs2rts_config'
 R.Config = Config
 require 'fs2rts_strategy'
 require 'fs2rts_ai_planning'(R)
+require 'fs2rts_ai_telemetry'(R)
 
 now = 0
 mn = {getMissionTime=function() return now end, Ships={}, Teams={}}
@@ -115,6 +116,8 @@ R.AIProfileIndex = {}
 R.AILocalCache = {}
 R.AITargetedBy = {}
 R.CombatTelemetryEnabled = true
+-- The emitter double below represents an active recording destination.
+R.AIEventSink = function() end
 R.Config.AI.DetailedDecisionTelemetry = false
 R.Config.AI.SampledHeavyDecisionTelemetry = false
 R.ScenarioStartTime = 0
@@ -147,7 +150,8 @@ R.ChooseAILocalThreat = function(self,g,coverage) return nil end
 R.GetCommandArenaHalfExtent = function(self) return 15000 end
 R.FlushAITrace = function() end
 R.GetFleetCap = function(self,kind) return 200 end
-R.GetDurationProfile = function(self) return {buildTimeScale=1,targetSeconds=1800} end
+R.GetEscalationProfile = function(self) return {buildTimeScale=1,tierUnlocks={0,240,570,1050,1380}} end
+R.GetEscalationProgress = function(self,now) return math.max(0,math.min(1,((now or mn.getMissionTime())-(self.ScenarioStartTime or 0))/1380)) end
 R.GetCurrentEscalationTier = function(self,n) return 4 end
 R.GetAIIncomeRamp = function(self,n) return 1 end
 R.GetUpgradeLevel = function(self,kind,track) return 0 end
@@ -300,7 +304,7 @@ class TelemetryContractTests(unittest.TestCase):
 
         The lead group is an ESCORT deliberately. A bomber scores match=0.12
         against a non-capital, and ScoreAIObjective collapses any match under
-        0.2 to score=-100 (fs2rts_ai_planning.lua:245), which would make every
+        0.2 to score=-100 (fs2rts_ai_planning/candidates.lua:133), which would make every
         candidate tie at -100 and the two scores indistinguishable.
         """
         self.check("""
