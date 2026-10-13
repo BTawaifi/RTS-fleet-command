@@ -628,7 +628,8 @@ class StationTests(unittest.TestCase):
           'active sentry tracking aimed at a withdrawn contact')""")
 
     def test_sentry_validation_refund_and_sell(self):
-        self.check("""assert(not r:PlaceSentry('BLUE',option,ba.createVector(0,0,0),false))
+        self.check("""r.StationState.BLUE.levels.defenses=1
+          assert(not r:PlaceSentry('BLUE',option,ba.createVector(0,0,0),false))
           assert(not r:PlaceSentry('BLUE',option,ba.createVector(9000,0,0),false)); assert(r.CommandPoints==10000)
           spawnFails=true; local failed=r:PlaceSentry('BLUE',option,pos,false); assert(failed and r.CommandPoints==10000-option.cost)
           assert(#r:GetFactionSentries('BLUE')==0,'sentry spawned before construction completed')
@@ -642,7 +643,8 @@ class StationTests(unittest.TestCase):
           assert(r.CommandPoints==expected and not s:isValid()); r:SellSelectedSentries(); assert(r.CommandPoints==expected)""")
 
     def test_sentry_construction_cancels_if_enemy_arrives_at_site(self):
-        self.check("""local job=r:PlaceSentry('BLUE',option,pos,false); assert(job)
+        self.check("""r.StationState.BLUE.levels.defenses=1
+          local job=r:PlaceSentry('BLUE',option,pos,false); assert(job)
           local enemy=ship('raider',class('SF Mara'),pos,mn.Teams.hostile)
           now=now+r.Config.Station.Sentries.BuildSeconds; r:UpdateStations(now)
           assert(#r:GetFactionSentries('BLUE')==0 and r.CommandPoints==10000,
@@ -660,6 +662,7 @@ class StationTests(unittest.TestCase):
           -- The current roster uses cannons. Exercise the supported beam role
           -- explicitly instead of assuming the fourth roster entry is a beam.
           class('GTSG Mjolnir')
+          r.StationState.BLUE.levels.defenses=1
           local beam={class='GTSG Mjolnir',tier=4,cost=3000,hull=3000,role='beam',range=12000}
           r.Config.Station.Sentries.Classes.BLUE={beam}
           local pos=ba.createVector(1000,0,0)
@@ -692,7 +695,8 @@ class StationTests(unittest.TestCase):
     def test_defense_rate_applies_once_to_existing_and_future_sentries(self):
         self.check("""r.Config.Station.Sentries.Cap=0; r.Config.Station.Sentries.CapBonus=0
           assert(not r:PlaceSentry('BLUE',option,pos,true))
-          local turret={FireRateMultiplier=1,isTurret=function() return true end}
+          local turret={FireRateMultiplier=1,PrimaryBanks={},SecondaryBanks={},
+            isValid=function() return true end,isTurret=function() return true end}
           stations.BLUE[1]=turret
           r.StationState.BLUE.levels.defenses=3; r:ApplyUpgrade('BLUE','defenses',3)
           r:ApplyUpgrade('BLUE','defenses',3); assert(turret.FireRateMultiplier==1.25)
@@ -896,7 +900,8 @@ class StationTests(unittest.TestCase):
           s.valid=false; r:UpdateStations(1); assert(r.SurgedShips[s.signature]==nil)""")
 
     def test_invalid_placement_keeps_cursor_armed(self):
-        self.check("""r.ArmedCommand='sentry'; r.ArmedSentryIndex=1; r:ExecuteStationArmedCommand(stations.BLUE.Position)
+        self.check("""r.StationState.BLUE.levels.defenses=1
+          r.ArmedCommand='sentry'; r.ArmedSentryIndex=1; r:ExecuteStationArmedCommand(stations.BLUE.Position)
           assert(r.ArmedCommand=='sentry'); r:ExecuteStationArmedCommand(pos); assert(r.ArmedCommand==nil)""")
 
     def test_station_panel_controls_fit_at_both_resolutions(self):
@@ -1097,10 +1102,11 @@ class StationTests(unittest.TestCase):
             'the real station AI spent nothing in six ticks; the CP assertion is vacuous')""")
 
     def test_ai_builds_opening_fleet_before_defense_ring(self):
-        self.check("""r.StationState.RED.levels.logistics=1
+        self.check("""r.StationState.RED.levels.logistics=1; r.StationState.RED.levels.defenses=1
           stationAI(r,'RED',r.StationState.RED,stations.RED,0)
           assert(#r:GetFactionSentries('RED')==0 and r.StationState.RED.upgrade==nil)
           for i=1,8 do ship('red '..i,class('SF Mara'),ba.createVector(9000,0,i*500),mn.Teams.hostile) end
+          r.StationState.RED.levels.defenses=1
           stationAI(r,'RED',r.StationState.RED,stations.RED,8)
           r:UpdateSentryConstruction(8+r.Config.Station.Sentries.BuildSeconds)
           assert(#r:GetFactionSentries('RED')==1)""")
@@ -1115,7 +1121,7 @@ class StationTests(unittest.TestCase):
         # lowers the hurdle to cost + 1,500 and the base keeps buying.
         # killcheck.py reported this guard as VACUOUS because no test made it the
         # difference; this test exists to make it one.
-        self.check("""r.StationState.RED.levels.logistics=1
+        self.check("""r.StationState.RED.levels.logistics=1; r.StationState.RED.levels.defenses=1
           r.AIStates.RED.queue=nil
           r.AIStates.RED.productionReserve=13000
           stationAI(r,'RED',r.StationState.RED,stations.RED,0)
@@ -2041,18 +2047,76 @@ class StationTests(unittest.TestCase):
           end""")
 
     def test_sentries_are_not_mobile_ai_composition(self):
-        self.check("""local s=r:PlaceSentry('BLUE',option,pos,true); s.role='fighter'
+        self.check("""r.StationState.BLUE.levels.defenses=1
+          local s=r:PlaceSentry('BLUE',option,pos,true); s.role='fighter'
           local counts=r:CountAIRoleUnits('BLUE'); assert(counts.total==0)
           local mobile=ship('mobile',class('GTF Myrmidon'),pos,mn.Teams.friendly); mobile.role='fighter'
           counts=r:CountAIRoleUnits('BLUE'); assert(counts.total==1 and counts.fighter==1)""")
 
-    def test_optional_starting_sentries_use_shared_profiles(self):
-        self.check("""assert(r:SpawnSentryDefenses()==3)
+    def test_sentry_slots_start_empty_and_unlock_after_defense_upgrade(self):
+        self.check("""for _,kind in ipairs({'BLUE','RED','GOLD'}) do
+            r.StationState[kind].levels.defenses=0
+            assert(r:GetSentryCap(kind)==0,'a new base has sentry slots before an upgrade')
+          end
+          assert(r:SpawnSentryDefenses()==0,'starting defenses spawned before an upgrade')
+          for _,kind in ipairs({'BLUE','RED','GOLD'}) do r.StationState[kind].levels.defenses=1 end
+          assert(r:SpawnSentryDefenses()==3)
           for _,kind in ipairs({'BLUE','RED','GOLD'}) do
             local s=r:GetFactionSentries(kind); assert(#s==1)
             assert(s[1].HitpointsMax==r:GetSentryOptions(kind)[1].hull)
             assert(r.SentryCosts[s[1].signature]==0)
           end""")
+
+    def test_station_guns_unlock_by_defense_upgrade_and_beams_wait_for_tier_five(self):
+        self.check("""local station=stations.BLUE
+          local laser=station[1].PrimaryBanks[1].WeaponClass
+          for i=2,4 do
+            station[i]={TurretLocked=false,FireRateMultiplier=1,HitpointsLeft=100,
+              PrimaryBanks={{WeaponClass=laser}},SecondaryBanks={},isValid=function() return true end,
+              isTurret=function() return true end}
+          end
+          local beam={Name='base beam',isValid=function() return true end,isBeam=function() return true end}
+          station[5]={TurretLocked=false,FireRateMultiplier=1,HitpointsLeft=100,
+            PrimaryBanks={{WeaponClass=beam}},SecondaryBanks={},isValid=function() return true end,
+            isTurret=function() return true end}
+          r:ApplyStationDefenseProgression('BLUE',0)
+          for i=1,5 do assert(station[i].TurretLocked,'a new station started with a live turret') end
+          r:ApplyStationDefenseProgression('BLUE',1)
+          assert(not station[1].TurretLocked and not station[2].TurretLocked
+            and station[3].TurretLocked and station[4].TurretLocked and station[5].TurretLocked,
+            'Defense I did not unlock only the first half of non-beam mounts')
+          r:ApplyStationDefenseProgression('BLUE',2)
+          for i=1,4 do assert(not station[i].TurretLocked,'Defense II left a base gun locked') end
+          assert(station[5].TurretLocked,'a base beam unlocked before Defense III')
+          r:ApplyStationDefenseProgression('BLUE',3)
+          assert(not station[5].TurretLocked,'Defense III at escalation tier five did not unlock its beam mounts')
+          assert(r.Config.Station.Tracks.defenses.tiers[3]==5,'Defense III is not gated to escalation tier five')""")
+
+    def test_spawned_command_stations_begin_with_all_turrets_locked(self):
+        self.check("""for _,name in ipairs({'GTI Arcadia','SI Arachnas','GVI Cairo'}) do class(name) end
+          r.GetFactionKeys=function() return {'BLUE','RED','GOLD'} end
+          r.GetScenarioBasePosition=function(self,kind) return stations[kind].Position end
+          r.GetFactionBattleFacingPoint=function() return ba.createVector(0,0,0) end
+          r.ApplyFactionVisual=function() end
+          r.EnableFullArsenal=function(self,station)
+            for i=1,#station do if station[i]:isTurret() then station[i].TurretLocked=false end end
+          end
+          assert(r:SpawnFactionStations(),'station setup failed in the fixture')
+          for _,kind in ipairs({'BLUE','RED','GOLD'}) do
+            for i=1,#stations[kind] do
+              if stations[kind][i]:isTurret() then
+                assert(stations[kind][i].TurretLocked,'station setup re-enabled a base turret at tier one')
+              end
+            end
+          end""")
+
+    def test_defense_three_cannot_be_bought_before_escalation_tier_five(self):
+        self.check("""r.StationState.BLUE.levels.defenses=2; tier=4
+          local offer,reason=r:GetUpgradeOffer('BLUE','defenses',now)
+          assert(offer and offer.level==3 and offer.tier==5 and reason=='TIER',
+            'the base beam upgrade was available before escalation tier five')
+          tier=5; offer,reason=r:GetUpgradeOffer('BLUE','defenses',now)
+          assert(offer and reason==nil,'the base beam upgrade stayed locked at tier five')""")
 
     def test_ai_reserves_mobile_wing_and_limits_idle_defenses(self):
         self.check("""r.StationState.RED.levels={armor=3,defenses=3,logistics=3,command=3}
@@ -2072,7 +2136,7 @@ class StationTests(unittest.TestCase):
           assert(r.AIStates.RED.cp==10000-2*sentryPrice)""")
 
     def test_ai_selects_flak_for_fighter_threats(self):
-        self.check("""r.StationState.RED.levels.logistics=1
+        self.check("""r.StationState.RED.levels.logistics=1; r.StationState.RED.levels.defenses=1
           -- Supply a role-diverse roster for this selection test; the shipped
           -- cannon-only roster has no flak candidate to choose.
           class('SSG Rahu')
@@ -2099,6 +2163,7 @@ class StationTests(unittest.TestCase):
 
     def test_each_upgrade_level_for_every_faction(self):
         self.check("""for _,kind in ipairs({'BLUE','RED','GOLD'}) do
+          tier=5
           local hull=stations[kind].HitpointsMax; local fleet=r:GetFleetCap(kind)
           local cap=r:GetSentryCap(kind); local radius=r:GetSentryRadius(kind)
           for _,track in ipairs({'armor','defenses','logistics','command'}) do
@@ -2114,7 +2179,7 @@ class StationTests(unittest.TestCase):
             end
           end
           assert(r:GetFleetCap(kind)==fleet+8)
-          assert(r:GetSentryCap(kind)==cap+4)
+          assert(r:GetSentryCap(kind)==cap+8)
           assert(r:GetSentryRadius(kind)==radius+2000)
         end""")
 

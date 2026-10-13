@@ -148,7 +148,7 @@ function RTS:DrawStationTooltip(panel)
                     "One upgrade at a time; ship production continues.",
                     "SERVICE sends selected ships to the station's far side.",
                     "A green + on the map marks ships recovering.",
-                    "Two service slots; capitals use both. Damage pauses work.",
+                    tostring(cfg(self).FleetService.Slots).." service slots; capitals use two. Damage pauses work.",
                     "Repair: 0.4% hull/s to 90%; rearm: 4% payload/s.",
                     "Full hull repair costs 35% of ship CP; full ammo 12%.",
                     "Subsystems: 1%/s to 90%; full repair costs 15%.",
@@ -214,13 +214,22 @@ function RTS:DrawStationTooltip(panel)
         end
     end
     if lines == nil then return end
-    local w = 470; local x2 = panel.x1 - 10; local x1 = x2 - w; local y1 = clamp(my - 20, 40, gr.getScreenHeight() - 140)
+    local sw,sh=gr.getScreenWidth(),gr.getScreenHeight()
+    local w=math.min(470,sw-20)
+    local x1=clamp(panel.x1-10-w,10,sw-w-10); local x2=x1+w
     local model = title == self:GetFactionDisplayName("BLUE").." STATION" and self:GetCarrier() or nil
-    local y2 = y1 + 34 + #lines * 17 + (model and 140 or 0)
-    y1=math.min(y1,gr.getScreenHeight()-(y2-y1)-10); y2=y1+34+#lines*17+(model and 140 or 0)
+    local lineHeight=math.max(17,self:TextHeight('M')+2)
+    local maxLines=math.max(1,math.floor((sh-54-(model and 140 or 0))/lineHeight))
+    local wrapped={}
+    for _,line in ipairs(lines) do
+        if #wrapped>=maxLines then break end
+        for _,piece in ipairs(self:WrapTextLinesToWidth(line,w-20,maxLines-#wrapped)) do wrapped[#wrapped+1]=piece end
+    end
+    local height=34+#wrapped*lineHeight+(model and 140 or 0)
+    local y1=clamp(my-20,10,sh-height-10); local y2=y1+height
     gr.setColor(4, 10, 18, 235); gr.drawRectangle(x1, y1, x2, y2, true); gr.setColor(100, 190, 220, 255); gr.drawRectangle(x1, y1, x2, y2, false)
-    gr.setColor(235, 245, 250, 255); self:DrawCenteredText(title, x1 + 10, x2 - 10, y1 + 8)
-    gr.setColor(160, 200, 215, 255); for i, line in ipairs(lines) do self:DrawCenteredText(line, x1 + 10, x2 - 10, y1 + 28 + (i - 1) * 17) end
+    gr.setColor(235, 245, 250, 255); self:DrawCenteredTextClipped(title, x1 + 10, x2 - 10, y1 + 8)
+    gr.setColor(160, 200, 215, 255); for i, line in ipairs(wrapped) do self:DrawCenteredText(line, x1 + 10, x2 - 10, y1 + 28 + (i - 1) * lineHeight) end
     if model then self:DrawRotatingModel(model.Class.Name,x1+165,y2-140,x1+305,y2) end
 end
 

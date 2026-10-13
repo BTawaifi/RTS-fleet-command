@@ -559,6 +559,49 @@ class ReviewRegressions(unittest.TestCase):
           assert(placed:getDistance(stations.RED.Position)>=r:GetEnemyBaseSeparation()-1,'capital spawned inside the enemy separation')
         ''')
 
+    def test_spawn_uses_the_visible_signature_unless_the_slot_became_obstructed(self):
+        self.check('''
+          local c=class('signature geometry control')
+          r.GetLivingFactionKeys=function() return {'BLUE'} end
+          local marker=r:NativeGetSpawnFrame(stations.BLUE,c,1,1,1)
+          assert(marker,'signature fixture has no legal placement')
+          local arrival=r:NativeGetSpawnFrame(stations.BLUE,c,1,1,2,marker)
+          assert(arrival and arrival:getDistance(marker)<.01,'arrival ignored the visible jump signature')
+          local blocker=ship('signature blocker',c,marker,stations.BLUE.Team)
+          blocker.Radius=100; r:InvalidateShipList()
+          arrival=r:NativeGetSpawnFrame(stations.BLUE,c,1,1,2,marker)
+          assert(arrival and arrival:getDistance(marker)>350,'signature reuse spawned inside a new blocker')
+          blocker.valid=false; r:InvalidateShipList()
+          arrival=r:NativeGetSpawnFrame(stations.BLUE,c,1,1,2,marker)
+          assert(arrival and arrival:getDistance(marker)<.01,'cleared signature slot was not reused')
+        ''')
+
+    def test_parallel_builds_keep_their_signature_slots_when_a_frame_finishes_both(self):
+        self.check('''
+          r.GetSpawnFrame=r.NativeGetSpawnFrame; r.GetLivingFactionKeys=function() return {'BLUE'} end
+          r.GetFactionKeys=function() return {'BLUE'} end
+          r.GetBuildQueueSlots=function() return 2 end; r.NotifyNewUnits=function() end
+          r.AutoPlayerMode=false; r.BuildBatchSerial=0; r.AIStates={}
+          local first=class('signature first'); local second=class('signature second')
+          r.BuildQueue={
+            {option={class=first.Name,label='First',count=1,time=1,cost=100,tier=1}},
+            {option={class=second.Name,label='Second',count=1,time=2,cost=100,tier=1}}}
+          r:UpdateBuildQueue(0)
+          local markers=r:GetBuildSignatures(0); assert(#markers==2)
+          local before=#ships; r:UpdateBuildQueue(10)
+          assert(#ships==before+2 and #r.BuildQueue==0,'parallel build fixture did not complete')
+          for i=before+1,#ships do
+            local found=false
+            for _,marker in ipairs(markers) do
+              if marker.job.option.class==ships[i].Class.Name then
+                assert(ships[i].Position:getDistance(marker.pos)<.01,'frame hitch swapped an arrival signature')
+                found=true
+              end
+            end
+            assert(found,'completed ship had no visible signature')
+          end
+        ''')
+
     def test_capital_search_skips_outside_arena_candidates_for_a_clear_alternate(self):
         self.check('''
           local c=class('edge capital'); c.Model.Radius=1500

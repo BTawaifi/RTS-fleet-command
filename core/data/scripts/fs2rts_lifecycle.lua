@@ -262,6 +262,7 @@ function RTS:SpawnFactionStations()
         station:setFlag(true,"immobile")
         self:ApplyFactionVisual(station,kind)
         self:EnableFullArsenal(station)
+        self:ApplyStationDefenseProgression(kind,0)
     end
     return true
 end
@@ -623,6 +624,7 @@ end
 function RTS:ReleaseObjectHandles()
     self.CrewProjectileBefore=nil
     if self.ClearIntroScene then self:ClearIntroScene() end
+    if self.ClearSetupBackdrop then self:ClearSetupBackdrop() end
     if self.StopEnvironment then self:StopEnvironment() end
     for _,ship in ipairs(self:GetShipList()) do
         local withdrawal=self.Withdrawals and self.Withdrawals[ship:getSignature()]

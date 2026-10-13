@@ -22,9 +22,6 @@ function RTS:DrawFactionInsignia(kind,x1,y1,x2,y2)
     if not texture then return false end
     local width,height=texture:getWidth(),texture:getHeight()
     if width<=0 or height<=0 then return false end
-    -- The original GTVA mark is dark bronze and disappears on the dark HUD.
-    local backdrop=profile.insigniaBackdrop
-    if backdrop then gr.setColor(backdrop[1],backdrop[2],backdrop[3],255); gr.drawRectangle(x1,y1,x2,y2,true) end
     local scale=math.min((x2-x1)/width,(y2-y1)/height)
     local x,y=(x1+x2-width*scale)/2,(y1+y2-height*scale)/2
     gr.setColor(255,255,255,255); gr.drawImage(texture,x,y,x+width*scale,y+height*scale)
@@ -101,10 +98,13 @@ function RTS:DrawTacticalMap(sw)
         end
     end)
     -- Jump signatures for hulls still building, at their warp-in points.
-    local signatureColour=self:GetFactionColorTable('BLUE')
     for _,signature in ipairs(self:GetBuildSignatures(self:UINow())) do
         local sx,sy,inView=self:WorldToTacticalMapIn(signature.pos,mapRect,mapView,mapHalf)
-        if inView then gr.setColor(signatureColour[1],signatureColour[2],signatureColour[3],255); gr.drawCircle(math.max(4,math.floor(5*markerScale)),sx,sy,false) end
+        if inView then
+            local colour=self:GetFactionColorTable(signature.faction or 'BLUE')
+            gr.setColor(colour[1],colour[2],colour[3],255)
+            gr.drawCircle(math.max(4,math.floor(5*markerScale)),sx,sy,false)
+        end
     end
     local cx,cy=self:WorldToTacticalMap(self.CameraFocus); gr.setColor(255,230,90,255); gr.drawCircle(math.max(6,math.floor(6*m.scale)),cx,cy,false)
     self:DrawOrderPing()

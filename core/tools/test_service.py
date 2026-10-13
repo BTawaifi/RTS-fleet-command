@@ -161,7 +161,8 @@ class ServiceTests(unittest.TestCase):
           assert(builds==1 and contexts==1 and r.FleetServices[unit.signature])
           assert(not r.StrategicThreatSnapshot and not r.AIProfileIndex,'owned service context leaked')
           r.NextFleetServiceThink=0; r:UpdateFleetServices(4)
-          assert(builds==2 and contexts==2 and stationQueries>0,'active service lost fresh danger context')
+          assert(builds==2 and contexts==2 and stationQueries==0,
+            'active service should refresh local threat context without a base-wide attacker scan')
           local borrowed={}; r.StrategicThreatSnapshot=borrowed
           r.NextFleetServiceThink=0; r:UpdateFleetServices(6)
           assert(builds==2 and r.StrategicThreatSnapshot==borrowed,'service rebuilt or cleared borrowed context')
@@ -192,13 +193,79 @@ class ServiceTests(unittest.TestCase):
           r.GetSelectedFriendlyShips=function() return {unit} end
           r:ServiceSelected()
           assert(unit.Orders[1]:getType()==ORDER_WAYPOINTS_ONCE,'service click leaves the attack goal running')
-          assert(unit:getFlag('no-dynamic'),'incoming damage can divert service travel')
+          assert(not unit:getFlag('no-dynamic'),'service suppresses native incoming-missile evasion')
           local before=unit.given
           unit:giveOrder(ORDER_ATTACK,stations.RED)
           work(2)
           assert(unit.Orders[1]:getType()==ORDER_WAYPOINTS_ONCE and unit.given>before,'cached destination hides stolen service goal')
           r:CancelFleetServiceForShip(unit)
           assert(not unit:getFlag('no-dynamic'),'service leaves permanent native AI suppression')
+        ''')
+
+    def test_focused_service_moves_to_the_other_side_of_its_station(self):
+        self.check('''
+          unit.flags={}
+          function unit:setFlag(value,name) self.flags[name]=value end
+          r.GetFleetLocalThreat=function() return nil end
+          r:BeginFleetService(unit,'STATION_SERVICE',0,true)
+          local visit=r.FleetServices[unit.signature]
+          local oldPoint=visit.padPoint
+          local oldX,oldZ=visit.padApproachX,visit.padApproachZ
+          unit.Position=oldPoint
+          local attacker=ship('New pad attacker',class('SF Mara'),
+            stations.BLUE.Position+ba.createVector(0,0,-6000),mn.Teams.hostile)
+          r.IsFleetFocusedByHostiles=function() return true end
+          r:ServiceFleetShip(unit,visit,stations.BLUE,1,4,attacker)
+          assert(visit.padApproachX*oldX+visit.padApproachZ*oldZ<-.9,
+            'a service visitor under attack kept its exposed approach side')
+          assert(visit.destination and visit.destination:getDistance(oldPoint)>1000,
+            'service did not route the visitor to the safer side of the station')
+          assert(not unit:getFlag('no-dynamic'),'repositioning disabled native evasive AI')
+        ''')
+
+    def test_focused_service_uses_the_attacker_bearing_when_it_changes_sideways(self):
+        self.check('''
+          r.GetFleetLocalThreat=function() return nil end
+          assert(r:BeginFleetService(unit,'STATION_SERVICE',0,true))
+          local visit=r.FleetServices[unit.signature]; local oldPoint=visit.padPoint
+          unit.Position=oldPoint
+          local attacker=ship('Lateral pad attacker',class('SF Mara'),
+            stations.BLUE.Position+ba.createVector(6000,0,0),mn.Teams.hostile)
+          r.IsFleetFocusedByHostiles=function() return true end
+          r:ServiceFleetShip(unit,visit,stations.BLUE,1,4,attacker)
+          assert(visit.padApproachX>.99 and math.abs(visit.padApproachZ)<.01,
+            'service kept the old ship bearing rather than moving opposite the attacker')
+          assert(visit.destination and visit.destination.x<stations.BLUE.Position.x,
+            'service did not book a pad on the far side of the lateral attacker')
+        ''')
+
+    def test_under_fire_service_does_not_brake_native_evasive_velocity(self):
+        self.check('''
+          r.GetFleetLocalThreat=function() return nil end
+          assert(r:BeginFleetService(unit,'STATION_SERVICE',0,true))
+          local visit=r.FleetServices[unit.signature]
+          unit.Position=visit.padPoint; visit.arrived=true; visit.phase='UNDER_FIRE'
+          unit.Physics.Velocity=ba.createVector(100,0,0)
+          unit:clearOrders(); unit:giveOrder(ORDER_STAY_STILL)
+          local attacker=ship('Persistent pad attacker',class('SF Mara'),
+            stations.BLUE.Position+ba.createVector(0,0,6000),mn.Teams.hostile)
+          r.IsFleetFocusedByHostiles=function() return true end
+          r:ServiceFleetShip(unit,visit,stations.BLUE,1,4,attacker)
+          assert(unit.Physics.Velocity.x==100,'pad settling cancelled native evasive motion under fire')
+        ''')
+
+    def test_remote_recent_damage_preserves_evasion_without_a_nearby_threat(self):
+        self.check('''
+          r.GetFleetLocalThreat=function() return nil end
+          assert(r:BeginFleetService(unit,'STATION_SERVICE',0,true))
+          local visit=r.FleetServices[unit.signature]
+          unit.Position=visit.padPoint; visit.arrived=true; visit.phase='UNDER_FIRE'
+          unit.Physics.Velocity=ba.createVector(100,0,0)
+          unit:clearOrders(); unit:giveOrder(ORDER_STAY_STILL)
+          r.AITargetedBy={}; r.AIStats={hits={[unit.signature]={hostileTime=1}}}
+          r:ServiceFleetShip(unit,visit,stations.BLUE,2,4,nil)
+          assert(unit.Physics.Velocity.x==100,'a remote hit was ignored because the nearby threat scan was empty')
+          assert(visit.phase=='UNDER_FIRE','recent remote fire allowed servicing to continue')
         ''')
 
     def test_critical_damage_does_not_override_a_live_player_command(self):
@@ -539,9 +606,13 @@ class ServiceTests(unittest.TestCase):
           assert(r.FleetServices[unit.signature] and r.FleetServices[unit.signature].phase=='REPAIR_REARM',
             'station attack alone cancelled safe, focused-free service')
           r.AITargetedBy={[unit.signature]={RED={[threat.signature]=threat}}}
+          local oldPoint=r.FleetServices[unit.signature].padPoint
+          r.GetFleetLocalThreat=function(self,s) return s==unit and threat or nil end
           r.NextFleetServiceThink=0; r:UpdateFleetServices(116)
-          assert(not r.FleetServices[unit.signature] and r.FleetServiceCooldown[unit.signature]>116,
-            'directly focused docked visitor was not returned to combat')''')
+          local service=r.FleetServices[unit.signature]
+          assert(service and service.destination and service.destination:getDistance(oldPoint)>1000
+            and service.phase=='RETURNING',
+            'a focused docked visitor was cancelled instead of moving to the safer pad')''')
 
     def test_auto_and_manual_service_continue_when_base_attack_does_not_focus_visitor(self):
         self.check('''unit.HitpointsLeft=400; unit.SecondaryBanks[1].AmmoLeft=0

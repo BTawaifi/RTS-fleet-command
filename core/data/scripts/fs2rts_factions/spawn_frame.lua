@@ -2,7 +2,7 @@
 local _shared = require "fs2rts_factions.common"
 local RTS, copyVec, shipValid, vec = _shared.RTS, _shared.copyVec, _shared.shipValid, _shared.vec
 
-function RTS:GetSpawnFrame(anchor, class, slot, total, batch)
+function RTS:GetSpawnFrame(anchor, class, slot, total, batch, preferred)
     slot = slot or 1; total = total or 1
     local cap = self.Config.CapitalSpawn or {}
     local facing=vec(0,0,0)
@@ -146,6 +146,12 @@ function RTS:GetSpawnFrame(anchor, class, slot, total, batch)
         return vec(p.x+offset.x, p.y+offset.y, p.z+offset.z)
     end
     local base = place(0)
+    -- Keep a visible jump signature as the arrival slot, unless the live
+    -- arena or a new blocker makes it unsafe.
+    if preferred and self:IsFiniteVector(preferred) then
+        local away=preferred:getDistance(anchor.Position)
+        if usable(preferred) and away>=anchorRadius+shipRadius+250 and (not capital or away<=reach) then base=copyVec(preferred) end
+    end
     local pos, ok = base, usable(base)
     if not ok then
         for attempt=1,16 do

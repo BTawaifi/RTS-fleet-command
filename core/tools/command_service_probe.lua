@@ -10,6 +10,7 @@ local moverWeaponHits=0
 local damageBase,damageFighter,damageBomber
 local fighterBaseHits,bomberBaseHits,fighterBaseHull,fighterBaseDelta,bomberBaseHull=0,0,0,0,0
 local expectedSubsystem,subsystemHpBefore,subsystemBaseHpBefore,subsystemHitsBefore
+local baseVolley={}
 local visitors={}; local initialCP
 local isolated,rally,rallyDistance
 local stationBeams={}; local beamLengths={}
@@ -20,6 +21,16 @@ local scenarioIncome,capitalRequest,capitalClass,capitalCost
 local capitalStartedAt,capitalCapOverride,capitalCapWaited,capitalSavingSeen,capitalQueueSeen
 local capitalBeforeSignatures,capitalBuiltSignature,capitalVerifyAt
 local capitalRequestUIStartedAt,capitalProgressLogged
+local spawnAIProduction=R.SpawnAIProduction
+R.SpawnAIProduction=function(self,kind,queued,spawned)
+    local expected=kind=='BLUE' and capitalClass and queued.entry.class==capitalClass and queued.signaturePositions
+    local first,result=spawnAIProduction(self,kind,queued,spawned)
+    if kind=='BLUE' and capitalClass and queued.entry.class==capitalClass then
+        check(expected and #expected==1 and first and first:isValid(),'native requested capital has a visible jump signature')
+        check(first.Position:getDistance(expected[1].pos)<.1,'native capital arrives at the visible jump signature')
+    end
+    return first,result
+end
 local function restoreCapitalProbeOverrides()
     R.GetFleetCap=originalGetFleetCap
     capitalCapOverride=nil
@@ -73,7 +84,12 @@ local function fireAtBase(parent)
         local side=(i%8-3.5)*6; local row=(math.floor((i-1)/8)-1.5)*6
         local projectile=mn.createWeapon(gun,orientation,hit-direction*80+ba.createVector(0,side,row),parent)
         assert(projectile:isValid(),'native base-impact projectile creation failed')
+        baseVolley[#baseVolley+1]=projectile
     end
+end
+local function clearBaseVolley()
+    for _,projectile in ipairs(baseVolley) do if projectile:isValid() then projectile:vanish() end end
+    baseVolley={}
 end
 local function findStationTurret(station,beamOnly)
     for i=1,#station do
@@ -99,9 +115,36 @@ local function probe(self)
         check(damageGuards==7,'upstream submodel-aware guards register for all command stations')
         for _,s in ipairs(self:GetShipList()) do
             if s.Name~=self.Config.ObserverShip and not self:IsCommandStation(s) then s:vanish()
-            else for i=1,#s do if s[i]:isTurret() then s[i].TurretLocked=true end end end
+            else
+                for i=1,#s do
+                    if s[i]:isTurret() then
+                        if not s[i].TurretLocked then log('UNLOCKED_START_TURRET '..s.Name..' '..tostring(s[i].Name)) end
+                        check(s[i].TurretLocked,'command stations start with every turret locked: '..s.Name..'/'..tostring(s[i].Name))
+                        s[i].TurretLocked=true
+                    end
+                end
+            end
         end
         self:InvalidateShipList()
+        for _,kind in ipairs({'BLUE','RED','GOLD'}) do
+            local station=self:GetFactionCommandShip(kind)
+            for level=1,3 do
+                self:ApplyStationDefenseProgression(kind,level)
+                local beamCount,openBeams,gunCount,openGuns=0,0,0,0
+                for i=1,#station do
+                    local turret=station[i]
+                    if turret:isTurret() then
+                        local beam=false
+                        for b=1,#turret.PrimaryBanks do beam=beam or turret.PrimaryBanks[b].WeaponClass:isBeam() end
+                        if beam then beamCount=beamCount+1; if not turret.TurretLocked then openBeams=openBeams+1 end
+                        else gunCount=gunCount+1; if not turret.TurretLocked then openGuns=openGuns+1 end end
+                    end
+                end
+                check(openBeams==(level==3 and beamCount or 0),'native '..kind..' base beams unlock only with Defense III')
+                check(openGuns==(level==1 and math.ceil(gunCount/2) or gunCount),'native '..kind..' base guns unlock progressively')
+            end
+            self:ApplyStationDefenseProgression(kind,0)
+        end
         for _,name in ipairs({'BVas','AAAf','SAAA','LRed','LTerSlash'}) do
             local station=tb.WeaponClasses['RTS Station '..name]
             check(station:isValid() and self:GetWeaponFiringRange(station)==6000,'station '..name..' has 6 km native reach')
@@ -148,25 +191,32 @@ local function probe(self)
         check(fighterBaseHits>0,'fighter projectiles reached the real command-station collision hook')
         check(math.abs(damageBase.HitpointsLeft-fighterBaseHull)<.01,'fighter projectiles cannot reduce command-station hull')
         fighterBaseDelta=fighterBaseHull-damageBase.HitpointsLeft
-        bomberBaseHull=damageBase.HitpointsLeft; fireAtBase(damageBomber); at=now; stage=21
+        clearBaseVolley(); bomberBaseHull=damageBase.HitpointsLeft; fireAtBase(damageBomber); at=now; stage=21
     elseif stage==21 and now-at>=2 then
         check(bomberBaseHits>0,'bomber projectiles reached the real command-station collision hook')
         check(damageBase.HitpointsLeft<bomberBaseHull-.01,'bomber retains native command-station damage')
+        clearBaseVolley()
+        damageBomber:setFlag(true,'primaries-locked','secondaries-locked')
         log(string.format('BASE_DAMAGE fighterHits=%d fighterHullDelta=%.3f bomberHits=%d bomberHullDelta=%.3f',
             fighterBaseHits,fighterBaseDelta,bomberBaseHits,bomberBaseHull-damageBase.HitpointsLeft))
         expectedSubsystem=findStationTurret(damageBase,false)
         check(expectedSubsystem~=nil,'command station has a non-beam turret subsystem for fighter suppression fire')
         damageFighter.Target=damageBase; damageFighter.TargetSubsystem=expectedSubsystem
-        subsystemHitsBefore=fighterBaseHits; subsystemHpBefore=expectedSubsystem.HitpointsLeft; subsystemBaseHpBefore=damageBase.HitpointsLeft
-        fireAtBase(damageFighter); at=now; stage=22
+        at=now; stage=22
     elseif stage==22 and now-at>=2 then
+        subsystemHitsBefore=fighterBaseHits; subsystemHpBefore=expectedSubsystem.HitpointsLeft; subsystemBaseHpBefore=damageBase.HitpointsLeft
+        fireAtBase(damageFighter); at=now; stage=24
+    elseif stage==24 and now-at>=2 then
         check(fighterBaseHits>subsystemHitsBefore,'fighter fire reaches the targeted station turret')
         check(math.abs(expectedSubsystem.HitpointsLeft-subsystemHpBefore)<.01,
             'fighter fire cannot damage the station turret subsystem')
-        check(math.abs(damageBase.HitpointsLeft-subsystemBaseHpBefore)<.01,
-            'fighter turret fire does not bypass base-hull immunity')
+        local hullDamage=subsystemBaseHpBefore-damageBase.HitpointsLeft
+        local chipLimit=tb.WeaponClasses['RTSF Subach HL-7'].Damage*#baseVolley*.05
+        check(hullDamage>0 and hullDamage<=chipLimit+.01,
+            'fighter turret fire damages only within the command-hull light-weapon chip limit')
         log(string.format('TURRET_BLOCKED subsystem=%s hits=%d hpDelta=%.3f hullDelta=%.3f',expectedSubsystem.Name,
-            fighterBaseHits-subsystemHitsBefore,subsystemHpBefore-expectedSubsystem.HitpointsLeft,subsystemBaseHpBefore-damageBase.HitpointsLeft))
+            fighterBaseHits-subsystemHitsBefore,subsystemHpBefore-expectedSubsystem.HitpointsLeft,hullDamage))
+        clearBaseVolley()
         expectedSubsystem=findStationTurret(damageBase,true)
         check(expectedSubsystem~=nil,'command station has a beam-weapon turret subsystem')
         damageFighter.TargetSubsystem=expectedSubsystem
@@ -176,10 +226,13 @@ local function probe(self)
         check(fighterBaseHits>subsystemHitsBefore,'fighter fire reaches the targeted station beam turret')
         check(math.abs(expectedSubsystem.HitpointsLeft-subsystemHpBefore)<.01,
             'fighter fire cannot damage the station beam weapon')
-        check(math.abs(damageBase.HitpointsLeft-subsystemBaseHpBefore)<.01,
-            'fighter beam-weapon suppression fire does not bypass base-hull immunity')
+        local hullDamage=subsystemBaseHpBefore-damageBase.HitpointsLeft
+        local chipLimit=tb.WeaponClasses['RTSF Subach HL-7'].Damage*#baseVolley*.05
+        check(hullDamage>0 and hullDamage<=chipLimit+.01,
+            'fighter beam-turret fire damages only within the command-hull light-weapon chip limit')
         log(string.format('BEAM_TURRET_BLOCKED subsystem=%s hits=%d hpDelta=%.3f hullDelta=%.3f',expectedSubsystem.Name,
-            fighterBaseHits-subsystemHitsBefore,subsystemHpBefore-expectedSubsystem.HitpointsLeft,subsystemBaseHpBefore-damageBase.HitpointsLeft))
+            fighterBaseHits-subsystemHitsBefore,subsystemHpBefore-expectedSubsystem.HitpointsLeft,hullDamage))
+        clearBaseVolley()
         damageFighter:vanish(); damageBomber:vanish(); self:InvalidateShipList()
         mover=create('Command mover','GTF Myrmidon',self:GetCarrier().Position+ba.createVector(0,0,-6500),self.Config.FriendlyTeam)
         mover.HitpointsMax=1000000; mover.HitpointsLeft=1000000; mover.Shields.CombinedLeft=0
@@ -218,6 +271,7 @@ local function probe(self)
             self:ServiceSelected()
             for _,s in ipairs(visitors) do
                 check(s.Orders[1]:getType()==ORDER_WAYPOINTS_ONCE,'service immediately replaces combat')
+                check(not s:getFlag('no-dynamic'),'service keeps native evasive AI available')
                 local rec=self.FleetServices[s:getSignature()]
                 s.Position=self:GetFleetServicePoint(s,self:GetCarrier(),nil,rec.padApproachX,rec.padApproachZ)
             end
@@ -231,6 +285,23 @@ local function probe(self)
             end
             check(self.CommandPoints<initialCP,'parallel repair and rearm spend actual CP')
             local s=visitors[1]; local rec=self.FleetServices[s:getSignature()]
+            local station=self:GetCarrier()
+            local threat=create('Native lateral service threat','SF Mara',s.Position+ba.createVector(2000,0,0),self.Config.HostileTeam)
+            threat:setFlag(true,'immobile','primaries-locked','secondaries-locked'); threat.Target=s
+            self:BuildAIContext(self:BuildStrategicThreatSnapshot())
+            self:ServiceFleetShip(s,rec,station,now,4,threat)
+            local bearing=threat.Position-station.Position
+            local length=math.sqrt(bearing.x*bearing.x+bearing.z*bearing.z)
+            check((rec.padApproachX*bearing.x+rec.padApproachZ*bearing.z)/length>.99,'native service pad moves opposite a lateral attacker')
+            s.Position=rec.padPoint; rec.arrived=true
+            s:clearOrders(); s:giveOrder(ORDER_STAY_STILL,nil,nil,.97)
+            s.Physics.Velocity=ba.createVector(50,0,0)
+            local previousHit=self.AIStats.hits[s:getSignature()]
+            self.AIStats.hits[s:getSignature()]={hostileTime=now}
+            self:ServiceFleetShip(s,rec,station,now,4,threat)
+            check(math.abs(s.Physics.Velocity.x-50)<.1,'native service under fire preserves evasive velocity')
+            self.AIStats.hits[s:getSignature()]=previousHit
+            threat:vanish(); self:InvalidateShipList(); self:BuildAIContext(self:BuildStrategicThreatSnapshot())
             s.Position=self:GetCarrier().Position+ba.createVector(0,0,-6500); rec.arrived=false
             s:clearOrders(); s:giveOrder(ORDER_ATTACK,self:GetFactionCommandShip('RED'),nil,.99)
             self:MoveFleetServiceShip(s,rec,rec.destination,now,self:GetCarrier():getSignature())
@@ -294,6 +365,11 @@ local function probe(self)
                 local name=turret:isTurret() and #turret.PrimaryBanks>0 and turret.PrimaryBanks[1].WeaponClass.Name
                 if name and turret.PrimaryBanks[1].WeaponClass:isBeam() and not sampled[name] then
                     sampled[name]=true
+                    -- This probe measures native beam range independently of
+                    -- the Defense III/tier-five unlock, so briefly enable only
+                    -- the mount being measured.
+                    local wasLocked=turret.TurretLocked
+                    turret.TurretLocked=false
                     local origin,normal=turret:getNextFiringPosition()
                     local target=create('Remote beam contact '..kind..' '..i,'GTD Hecate',origin+normal*18000,
                         kind=='BLUE' and self.Config.HostileTeam or self.Config.FriendlyTeam)
@@ -301,6 +377,7 @@ local function probe(self)
                     for j=1,#target do if target[j]:isTurret() then target[j].TurretLocked=true end end
                     turret.Target=target; turret.BeamFree=true; turret.NextFireTimestamp=now
                     turret:fireWeapon(1)
+                    turret.TurretLocked=wasLocked
                 end
             end
         end

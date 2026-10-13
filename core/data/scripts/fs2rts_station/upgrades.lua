@@ -1,6 +1,6 @@
 -- Station upgrades and per-faction command-point accounting.
 local _shared = require "fs2rts_station.common"
-local U, RTS, shipValid, shipAlive, cfg = _shared.U, _shared.RTS, _shared.shipValid, _shared.shipAlive, _shared.cfg
+local U, RTS, shipValid, shipAlive, objectValid, cfg = _shared.U, _shared.RTS, _shared.shipValid, _shared.shipAlive, _shared.objectValid, _shared.cfg
 
 -- ---------------------------------------------------------------------------
 -- State
@@ -66,7 +66,7 @@ end
 function RTS:GetSentryCap(kind)
     local s = cfg(self).Sentries; local cap = s.Cap or 6
     local bonus = s.CapBonus or 0
-    if self:GetUpgradeLevel(kind, "defenses") >= 1 then cap = cap + bonus end
+    cap = cap + bonus * self:GetUpgradeLevel(kind,"defenses")
     if self:GetUpgradeLevel(kind, "command") >= 2 then cap = cap + bonus end
     return cap
 end
@@ -119,6 +119,32 @@ end
 -- ---------------------------------------------------------------------------
 -- Upgrades
 -- ---------------------------------------------------------------------------
+function RTS:ApplyStationDefenseProgression(kind,level)
+    local station=self:GetFactionCommandShip(kind)
+    if not shipValid(station) then return end
+    level=math.max(0,math.min(3,tonumber(level) or self:GetUpgradeLevel(kind,"defenses")))
+    local guns,beams={},{}
+    for i=1,#station do
+        local turret=station[i]
+        if objectValid(turret) and turret:isTurret() then
+            local hasBeam=false
+            for _,banks in ipairs({turret.PrimaryBanks or {},turret.SecondaryBanks or {}}) do
+                for bankIndex=1,#banks do
+                    local bank=banks[bankIndex]
+                    local weapon=bank.WeaponClass
+                    if objectValid(weapon) and weapon:isBeam() then hasBeam=true; break end
+                end
+                if hasBeam then break end
+            end
+            local list=hasBeam and beams or guns
+            list[#list+1]=turret
+        end
+    end
+    local activeGuns=level==1 and math.ceil(#guns/2) or level>=2 and #guns or 0
+    for i,turret in ipairs(guns) do turret.TurretLocked=i>activeGuns end
+    for _,turret in ipairs(beams) do turret.TurretLocked=level<3 end
+end
+
 -- Returns the next level's info plus a reason string when it can't be bought.
 function RTS:GetUpgradeOffer(kind, track, now)
     if self.AftermathActive then return nil,'SURVIVORS ONLY' end
@@ -167,11 +193,14 @@ function RTS:ApplyUpgrade(kind, track, level)
         station.HitpointsLeft = math.min(station.HitpointsLeft, station.HitpointsMax)
         self:GetStationState(kind).scarHull=(self:GetStationState(kind).scarHull or 0)*ratio
         self:GetStationState(kind).lastRepairTime = mn.getMissionTime()
-    elseif track == "defenses" and level == 2 then
-        for _, ship in ipairs(self:GetFactionSentries(kind)) do self:ApplySentryHullBonus(ship) end
-    elseif track == "defenses" and level == 3 then
-        self:ApplyDefenseFireRate(station)
-        for _,ship in ipairs(self:GetFactionSentries(kind)) do self:ApplyDefenseFireRate(ship) end
+    elseif track == "defenses" then
+        self:ApplyStationDefenseProgression(kind,level)
+        if level == 2 then
+            for _, ship in ipairs(self:GetFactionSentries(kind)) do self:ApplySentryHullBonus(ship) end
+        elseif level == 3 then
+            self:ApplyDefenseFireRate(station)
+            for _,ship in ipairs(self:GetFactionSentries(kind)) do self:ApplyDefenseFireRate(ship) end
+        end
     end
 end
 

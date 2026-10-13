@@ -70,11 +70,10 @@ function RTS:StartPilotMode(ship)
         -- shield/weapon transfers instead of a second copy of passive recharge.
         observer.ShieldRegenRate=0; observer.WeaponRegenRate=0
         observer:EtsSetIndexes(ship.EtsEngineIndex,ship.EtsShieldIndex,ship.EtsWeaponIndex)
-        -- Keep the proxy's own weapons locked: it is Player_obj, so the engine
-        -- would fire its mirrored banks from the trigger as well, doubling every
-        -- shot from inside the possessed hull. UpdatePilotMode fires the real
-        -- craft from the same control counts, which the lock does not touch.
-        observer:setFlag(true,"primaries-locked","secondaries-locked")
+        -- Primaries fire on the hull. Native player secondaries stay on the
+        -- proxy so FSO owns target locks, cooldowns and queued swarm launches.
+        observer:setFlag(true,"primaries-locked")
+        observer:setFlag(self.Paused or withdrawal~=nil,"secondaries-locked")
         self:DisarmObserverTurrets(observer)
         self:MirrorPilotTelemetryToObserver(ship, observer)
     end
@@ -140,6 +139,9 @@ function RTS:ExitPilotMode(message, lost)
     self.PilotDeathRestoreTimeScale=nil; self.PilotDeathRestoreLastNonZeroTimeScale=nil
     local oldSignature=self.PossessedSignature
     local ship=self:GetPossessedShip()
+    local observer=self:GetObserver()
+    -- Native fire can run after the last Lua mirror and before this exit.
+    if shipValid(ship) and shipValid(observer) then ship.SecondaryBanks=observer.SecondaryBanks end
     if self.RecordPilotTime then self:RecordPilotTime(ship,mn.getMissionTime(),false) end
     self:RestorePilotTurretGroups()
     local lastPosition=self.PendingPilotEjectPosition
@@ -156,7 +158,6 @@ function RTS:ExitPilotMode(message, lost)
     self.PilotWeaponEnergyMirrorSnapshot=nil
     mn.runSEXP("(player-use-ai)")
     self:SetRTSInputMode(); self:RestoreObserverClass(); self:RestoreObserverHome(); self:DisarmObserverWeapons()
-    local observer=self:GetObserver()
     if shipValid(observer) and self.PilotProxyRecharge then
         observer.ShieldRegenRate=self.PilotProxyRecharge.shield; observer.WeaponRegenRate=self.PilotProxyRecharge.weapon
     end

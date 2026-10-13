@@ -36,8 +36,12 @@ CONFIG = '''
           package.preload.fs2rts_state=function() return R end
           require 'fs2rts_camera'; mn={getMissionTime=function() return 100 end}
           gr={setCamera=function() end}
+          local function position(x,z) return {x=x,y=0,z=z,getDistance=function(self,other)
+            local dx,dy,dz=self.x-other.x,self.y-other.y,self.z-other.z
+            return math.sqrt(dx*dx+dy*dy+dz*dz)
+          end} end
           local function ship(id,name,capital,team)
-            return {Name=name,signature=id,capital=capital,Team=team,HitpointsMax=1000,HitpointsLeft=1000,
+            return {Name=name,signature=id,capital=capital,Team=team,Position=position(id*100,0),HitpointsMax=1000,HitpointsLeft=1000,
               Class={Name=name},isValid=function(self) return self.valid~=false end,
               getSignature=function(self) return self.signature end}
           end
@@ -47,6 +51,8 @@ CONFIG = '''
           hostile=ship(3,'Attacker',false,'RED')
           R.GetShipList=function() return {idle,fighter,hostile} end
           R.IsStaticDefense=function() return false end
+          R.IsCommandStation=function(self,s) return s.station==true end
+          R.GetShipWeaponRange=function() return 1000 end
           R.IsCapitalTarget=function(self,s) return s.capital==true end
           R.GetFactionKey=function(self,s) return s.Team end
           R.AreEnemies=function(self,a,b) return a.Team~=b.Team end
@@ -63,7 +69,7 @@ FIXTURES = '''
           end
           R.Camera=nil
           R.Followed={}
-          R.UpdateFollowCamera=function(self,s) self.Followed[#self.Followed+1]=s end
+          R.UpdateFollowCamera=function(self,s,target) self.Followed[#self.Followed+1]={ship=s,target=target} end
           R.SetStatus=function() end
           R.PostBattleActive=false
 '''
@@ -77,8 +83,23 @@ class CameraDirectorTests(unittest.TestCase):
 
     def test_recent_combat_contact_beats_idle_capital(self):
         self.lua.execute('''
-          assert(R:PickBattleCamTarget()==fighter,
+          local subject,target=R:PickBattleCamTarget()
+          assert(subject==fighter and target==hostile,
             'battle director picked idle capital over a live hostile contact')
+        ''')
+
+
+    def test_distant_assignments_and_stations_do_not_displace_live_combat(self):
+        self.lua.execute('''
+          local marching=mkShip(4,'Marching capital',true,'BLUE')
+          local base=mkShip(5,'Remote base',true,'RED'); base.station=true
+          base.Position.x=50000; marching.Target=base; base.Target=marching
+          R.AITargetedBy[4]={RED={[5]=base}}
+          R.BattleCamSignature=fighter.signature
+          R.GetShipList=function() return {marching,base,fighter,hostile} end
+          local subject,target=R:PickBattleCamTarget()
+          assert(subject==fighter and target==hostile,
+            'a remote attack assignment or station displaced the current firefight')
         ''')
 
 
@@ -107,12 +128,13 @@ class BattleCamUpdateTests(unittest.TestCase):
           R.UINowValue=1000
           R:UpdateBattleCam()
           assert(R.BattleCamSignature==2,'the director did not lock a live contact: '..tostring(R.BattleCamSignature))
+          assert(R.BattleCamTargetSignature==3,'the shot did not retain the hostile firing on its subject')
           assert(R.BattleCamShotStart==1000)
           assert(math.abs(R.BattleCamShotUntil-1003)<0.001,
             'Config.BattleCam.ShotSeconds was ignored: shot ran to '..tostring(R.BattleCamShotUntil))
           R.UINowValue=1000.5
           R:UpdateBattleCam()
-          assert(#R.Followed==2 and R.Followed[2]==fighter,
+          assert(#R.Followed==2 and R.Followed[2].ship==fighter and R.Followed[2].target==hostile,
             'the shot was re-picked before its configured window expired')
           assert(math.abs(R.FollowYawOffset-(R.BattleCamYawStart+0.5*0.5))<0.001,
             'Config.BattleCam.OrbitRadiansPerSecond was ignored: '..tostring(R.FollowYawOffset))
@@ -171,14 +193,7 @@ class BattleCamUpdateTests(unittest.TestCase):
           assert(R:PickBattleCamTarget()==healthy,
             'the wounded-ship bonus never lapsed above 75% hull')""")
 
-    def test_a_zero_max_hull_ship_is_still_ranked_rather_than_dropped(self):
-        # fs2rts_camera.lua:342 guards the division with `or 1`, because
-        # HitpointsMax==0 makes the ratio NaN. Note what that guard is and is
-        # not worth: the only two uses of the ratio are `hull<0.97` and
-        # `hull<.75`, and every NaN comparison is false exactly like 1's, so
-        # removing the `or 1` changes nothing this function returns. What IS
-        # load-bearing is that a zero-max hull never removes the ship from the
-        # ranking or produces a nil pick, and that is what is asserted here.
+    def test_dead_hulls_are_never_selected_as_cinematic_subjects(self):
         self.check("""local derelict=mkShip(4,'Derelict',false,'RED')
           derelict.HitpointsMax=0; derelict.HitpointsLeft=0
           local live=mkShip(5,'Live contact',false,'BLUE')
@@ -187,18 +202,17 @@ class BattleCamUpdateTests(unittest.TestCase):
           R.GetShipList=function() return list end
           local picked=R:PickBattleCamTarget()
           assert(picked==live,'a live contact lost to a zero-hull derelict: '..tostring(picked and picked.Name))
-          -- With the derelict the only contact it is still selectable.
+          -- Even a dead hull with a live attacker must not be selected.
           R.AITargetedBy[4]={BLUE={[3]=hostile}}
           list={derelict}
-          assert(R:PickBattleCamTarget()==derelict,
-            'a zero-hull hull with a live contact on it was never selectable')
-          -- A zero-max CAPITAL must not be dropped either.
+          assert(R:PickBattleCamTarget()==nil,
+            'a dead hull was selected as a cinematic subject')
           local ghost=mkShip(8,'Zero hull capital',true,'RED')
           ghost.HitpointsMax=0; ghost.HitpointsLeft=0
           R.AITargetedBy[8]={BLUE={[5]=live}}
           list={ghost}
-          assert(R:PickBattleCamTarget()==ghost,
-            'a zero-max-hull capital was dropped from the ranking entirely')""")
+          assert(R:PickBattleCamTarget()==nil,
+            'a dead capital was selected as a cinematic subject')""")
 
 
 class BattleCamConfigShapeTests(unittest.TestCase):

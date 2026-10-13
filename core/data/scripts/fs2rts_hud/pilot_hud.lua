@@ -176,7 +176,7 @@ function RTS:DrawPilotHUD(sw, sh)
         if self:UINow()<(self.PilotCommWarningUntil or 0) then add(self.PilotCommWarningText or 'OTHER RECIPIENTS BLOCKED',yellow) end
         local groups=self.PilotTurretGroups
         if groups and #groups>0 then
-            add('BATTERY',cyan,true)
+            add('TURRET BATTERY',cyan,true)
             local index=self.PilotTurretGroupIndex
             add(index and ('GROUP '..index..'/'..#groups..': '..groups[index].label) or 'GROUP: ALL ELIGIBLE TURRETS',white)
             local inventory=self:GetPilotWeaponInventory()

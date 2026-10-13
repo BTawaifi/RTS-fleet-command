@@ -424,7 +424,7 @@ GUARDS: list[Guard] = [
         file="fs2rts_service.lua",
         mutations=[
             Replacement(
-                old=("        if not s.manual and now-s.underFireSince>="
+                old=("        if not s.manual and serviceBlocked and now-s.underFireSince>="
                      "(c.MaxUnderFireSeconds or 240) then\n"),
                 new="        if false then\n",
                 what="MaxUnderFireSeconds release branch"),
@@ -480,10 +480,10 @@ GUARDS: list[Guard] = [
         mutations=[
             Replacement(
                 old=("                local ok,success,returned=pcall(function()\n"
-                     "                    local s,sp=self:SpawnFriendly(current.option,spawned)\n"
+                     "                    local s,sp=self:SpawnFriendly(current.option,spawned,current)\n"
                      "                    return s,sp\n"
                      "                end)\n"),
-                new=("                local ok,success,returned=true,self:SpawnFriendly(current.option,spawned)\n"),
+                new=("                local ok,success,returned=true,self:SpawnFriendly(current.option,spawned,current)\n"),
                 what="SpawnFriendly pcall",
             ),
         ],

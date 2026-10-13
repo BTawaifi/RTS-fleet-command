@@ -19,7 +19,7 @@ imagegen tool on 2026-10-06. It is a triangular arrangement of three red dots,
 inspired by markings visible on some Shivan hulls. It is not an official or
 canonical Shivan insignia. Transparent source pixels are preserved.
 
-The original dark bronze GTVA art has a pale backdrop in the HUD for contrast;
+The original dark bronze GTVA art uses the PCX green transparency key;
 the copied PCX itself is unchanged. The required insignia, model and texture
 files are bundled with attribution; no FSPort tables, VP files or runtime
 package dependency are loaded by this mod.

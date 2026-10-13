@@ -23,8 +23,9 @@ class EnvironmentTests(unittest.TestCase):
           }
           ba.createOrientation=function(p,b,h) return {p=p,b=b,h=h} end
           mn.addBackgroundBitmapNew=function(name,orientation,sx,sy,dx,dy)
-            if failBackground then failBackground=false; return {isValid=function() return false end} end
-            local element={name=name,orientation=orientation,isValid=function() return true end}
+            if failBackground or #backgroundCalls+1==failBackgroundAt then failBackground=false; return {isValid=function() return false end} end
+            local element={name=name,orientation=orientation,scaleX=sx,scaleY=sy,divX=dx,divY=dy,
+              isValid=function() return true end}
             backgroundCalls[#backgroundCalls+1]=element
             return element
           end
@@ -64,16 +65,30 @@ class EnvironmentTests(unittest.TestCase):
     def test_nebula_backdrop_replaces_owned_layer_and_rejects_invalid_choice(self):
         self.check('''
           assert(r:SetNebulaBackdrop(1,true) and backgroundCalls[1].name=='neb01')
+          assert(#backgroundCalls==6 and backgroundCalls[1].scaleX==5 and backgroundCalls[1].scaleY==9.5
+            and backgroundCalls[1].divY==4,'backdrop does not cover all six sky directions without horizontal wrapping')
           failBackground=true
           assert(not r:SetNebulaBackdrop(2,true),'failed API result must be rejected')
           assert(#removedBackgrounds==0 and r.EnvironmentBackdropElements[1]==backgroundCalls[1],
             'failed replacement must preserve the currently displayed backdrop')
-          assert(r:SetNebulaBackdrop(19,true) and backgroundCalls[2].name=='dneb01')
-          assert(#removedBackgrounds==1 and removedBackgrounds[1]==backgroundCalls[1])
+          assert(r:SetNebulaBackdrop(19,true) and backgroundCalls[7].name=='dneb01')
+          assert(#removedBackgrounds==6 and removedBackgrounds[1]==backgroundCalls[1])
           local count=#backgroundCalls
           assert(not r:SetNebulaBackdrop(0,true) and #backgroundCalls==count)
           assert(#r.Config.Environment.NebulaBackdrops==36)
           assert(#r.Config.Music.Tracks==21)
+        ''')
+
+    def test_partial_backdrop_failure_removes_new_faces_and_keeps_old_sky(self):
+        self.check('''
+          assert(r:SetNebulaBackdrop(1,true))
+          local previous=r.EnvironmentBackdropElements
+          failBackgroundAt=9
+          assert(not r:SetNebulaBackdrop(2,true))
+          assert(r.EnvironmentBackdropElements==previous and #previous==6 and r.EnvironmentBackdropIndex==1,
+            'partial replacement discarded the existing sky')
+          assert(#removedBackgrounds==2 and removedBackgrounds[1]==backgroundCalls[7]
+            and removedBackgrounds[2]==backgroundCalls[8],'partial replacement leaked newly created faces')
         ''')
 
     def test_stop_releases_owned_music_and_backdrop_handles(self):

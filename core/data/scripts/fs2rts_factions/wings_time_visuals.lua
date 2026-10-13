@@ -73,6 +73,8 @@ function RTS:SetPaused(paused)
     if self.Paused == paused then return end
     self.Paused = paused
     if paused then
+        local observer=self.PossessedSignature and self:GetObserver()
+        if shipValid(observer) then observer:setFlag(true,'secondaries-locked') end
         self.PausedTimeScale = self.TimeScale
         self:SetTimeScale(0, true)
     else

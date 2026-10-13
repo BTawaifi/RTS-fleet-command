@@ -55,14 +55,29 @@ function RTS:SetNebulaBackdrop(choice, silent)
     if type(index) ~= "number" or index ~= math.floor(index) or not names[index] then return false end
     if mn == nil or type(mn.addBackgroundBitmapNew) ~= "function" then return false end
 
-    local orientation = ba and ba.createOrientation
-        and ba.createOrientation(math.random() * math.pi, 0, math.random() * math.pi * 2) or nil
-    local ok, element = pcall(function()
-        return mn.addBackgroundBitmapNew(names[index], orientation, 1, 1, 1, 1)
-    end)
-    if not ok or not validElement(element) then
-        if not silent then self:SetStatus("Could not load nebula backdrop: " .. names[index], 2) end
-        return false
+    local heading=math.random()*math.pi*2
+    local faces={{0,0},{0,math.pi*.5},{0,math.pi},{0,math.pi*1.5},{math.pi*.5,0},{-math.pi*.5,0}}
+    local created={}
+    for _,face in ipairs(faces) do
+        local orientation=ba.createOrientation(face[1],0,heading+face[2])
+        local ok,element=pcall(function()
+            -- FSO expands horizontal scale by 1.8833 and uses one horizontal
+            -- quad. Scale 18 wraps it to 339 degrees; six 94x95-degree faces
+            -- cover the sky without collapsing the texture across that seam.
+            return mn.addBackgroundBitmapNew(names[index],orientation,5,9.5,1,4)
+        end)
+        if not ok or not validElement(element) then
+            for _,fresh in ipairs(created) do
+                local removed,result=pcall(function() return mn.removeBackgroundElement(fresh) end)
+                if not removed or result~=true then
+                    self.EnvironmentBackdropElements=self.EnvironmentBackdropElements or {}
+                    self.EnvironmentBackdropElements[#self.EnvironmentBackdropElements+1]=fresh
+                end
+            end
+            if not silent then self:SetStatus("Could not load nebula backdrop: " .. names[index], 2) end
+            return false
+        end
+        created[#created+1]=element
     end
 
     local kept = {}
@@ -72,7 +87,7 @@ function RTS:SetNebulaBackdrop(choice, silent)
             if not removed or result ~= true then kept[#kept+1] = old end
         end
     end
-    kept[#kept+1] = element
+    for _,element in ipairs(created) do kept[#kept+1]=element end
     self.EnvironmentBackdropElements = kept
     self.EnvironmentBackdropIndex = index
     if not silent then self:SetStatus("NEBULA BACKDROP: " .. string.upper(names[index]), 2) end

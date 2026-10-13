@@ -156,6 +156,9 @@ function RTS:SetPilotWeaponCycleHooks(enabled)
             binding:registerHook(function()
                 if not self.Enabled or not self.PossessedSignature then return false end
                 if not self.PilotTurretGroups or #self.PilotTurretGroups==0 then return false end
+                local ship=self:GetPossessedShip()
+                local banks=shipValid(ship) and (action=='CYCLE_SECONDARY' and ship.SecondaryBanks or ship.PrimaryBanks)
+                if banks and #banks>0 then return false end
                 if not self.Paused and not self.PendingPilotEject then self:CyclePilotTurretGroup(direction) end
                 return true
             end,false,true)

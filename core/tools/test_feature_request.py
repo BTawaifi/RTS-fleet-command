@@ -1400,6 +1400,55 @@ class HudClaimTests(unittest.TestCase):
             'the no-damage inner radius is not shown, so the friendly-fire warning has no scale: '..joinAll(texts))
           assert(anyContains(texts,'15'),'the range is not read from config: '..joinAll(texts))""")
 
+    def test_station_tooltip_text_stays_inside_its_box(self):
+        self.check('''r:ResetState()
+          io.getMouseX=function() return 5 end; io.getMouseY=function() return 5 end
+          local realgr=gr
+          for _,size in ipairs({{1920,1080},{800,600}}) do
+            for _,key in ipairs({'station','track_defenses','track_command','track_logistics','ability','sentry_1','sell'}) do
+              r.StationButtonRects={[key]={x1=0,y1=0,x2=10,y2=10}}
+              local box; local rows={}
+              gr=setmetatable({getScreenWidth=function() return size[1] end,
+                getScreenHeight=function() return size[2] end,
+                getStringWidth=function(text) return #tostring(text)*8 end,
+                drawRectangle=function(x1,y1,x2,y2,filled) if filled then box={x1,y1,x2,y2} end end,
+                drawString=function(text,x,y) rows[#rows+1]={text,x,y} end}, {__index=realgr})
+              r.DrawRotatingModel=function() end
+              r:DrawStationTooltip({x1=size[1]-300})
+              assert(box and #rows>0,'tooltip not exercised: '..key)
+              assert(box[1]>=0 and box[3]<=size[1] and box[2]>=0 and box[4]<=size[2],'box outside screen')
+              for _,row in ipairs(rows) do
+                assert(row[2]>=box[1] and row[2]+#row[1]*8<=box[3],'text overflows width: '..key..' '..row[1])
+                assert(row[3]>=box[2] and row[3]+16<=box[4],'text overflows height: '..key)
+              end
+            end
+          end
+          gr=realgr''')
+
+    def test_gtva_badge_does_not_draw_an_opaque_backdrop(self):
+        self.check('''r:ResetState()
+          r.GetFactionProfile=function() return r.Config.FactionProfiles.GTVA end
+          r.LoadBriefingIcon=function() return {getWidth=function() return 64 end,getHeight=function() return 64 end} end
+          local rectangles,images=0,0
+          gr.drawRectangle=function() rectangles=rectangles+1 end
+          gr.drawImage=function() images=images+1 end
+          assert(r:DrawFactionInsignia('BLUE',0,0,32,32))
+          assert(images==1 and rectangles==0,'badge has an opaque background')''')
+
+    def test_restart_releases_the_live_world_before_native_teardown(self):
+        self.check('''r:ResetState(); r.Enabled=true
+          local events={}
+          r.SetTimeScale=function() end
+          ba.GameEvents={GS_EVENT_START_GAME={}}
+          ba.postGameEvent=function() events[#events+1]='posted'; return true end
+          r.Shutdown=function(self) events[#events+1]='released'; self.Enabled=false end
+          r:RestartMission()
+          assert(events[1]=='posted' and events[2]=='released' and not r.Enabled,
+            'restart leaves live handles for cleanup after native mission teardown')
+          events={}; r.Enabled=true; ba.postGameEvent=function() return false end
+          r:RestartMission()
+          assert(r.Enabled and #events==0,'rejected restart tore down the playable world')''')
+
     def test_the_pilot_panel_background_covers_every_row_it_draws(self):
         """The height was 26+lines*18 while the first row starts at y1+29, so
         the panel background stopped three pixels short of its own last line."""

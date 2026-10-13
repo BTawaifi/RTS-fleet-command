@@ -111,6 +111,8 @@ function RTS:UpdatePilotMode(dt)
         -- Native frame hooks still run at zero time compression. Direct fire
         -- calls mutate the world, so pause must gate them as well as RTS AI.
         ship.PrimaryTriggerDown=false; ship.Physics.AfterburnerActive=false
+        local observer=self:GetObserver()
+        if shipValid(observer) then observer:setFlag(true,"secondaries-locked") end
         return
     end
     gr.setCamera()
@@ -168,9 +170,9 @@ function RTS:UpdatePilotMode(dt)
 
     local buttons = self:ReadPilotButtons()
     if self.PilotTurretGroups and not self.PilotWeaponCycleHooksActive then
-        if self:IsPilotControlPressed(buttons,"CYCLE_NEXT_PRIMARY") then self:CyclePilotTurretGroup(1)
-        elseif self:IsPilotControlPressed(buttons,"CYCLE_PREV_PRIMARY") then self:CyclePilotTurretGroup(-1)
-        elseif self:IsPilotControlPressed(buttons,"CYCLE_SECONDARY") then self:CyclePilotTurretGroup(1) end
+        if #ship.PrimaryBanks==0 and self:IsPilotControlPressed(buttons,"CYCLE_NEXT_PRIMARY") then self:CyclePilotTurretGroup(1)
+        elseif #ship.PrimaryBanks==0 and self:IsPilotControlPressed(buttons,"CYCLE_PREV_PRIMARY") then self:CyclePilotTurretGroup(-1)
+        elseif #ship.SecondaryBanks==0 and self:IsPilotControlPressed(buttons,"CYCLE_SECONDARY") then self:CyclePilotTurretGroup(1) end
     end
     local afterburner = observer.Physics.AfterburnerActive and ship.AfterburnerFuelLeft > 0
     if not afterburner then
@@ -196,6 +198,7 @@ function RTS:UpdatePilotMode(dt)
     )
 
     local withdrawing=self.IsShipWithdrawing and self:IsShipWithdrawing(ship)
+    observer:setFlag(withdrawing==true,"secondaries-locked")
     local primaryHeld=not withdrawing and ((controls.PrimaryCount or 0) > 0 or self:IsPilotControlDown(buttons,"FIRE_PRIMARY"))
     local secondaryHeld=not withdrawing and ((controls.SecondaryCount or 0) > 0 or self:IsPilotControlDown(buttons,"FIRE_SECONDARY"))
     if primaryHeld then
@@ -205,9 +208,11 @@ function RTS:UpdatePilotMode(dt)
         ship.PrimaryTriggerDown = false
     end
 
-    if secondaryHeld then ship:fireSecondary() end
     self:UpdatePilotTurretFire(primaryHeld, secondaryHeld)
 
+    -- SecondaryBanks copies ammo AND fire timestamps; preserve proxy launches
+    -- (including queued swarm shots) before the HUD mirror copies them back.
+    ship.SecondaryBanks=observer.SecondaryBanks
     self:MirrorPilotTelemetryToObserver(ship, observer)
     self.PilotButtons = buttons
 end

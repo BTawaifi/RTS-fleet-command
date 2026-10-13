@@ -98,6 +98,7 @@ class PilotFireTests(unittest.TestCase):
           function observer:isValid() return self.valid end
           function observer:getBreedName() return 'Ship' end
           function observer:isDying() return false end
+          function observer:setFlag(value,flag) self.flags=self.flags or {}; self.flags[flag]=value end
           R.PossessedSignature=10; R.PendingPilotEject=false; R.PilotButtons={0,0,0,0}
           R.ControlInfo={Forward=0,ForwardCruise=0,Heading=0,Pitch=0,Bank=0,Vertical=0,Sideways=0,
             PrimaryCount=1,SecondaryCount=0,CountermeasureCount=0,
@@ -122,6 +123,9 @@ class PilotFireTests(unittest.TestCase):
         self.lua.execute('''
           R.Paused=true; R.ship.PrimaryTriggerDown=true; R.ship.Physics.AfterburnerActive=true
           local calls=0
+          local observer=R:GetObserver()
+          observer.setFlag=function() end
+          observer.fireSecondary=function() calls=calls+1 end
           R.ship.doManeuver=function() calls=calls+1 end
           R.ship.firePrimary=function() calls=calls+1 end
           R.ship.fireSecondary=function() calls=calls+1 end
@@ -131,7 +135,7 @@ class PilotFireTests(unittest.TestCase):
           assert(calls==0,'direct control issued simulation commands while paused')
           assert(not R.ship.PrimaryTriggerDown and not R.ship.Physics.AfterburnerActive)
           R.Paused=false; R:UpdatePilotMode(.033)
-          assert(calls>=3,'resuming did not restore direct control')
+          assert(calls>=2,'resuming did not restore primary and countermeasure control')
         ''')
 
     def test_withdrawal_approach_pilot_cannot_fire(self):
@@ -143,6 +147,29 @@ class PilotFireTests(unittest.TestCase):
           R:UpdatePilotMode(.033)
           assert((R.ship.fired or 0)==before and R.ship.PrimaryTriggerDown==false,
             'possessed extraction ship fired primaries while approaching withdrawal')
+          assert(R:GetObserver().flags['secondaries-locked'],'withdrawal left native player missiles armed')
+        ''')
+
+    def test_secondary_input_leaves_launching_to_the_native_player(self):
+        self.lua.execute('''
+          local observer=R:GetObserver()
+          observer.flags={['secondaries-locked']=false}
+          observer.setFlag=function(self,value,flag) self.flags[flag]=value end
+          observer.playerSecondaryFires=0
+          observer.fireSecondary=function(self)
+            self.playerSecondaryFires=self.playerSecondaryFires+1
+          end
+          R.ship.secondaryFires=0
+          R.ship.fireSecondary=function(self) self.secondaryFires=self.secondaryFires+1 end
+          local target={valid=true,signature=99,isValid=function(self) return self.valid end,
+            getSignature=function(self) return self.signature end}
+          function R.ship:getSignature() return 10 end
+          observer.Target=target; R.ControlInfo.SecondaryCount=1
+          R:UpdatePilotMode(.033)
+          assert(observer.playerSecondaryFires==0 and R.ship.secondaryFires==0,
+            'Lua duplicated the native player secondary trigger')
+          assert(R.ship.Target==target,'the selected missile target was not copied to the flown hull')
+          assert(observer.flags['secondaries-locked']==false,'native queued missile launches were locked out')
         ''')
 
     def test_targeting_possessed_hull_clears_previous_combat_target(self):
@@ -153,6 +180,72 @@ class PilotFireTests(unittest.TestCase):
           R.ship.Target={isValid=function() return true end,getSignature=function() return 20 end}
           R:UpdatePilotMode(.033)
           assert(R.ship.Target==nil,'self-targeting preserved a stale combat target')
+        ''')
+
+    def test_proxy_secondary_bank_copies_preserve_ammo_and_cooldown(self):
+        self.lua.execute('''
+          package.loaded['fs2rts_pilot.possession_state']=nil
+          require 'fs2rts_pilot.possession_state'
+          R.GetPossessedShip=function() return R.ship end
+          local observer=R:GetObserver(); local ship=R.ship
+          local function copiedBanks(owner)
+            local banks={{Armed=true,AmmoLeft=3,AmmoMax=3,nextFire=0},DualFire=false}
+            owner.SecondaryBanks=nil
+            setmetatable(owner,{__index=function(self,key)
+              if key=='SecondaryBanks' then return banks end
+            end,__newindex=function(self,key,value)
+              if key=='SecondaryBanks' then
+                local copy={DualFire=value.DualFire}
+                for i,bank in ipairs(value) do copy[i]={}; for k,v in pairs(bank) do copy[i][k]=v end end
+                banks=copy
+              else rawset(self,key,value) end
+            end})
+          end
+          copiedBanks(ship); copiedBanks(observer)
+          ship.Position=ba.createVector(0,0,0); ship.Orientation={copy=function(self) return self end}
+          ship.Physics.Velocity=ba.createVector(0,0,0)
+          ship.WeaponEnergyLeft=100; ship.WeaponEnergyMax=100
+          observer.WeaponEnergyLeft=100; ship.CountermeasuresLeft=0
+          observer.setFlag=function() end
+          local clock,shots,inEngine=0,0,false
+          R.Log=function() assert(false,'Lua attempted an extra secondary launch') end
+          observer.fireSecondary=function(self)
+            assert(inEngine,'Lua duplicated native secondary fire')
+            local bank=self.SecondaryBanks[1]
+            if bank.AmmoLeft>0 and clock>=bank.nextFire then
+              bank.AmmoLeft=bank.AmmoLeft-1; bank.nextFire=clock+1; shots=shots+1
+            end
+          end
+          R.ControlInfo.PrimaryCount=0; R.ControlInfo.SecondaryCount=1
+          for _,time in ipairs({0,.1,.2,1.1,2.2,3.3}) do
+            clock=time; inEngine=true; observer:fireSecondary(); inEngine=false; R:UpdatePilotMode(.033)
+          end
+          assert(shots==3 and ship.SecondaryBanks[1].AmmoLeft==0 and observer.SecondaryBanks[1].AmmoLeft==0,
+            'bank mirroring refilled missiles or reset their native fire cooldown')
+          -- A queued swarm shot may consume proxy ammo after the trigger is released.
+          ship.SecondaryBanks[1].AmmoLeft=1; observer.SecondaryBanks[1].AmmoLeft=0
+          R.ControlInfo.SecondaryCount=0; R:UpdatePilotMode(.033)
+          assert(ship.SecondaryBanks[1].AmmoLeft==0,'released trigger discarded proxy ammunition consumption')
+        ''')
+
+
+    def test_pilot_exit_commits_native_ammo_consumed_since_the_last_update(self):
+        self.lua.execute('''
+          local ship=R.ship; local observer=R:GetObserver()
+          ship.Position=ba.createVector(0,0,0)
+          ship.SecondaryBanks={{AmmoLeft=3}}; observer.SecondaryBanks={{AmmoLeft=2}}
+          R.UserOrders={}; R.PolicyApplied={}
+          for _,name in ipairs({'UpdatePilotDirectives','RestorePilotCommOrders','SetPilotWeaponCycleHooks',
+            'RestorePilotTurretGroups','SetRTSInputMode','RestoreObserverHome','DisarmObserverWeapons',
+            'UpdateCameraTransform','ReturnToDefaultControl','OnPilotCommMenuClosed','Log'}) do R[name]=function() end end
+          R.LeavePilotNativeWing=function() return true end
+          R.RestoreObserverClass=function()
+            assert(ship.SecondaryBanks[1].AmmoLeft==2,'pilot exit lost the last native missile expenditure')
+          end
+          mn.runSEXP=function() end; io.setCursorHidden=function() end; io.flushMouse=function() end
+          R.ControlInfo.clearLuaButtonInfo=function() end
+          R:ExitPilotMode(nil,false)
+          assert(ship.SecondaryBanks[1].AmmoLeft==2 and R.PossessedSignature==nil)
         ''')
 
 
@@ -247,6 +340,7 @@ local observer={valid=true,Target=target,PrimaryBanks=banks(),SecondaryBanks=ban
 function observer:isValid() return self.valid end
 function observer:getBreedName() return 'Ship' end
 function observer:isDying() return false end
+function observer:setFlag(value,flag) self.flags=self.flags or {}; self.flags[flag]=value end
 local ship={valid=true,Name='Blue Capital',Class={Name='GTD Hecate'},team='BLUE',Target=target,
   HitpointsLeft=100,AfterburnerFuelLeft=0,PrimaryBanks=banks(),SecondaryBanks=banks(),
   Physics={VelocityMax={z=100},Velocity={z=0},AfterburnerActive=false}}

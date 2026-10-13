@@ -327,9 +327,14 @@ local function probe(self)
         else startTime=self:UINow(); stage=3 end
     elseif stage==3 and self:UINow()-startTime>.25 then
         check(reportDraws>0,'native report HUD rendered without a Lua error')
+        check(self:ResumePostBattle(),'native restart fixture resumes survivor gameplay')
+        check(self:StartPilotMode(fighter),'native restart fixture possesses a live survivor')
         self.FreeCamActive=true; self.BattleCamActive=true
-        self:RestartMission(); stage=4
+        self:OpenExitMenu()
+        check(self:HandleExitMenuAction('restart'),'native RTS menu accepts restart while piloting')
+        stage=4
     elseif stage==4 and nativeStarts>=2 and self.Enabled and self.SetupActive then
+        if self.RosterModelWarmup and not self.RosterModelWarmup.done then return end
         check(not self.FreeCamActive and not self.BattleCamActive and self.PossessedSignature==nil,
             'native mission restart clears direct-control and camera modes')
         check(#self.BuildQueue==0 and not self.PostBattleActive and self.BattleVictor==nil

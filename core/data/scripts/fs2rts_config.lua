@@ -33,7 +33,7 @@ return {
             doctrine="Great War fleet: resilient strike wings",
             classes={"PVF Anubis","GVF Horus","GVF Seth","GVF Thoth","GVB Osiris","GVB Sekhmet","GVC Aten","GVD Typhon"},
             ability={kind="reinforcement",name="MOBILE RESERVES",class="GVF Thoth",tier=1,count=4,cooldown=180} },
-        GTVA = { label="GTVA", name="Galactic Terran-Vasudan Alliance", species="TERRAN", insignia="rts-faction-gtva", insigniaBackdrop={195,210,216}, rosters={"BlueRoster","GoldRoster"},
+        GTVA = { label="GTVA", name="Galactic Terran-Vasudan Alliance", species="TERRAN", insignia="rts-faction-gtva", rosters={"BlueRoster","GoldRoster"},
             doctrine="Combined fleet: flexible but expensive endgame",
             classes={"GTF Myrmidon","GTF Perseus","GTF Ulysses","GTF Hercules Mark II","GTF Loki","GTF Pegasus","GTF Ares","GTF Erinyes","GVF Tauret","GTB Artemis","GTB Boanerges","GTB Medusa","GTB Ursa","GTB Zeus","GVB Bakha","GTC Fenris","GTC Aeolus","GTC Leviathan","GVC Aten","GVC Mentu","GTCv Deimos","GVCv Sobek","GTD Hecate","GTD Orion","GVD Typhon","GVD Hatshepsut","GTVA Colossus"},
             ability={kind="surge",name="JOINT MOBILIZATION",roles={escort=true,capital=true},cost=750,cooldown=180,radius=6000,speedMultiplier=1.30,seconds=25} },
@@ -602,8 +602,8 @@ return {
     -- Sentry classes are each faction's retail sentry guns.
     Station = {
         Sentries = {
-            Cap = 6,                -- per faction; Defenses L1 and Command L2 each add CapBonus
-            CapBonus = 2,
+            Cap = 0,                -- no sentry defenses until the station is upgraded
+            CapBonus = 2,           -- each Defenses level and Command L2 add two slots
             ControlRadius = 4000,   -- sentries only go this close to the owning station
             RadiusBonus = 2000,     -- Command L2
             MinSpacing = 600,
@@ -650,8 +650,8 @@ armor     = { label = "ARMOR",     costs = { 625, 1250, 2250 }, seconds = { 30, 
         -- Passive station repair is available from the start; Armor 2 doubles
         -- its rate. Scars remain permanent at every level.
 desc = { "+20% station hull", "+40% hull, double quiet repair rate", "+60% hull" } },
-            defenses  = { label = "DEFENSES",  costs = { 750, 1500, 2750 }, seconds = { 30, 60, 90 }, tiers = { 1, 2, 3 },
-                          desc = { "+2 sentry cap", "Sentries +50% hull", "Station and sentry turrets fire 25% faster" } },
+            defenses  = { label = "DEFENSES",  costs = { 750, 1500, 2750 }, seconds = { 30, 60, 90 }, tiers = { 1, 2, 5 },
+                          desc = { "First base guns; +2 sentry slots", "Remaining guns; +2 slots, sentries +50% hull", "+2 slots; base beams, all turrets fire 25% faster" } },
 logistics = { label = "LOGISTICS", costs = { 625, 1400, 4200 }, seconds = { 30, 60, 150 }, tiers = { 1, 2, 3 },
 desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build lane" } },
             command   = { label = "COMMAND",   costs = { 875, 1750, 3250 }, seconds = { 30, 60, 90 }, tiers = { 1, 2, 3 },

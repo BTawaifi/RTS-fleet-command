@@ -887,6 +887,36 @@ class InputTests(unittest.TestCase):
         self.assertGreater(on, 0, "an on-screen jump signature drew no marker")
         self.assertGreater(off, 0, "an off-screen jump signature drew no edge marker")
 
+    def test_build_signatures_match_all_player_and_enemy_spawn_slots(self):
+        self.lua.execute(r"""
+          local camera=r.Camera
+          r:ResetState(); r.Camera=camera; r.SetupActive=false; r.Enabled=true; r.PostBattleActive=false
+          local cls=tb.ShipClasses['GTF Aries'] or class('GTF Aries')
+          r.AutoPlayerMode=false; r.BuildBatchSerial=3
+          r.GetCarrier=function() return stations.BLUE end
+          r.GetFactionCommandShip=function(self,kind) return stations[kind] end
+          r.GetFactionKeys=function() return {'BLUE','RED'} end
+          r.BuildQueue={
+            {id=1,spawnBatch=5,started=true,finishTime=20,option={class=cls.Name,count=2}},
+            {id=2,spawnBatch=4,started=true,finishTime=10,option={class=cls.Name,count=2}},
+          }
+          r.AIStates={RED={serial=7,queue={entry={class=cls.Name},count=2}}}
+          local calls={}
+          r.GetSpawnFrame=function(self,anchor,shipClass,slot,total,batch)
+            calls[#calls+1]={anchor=anchor,slot=slot,total=total,batch=batch}
+            return ba.createVector(slot,batch,0),nil
+          end
+          local markers=r:GetBuildSignatures(10)
+          assert(#markers==6 and #calls==6,'not every queued hull received a marker')
+          assert(markers[1].job==r.BuildQueue[1] and markers[1].slot==1 and markers[1].pos.y==5
+            and markers[2].slot==2 and markers[2].pos.y==5,
+            'player markers did not use each slot and its next actual build batch')
+          assert(markers[3].job==r.BuildQueue[2] and markers[3].pos.y==4,
+            'the later player job did not account for the earlier completion')
+          assert(markers[5].faction=='RED' and markers[5].slot==1 and markers[5].pos.y==8
+            and markers[6].slot==2,'enemy markers did not use its station, serial and all slots')
+        """)
+
     def test_new_unit_card_is_centred_over_the_scene(self):
         """The card hung off the left of the notification band. It is centred over
         the 3D view, at the same height as before."""

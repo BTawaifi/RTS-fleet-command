@@ -382,7 +382,11 @@ function RTS:RestartMission()
     local ok, ev = pcall(function() return ba.GameEvents["GS_EVENT_START_GAME"] end)
     if ok and ev ~= nil then
         local posted, result = pcall(function() return ba.postGameEvent(ev) end)
-        if not posted or result == false then self:SetStatus("Restart failed - use Esc > Restart", 4) end
+        if not posted or result == false then self:SetStatus("Restart failed - use Esc > Restart", 4)
+        else
+            -- State End runs after native mission teardown; release this world's handles while it is still live.
+            self:Shutdown()
+        end
     else self:SetStatus("Restart unavailable - use Esc > Restart", 4) end
 end
 

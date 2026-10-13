@@ -156,6 +156,9 @@ function RTS:BeginFleetService(ship,reason,now,manual)
     end
     local station=self:GetFactionCommandShip(self:GetFactionKey(ship))
     if not alive(station) then return false end
+    -- Release any prior move lock: FSO needs dynamic AI enabled to evade a
+    -- locked missile, and its hit reactions preserve the assigned service goal.
+    self:SetShipCommandDiscipline(ship,false)
     local s={reason=reason,started=now,lastUpdate=now,lastHull=ship.HitpointsLeft,
         quietAt=now,lastShields=ship.Shields and ship.Shields.CombinedLeft or 0,ammoCredit={},manual=manual==true,spent=0}
     self.FleetServiceSerial=(self.FleetServiceSerial or 0)+1; s.visit=self.FleetServiceSerial
@@ -170,7 +173,7 @@ function RTS:BeginFleetService(ship,reason,now,manual)
     if self.RecordServiceStart then self:RecordServiceStart(ship,now) end
     reservePad(self,ship,s)
     self:SetFleetServicePhase(ship,s,'RETURNING',now)
-    self:SetShipCommandDiscipline(ship,true)
+    self:SetShipCommandDiscipline(ship,false)
     self:SetShipTurretLock(ship,true)
     if alive(station) then
         s.padApproachX,s.padApproachZ=self:GetServiceApproach(ship,station,self:GetFleetLocalThreat(ship))
@@ -232,17 +235,13 @@ function RTS:GetServiceApproach(ship,station,threat)
     local length=math.sqrt(toStation.x*toStation.x+toStation.z*toStation.z)
     local ax,az=0,-1
     if length>.001 then ax,az=toStation.x/length,toStation.z/length end
-    -- Move the pad to the far side from a threat that is sitting with the ship.
-    -- The threat bearing is measured from the station, so the threat shares the
-    -- ship's side exactly when the two unit vectors point the same way. The old
-    -- test had the sense inverted and only corrected one of the two geometries,
-    -- which is what let the pad flip sides as threats moved.
+    -- A threatened pad belongs opposite the attacker's actual bearing, not
+    -- merely on whichever half of the station the returning ship occupies.
     if alive(threat) then
         local toThreat=threat.Position-station.Position
         local threatLen=math.sqrt(toThreat.x*toThreat.x+toThreat.z*toThreat.z)
         if threatLen>.001 then
-            local tx,tz=toThreat.x/threatLen,toThreat.z/threatLen
-            if ax*tx+az*tz < 0 then ax,az=-ax,-az end
+            ax,az=toThreat.x/threatLen,toThreat.z/threatLen
         end
     end
     -- The pad sits behind the station, opposite this side. Near a map edge that point
@@ -329,7 +328,7 @@ function RTS:MoveFleetServiceShip(ship,s,point,now,anchor)
         self:SetFleetServicePhase(ship,s,'ORDER_FAILED',now); return false
     end
     s.destination=copyVec(point); s.destinationAnchor=anchor; s.nextMove=now+8
-    self:SetShipCommandDiscipline(ship,true); self:SetShipTurretLock(ship,true)
+    self:SetShipCommandDiscipline(ship,false); self:SetShipTurretLock(ship,true)
     return true
 end
 
@@ -362,6 +361,16 @@ function RTS:ServiceFleetShip(ship,s,station,now,slots,threat)
     if s.padApproachX==nil then
         s.padApproachX,s.padApproachZ=self:GetServiceApproach(ship,station,threat)
     end
+    local focused=self:IsFleetFocusedByHostiles(ship,now)
+    if focused and alive(threat) then
+        local approachX,approachZ=self:GetServiceApproach(ship,station,threat)
+        if s.padApproachX*approachX+s.padApproachZ*approachZ<.999 then
+            -- Rebook the visitor on the station's newly safe side when its
+            -- current attacker changes bearing.
+            s.padApproachX,s.padApproachZ=approachX,approachZ
+            s.padPoint=nil; s.padStation=nil; s.arrived=false; s.holdSince=nil
+        end
+    end
     local point=self:GetFleetServicePoint(ship,station,threat,s.padApproachX,s.padApproachZ)
     if not point or ship.Position:getDistance(point)>c.ArrivalRadius then
         s.arrived=false
@@ -387,11 +396,11 @@ function RTS:ServiceFleetShip(ship,s,station,now,slots,threat)
         if not s.manual then s.quietAt=now end
         ship:clearOrders()
         local phys=ship.Physics
-        if phys~=nil then phys.Velocity=vec(0,0,0); phys.RotationalVelocity=vec(0,0,0) end
+        if phys~=nil and not focused then phys.Velocity=vec(0,0,0); phys.RotationalVelocity=vec(0,0,0) end
         if ship:giveOrder(ORDER_STAY_STILL,nil,nil,priority)~=true then
             s.arrived=false; s.holdSince=nil; self:SetFleetServicePhase(ship,s,'ORDER_FAILED',now); return 0
         end
-    elseif not self.Paused then
+    elseif not self.Paused and not focused then
         -- Keep bleeding speed while parked. l_Vector has no scale(), so scale
         -- the components explicitly; Physics.Velocity is the writable property
         -- (phys_info.vel is not exposed to Lua at all).
@@ -429,25 +438,19 @@ function RTS:ServiceFleetShip(ship,s,station,now,slots,threat)
         end
     end
     -- Only dampen spin while ship is physically moving to/from service point
-    if not self.Paused and s.phase=='RETURNING' then dampSpin(ship) end
+    if not self.Paused and not focused and s.phase=='RETURNING' then dampSpin(ship) end
     -- Arrival is physical. Time spent travelling/queued never accumulates repair.
     local ammo,banks=self:GetFleetAmmo(ship)
     local subsystemHealth,systems,totalSubsystemHull=self:GetFleetSubsystems(ship)
+    local serviceBlocked=focused or (not s.manual and alive(threat))
     if now-s.started>=c.MinimumRecoverySeconds and hull(ship)>=readyHull-.0001 and ammo>=c.ReadyAmmo and subsystemHealth>=readyHull-.0001
-        and now-s.quietAt>=c.QuietSeconds and (s.manual or not alive(threat)) then self:FinishFleetService(ship,s,now); return 0 end
-    if now-s.quietAt<c.QuietSeconds or (not s.manual and alive(threat)) then
-        -- A docked hull whose pad stays within a hostile's DangerRadius never
-        -- satisfies `not alive(threat)` above, so it would hold the pad in
-        -- UNDER_FIRE for the rest of the mission: no repair, no release, and no
-        -- AIOrderState, so it reports mode=IDLE in EXECUTION telemetry the
-        -- whole time. The station-under-attack abort only fires for
-        -- REPAIR_REARM/WAIT_CP/QUEUED, so nothing else broke the tie. Give up
-        -- and hand the hull back to the fight after the bound; it keeps its
-        -- parked player order and takes a retry cooldown so it cannot re-park
-        -- on the very next tick. Manual SERVICE is the player's call and is
-        -- never cancelled here, matching the station-alarm path.
-        if s.underFireSince==nil then s.underFireSince=now end
-        if not s.manual and now-s.underFireSince>=(c.MaxUnderFireSeconds or 240) then
+        and now-s.quietAt>=c.QuietSeconds and not serviceBlocked then self:FinishFleetService(ship,s,now); return 0 end
+    if now-s.quietAt<c.QuietSeconds or serviceBlocked then
+        -- Stay parked and quiet while hostiles focus the visitor. A ship that
+        -- remains under fire for the bound returns to combat and gets a retry
+        -- delay; manual SERVICE remains the player's decision.
+        if serviceBlocked then s.underFireSince=s.underFireSince or now else s.underFireSince=nil end
+        if not s.manual and serviceBlocked and now-s.underFireSince>=(c.MaxUnderFireSeconds or 240) then
             self:SetFleetServicePhase(ship,s,'UNDER_FIRE',now)
             local sid=ship:getSignature(); local kind=self:GetFactionKey(ship)
             local parked=self.UserOrders and self.UserOrders[sid]
@@ -545,65 +548,6 @@ function RTS:UpdateFleetServices(now)
 -- reach. Populated during the dispatch loop, read by the outmatched reasons
 -- and by HULL_LOW. Local to the pass so a stale entry cannot survive a frame.
 local assaultHold={}
-    local stationThreat={}
-    for _,kind in ipairs(self:GetFactionKeys()) do
-        local station=self:GetFactionCommandShip(kind)
-        if next(self.FleetServices) and alive(station) and self.GetFactionThreats then
-            local contacts=self:GetFactionThreats(kind,station,(self.Config.AI.Doctrine or {}).ThreatRadius or self.Config.AI.StationDefenseRadius)
-            for _,contact in ipairs(contacts) do
-                if contact.attacking or (contact.capital and contact.targetingStation) then
-                    -- Keep the nearest shooter, not just the first one the
-                    -- contact list happens to return: a station can be under
-                    -- fire from several directions and the evacating ships need
-                    -- a threat they can actually point at.
-                    local other=contact.ship
-                    if alive(other) then
-                        local best=stationThreat[kind]
-                        if best==nil or other.Position:getDistance(station.Position)
-                            < best.Position:getDistance(station.Position) then stationThreat[kind]=other end
-                    end
-                end
-            end
-        end
-    end
-    -- A station can be attacked while a service visitor is safe behind it.
-    -- Retask only when hostiles also focus the visitor; ServiceFleetShip pauses
-    -- direct-fire repairs and releases pads that remain unsafe.
-    for _,ship in ipairs(ships) do
-        local id=ship:getSignature()
-        local s=self.FleetServices[id]
-        if s~=nil and self.PossessedSignature~=id then
-            local kind=self:GetFactionKey(ship)
-            local threat=stationThreat[kind]
-            local docked=(s.phase=='REPAIR_REARM' or s.phase=='WAIT_CP' or s.phase=='QUEUED')
-            -- A base can be under fire while a returning ship is safely
-            -- repairing behind it. Cancel only when hostiles are also focused
-            -- on this visitor; the per-ship service loop pauses work and has a
-            -- bounded UNDER_FIRE timeout for a genuinely unsafe pad.
-            if threat~=nil and docked and not s.manual and self:IsFleetFocusedByHostiles(ship,now) then
-                -- Drop the record before reissuing: CancelFleetServiceForShip
-                -- reads the parked player order and would otherwise hand a
-                -- refit ship straight back to its old destination.
-                local parked=self.UserOrders and self.UserOrders[id]
-                self.FleetServices[id]=nil
-                self:SetShipCommandDiscipline(ship,false); self:SetShipTurretLock(ship,false)
-                self.AIOrderState[id]=nil; self.PolicyApplied[id]=nil
-                s.destination=nil; s.destinationAnchor=nil; s.holdSince=nil
-                self:EmitAIEvent('FLEET_SERVICE_INTERRUPTED',{ship=id,faction=kind,
-                    phase=s.phase,threat=threat:getSignature(),
-                    spent=s.spent,hull=hull(ship)},now)
-                self.FleetServiceCooldown[id]=now+(c.RetrySeconds or 30)
-                -- A player who explicitly ordered SERVICE keeps it: a base
-                -- coming under fire is not the player's call to cancel.
-                ship:clearOrders()
-                local resume=parked~=nil and parked.kind~='service' and parked or nil
-                if resume~=nil then self.UserOrders[id]=resume end
-                if kind=='BLUE' then
-                    if resume~=nil then self:ReissueUserOrder(ship,resume) else self:ReturnToDefaultControl(ship) end
-                else self:AssignAIStrategicOrder(ship,kind,true) end
-            end
-        end
-    end
     for _,ship in ipairs(ships) do
         local id=ship:getSignature(); present[id]=true
         -- Keep the pad latched, but danger must describe the visitor's current

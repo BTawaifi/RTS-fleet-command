@@ -134,7 +134,6 @@ end
 -- pinned to the edge (as contact markers are) where it does not.
 function RTS:DrawBuildSignatures()
     local now=self:UINow()
-    local colour=self:GetFactionColorTable('BLUE')
     local pulse=0.5+0.5*math.sin(now*3)
     local alpha=math.floor(120+100*pulse)
     local sw,sh=gr.getScreenWidth(),gr.getScreenHeight()
@@ -144,6 +143,7 @@ function RTS:DrawBuildSignatures()
     local radius=math.max(5,math.floor(7*m.scale))+math.floor(2*pulse)
     local drawn=0
     for _,signature in ipairs(self:GetBuildSignatures(now)) do
+        local colour=self:GetFactionColorTable(signature.faction or 'BLUE')
         local pos=signature.pos
         self:DrawWorldRangeRing(pos,350,colour,alpha)
         local sx,sy=pos:getScreenCoords()
@@ -244,7 +244,7 @@ function RTS:DrawWorldOverlays()
         -- bracket can no longer disagree about where the ship is.
         local sx,sy=self:ProjectShip(hovered,0)
         if sx~=false then
-            if self:IsFriendly(hovered) and sel.ShowWeaponRange~=false then
+            if sel.ShowWeaponRange~=false then
                 local ranges=self:GetShipWeaponRanges(hovered)
                 if ranges.primary>0 then self:DrawWorldRangeRing(hovered.Position,ranges.primary,{80,220,255},sel.WeaponRangeAlpha or 90,sx,sy) end
                 if ranges.secondary>0 then self:DrawWorldRangeRing(hovered.Position,ranges.secondary,{255,190,75},sel.WeaponRangeAlpha or 90,sx,sy) end

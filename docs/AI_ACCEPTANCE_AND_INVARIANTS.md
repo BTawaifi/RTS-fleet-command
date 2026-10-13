@@ -1,5 +1,7 @@
 # Verification contract and next-work target
 
+**Player acceptance contract, 13 October:** [criteria G01–G11 and P01–P08](PLAYER_ACCEPTANCE.md) cover the current gameplay/UI/restart fixes and philosophy gaps, with scenarios, controls, evidence, coverage and a definition of DONE. That contract separates committed implementation from completed player acceptance; older checkpoints below remain dated evidence.
+
 **8 October 2026 · RTS Fleet Command 1.4.5 · current development tree**
 
 Latest checkpoint: [double-check repairs](DEVELOPMENT.md#double-check-repairs--8-october-2026) fix four reproduced gaps: missing economy fields, boolean numeric-counter coverage, malformed faction/provenance containers, and arena bounds checked too late during spawn search. The full suite and targeted assertion kills completed. Broader empirical balance/UI/MediaVP claims remain separate.

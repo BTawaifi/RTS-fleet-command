@@ -463,7 +463,9 @@ function RTS:SpawnAIProduction(kind,queued,spawned)
     for i=1,count do
         local name=wingLabel and (wingLabel.." "..tostring(i)) or nil
         local ok,err=pcall(function()
-            local ship=self:SpawnFactionUnit(queued.entry.class,station,station.Team,prefix,queued.entry.tier or 1,state.serial,i,i,count,name,state.serial,spawned)
+            local preferred
+            for _,marker in ipairs(queued.signaturePositions or {}) do if marker.slot==i then preferred=marker.pos; break end end
+            local ship=self:SpawnFactionUnit(queued.entry.class,station,station.Team,prefix,queued.entry.tier or 1,state.serial,i,i,count,name,state.serial,spawned,preferred)
             if shipValid(ship) then self:AssignAIStrategicOrder(ship,kind,true) end
         end)
         if not ok then self:Log("AI SPAWN FAILED: "..queued.entry.class..": "..tostring(err)) end

@@ -1,6 +1,6 @@
 # Fleet Command: Philosophy Through Play
 
-**Gameplay design and current implementation · 6 October 2026**
+**Gameplay design and current implementation · source audit updated 13 October 2026**
 
 **Scope:** RTS Fleet Command 1.4.5, current local working tree.
 
@@ -8,15 +8,34 @@
 
 ## Final recommendation
 
-**Scenario premise:** a configurable set of rival factions is locked into an escalating survival conflict after diplomatic, political or interspecies tensions break down. Each command pursues victory while protecting its people. Mirror factions can be opposing detachments or splinter commands. This is skirmish narrative context, not an implemented diplomacy system or a universal canonical historical war. The [revised introduction contract](AI_ACCEPTANCE_AND_INVARIANTS.md#scenario-premise-and-revised-introduction) requires the opening cinematic to establish the conflict, escalation, player responsibility and crew stakes. The existing camera/caption intro still needs this rewrite.
+**Scenario premise:** a configurable set of rival factions is locked into an escalating survival conflict after diplomatic, political or interspecies tensions break down. Each command pursues victory while protecting its people. Mirror factions can be opposing detachments or splinter commands. This is skirmish narrative context, not an implemented diplomacy system or a universal canonical historical war. The [revised introduction contract](AI_ACCEPTANCE_AND_INVARIANTS.md#scenario-premise-and-revised-introduction) requires the opening cinematic to establish the conflict, escalation, player responsibility and crew stakes. The six captions in `fs2rts_config.lua` now express those ideas; `CreateIntroScene()` provides a temporary native combat tableau. Viewer comprehension and the final presentation remain acceptance work.
 
 Build the mod around **attachment, responsibility, and the limits of victory**. Give players recognizable fleets, practical opportunities to preserve them, and a clear distinction between defeating a command structure and destroying everyone who served it.
 
 **Every life matters:** crewed ships and stations represent living people, not merely replacement costs. Player and AI decisions must give survival practical stakes without making avoidance the best strategy or overriding explicit orders. The [crew-survival acceptance conditions](AI_ACCEPTANCE_AND_INVARIANTS.md#crew-survival-lives-are-stakes) require avoidable-loss and necessary-risk controls, useful recovery, continuous ship histories, loss-aware reporting and survivor agency on both sides. These are long-match acceptance requirements; exact crew-casualty simulation and campaign population are not implemented claims.
 
-Larger crewed ships generally put more lives at risk and deserve greater preservation weight, independently of their CP price or firepower. Verified crew information is preferred; labeled class/role estimates are acceptable as design inputs. Several smaller crews, escape feasibility, risk to rescuers and the mission can outweigh one larger hull. Crew-weighted decisions and their control scenarios are requested work, not currently verified behavior.
+Larger crewed ships generally put more lives at risk and deserve greater preservation weight, independently of their CP price or firepower. Verified crew information is preferred; labeled class/role estimates are acceptable as design inputs. Several smaller crews, escape feasibility, risk to covering ships and the mission can outweigh one larger hull. `GetCrewExposureEstimate()` uses four labeled role bands. `GetFleetServiceCrewPriority()` applies them to missing hull per service slot only for simultaneous admissions, preserving earlier arrivals and explicit orders. Wider crew-aware recovery protection, escort and sacrifice decisions are not implemented by that weighting.
 
-**Courage also matters:** justified risk and sacrifice can protect other crews or secure a decisive objective. The user requested [ship/wing commendations](AI_ACCEPTANCE_AND_INVARIANTS.md#courage-justified-sacrifice-and-commendations) for verified gallantry, protection, preservation, distinguished service and necessary sacrifice. Survival can earn recognition; death alone cannot. The initial design is match-local recognition with factual reasons and anti-farming controls, without economic bonuses or invented crew casualties. This award system is requested work, not an implemented feature.
+**Courage also matters:** justified risk and sacrifice can protect other crews or secure a decisive objective. The user requested [ship/wing commendations](AI_ACCEPTANCE_AND_INVARIANTS.md#courage-justified-sacrifice-and-commendations) for verified gallantry, protection, preservation, distinguished service and necessary sacrifice. Survival can earn recognition; death alone cannot. `AwardFleetCitation()` implements two match-local ship citations: recovery followed by a confirmed hostile mobile kill, and removal of a pursuing threat followed by the beneficiary's confirmed escape. Lifetime records, history/report reasons and a Blue notification are present, without economic bonuses or invented crew casualties. Broader award categories and wing awards remain unimplemented.
+
+## Divergences from the philosophy — 13 October source audit
+
+Acceptance scenarios and completion rules for each gap are in [Player acceptance and definition of done](PLAYER_ACCEPTANCE.md#philosophy-criteria). Recovery/protection refers to station service and covering withdrawals; no separate rescue mechanic is implied.
+
+This is a code-to-design comparison, not proof of balance or player attachment. The newer M4/M5/M6 boundaries in `AI_ACCEPTANCE_AND_INVARIANTS.md` take precedence over the older overview's completion language.
+
+| Requirement | Current code | Remaining divergence or acceptance gap |
+| --- | --- | --- |
+| Recognizable identities and continuous histories | `RecordShipCreated`, `RecordWingHistory`, `RecordServiceFinish`, `RecordUnitFate`; Ships/Wings report pages | Ship history is implemented. Recognition during ordinary play and emotional attachment need player evidence; counters cannot establish them. |
+| Survival decisions that account for people and necessary risk | Role estimates and simultaneous service priority; explicit ownership and committed-strike thresholds remain | Crew weight is absent from strategic target/escort selection and defeated-fleet cover selection. Feasible recovery/withdrawal versus necessary sacrifice, several small crews versus one large crew, and reserved variants still need controlled physical outcomes. |
+| Recovery has real costs and useful rejoin | Four service slots, travel, CP, hull/ammunition/subsystem work, recovery histories | The station tooltip's incorrect two-slot claim is corrected to read configured capacity. Reposition/evasion code is not evidence that every attacked visitor finds a safe route or rejoins usefully. |
+| Defeat differs from destruction; survivors retain agency | Immutable `StrategicResult`, player station loss and mobile fates; defeated-AI extraction/rearguard; explicit Blue withdrawal | The control rules exist. Long-match extraction completion, route safety and faction fairness remain unverified across the supported roster/layout set. |
+| Restraint can be obeyed without invulnerability | `CanAutoEngage`, passage corridor and explicit interception; native departure required for escape | Not unconditional mercy or safe passage: explicit attacks and in-flight damage remain possible by design. Broader weapon/faction passage controls are still acceptance work. |
+| Factual courage and sacrifice recognition | `RECOVERY_REJOIN`, `WITHDRAWAL_COVER`; duplicate/lifetime guards; report reasons | No general gallantry, distinguished-service or wing citations. A cover citation can survive the contributor's loss, but death alone never earns one. Final player readability is unverified. |
+| Opening communicates responsibility and crew stakes | Six rewritten captions plus temporary native fighting/retreating hulls | Implemented presentation, not the missing rewrite previously reported here. Comprehension, final pixels and optional asset configurations still need review. |
+| Honest reports without a moral score | Original station result, current survivor fates, post-result losses, recovery/pilot histories and citation reasons | Implemented data presentation. No verified crew head counts or casualty totals; no persistent campaign population. These are deliberate exclusions, not bugs to fill with invented values. |
+
+Full philosophical acceptance is therefore **not established**. The next design work is controlled crew-preservation/necessary-sacrifice cases and review of recognition, extraction and intro presentation. Do not change combat balance solely to make the narrative look successful, or add crew-death totals, medal bonuses or diplomacy to close these gaps.
 
 The central question is: **What do you keep fighting for once the battle can no longer be won?** Its counterpart for the winner is: **What does winning entitle you to do?**
 

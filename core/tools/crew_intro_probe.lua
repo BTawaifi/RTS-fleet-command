@@ -9,6 +9,12 @@ local cast,baseHull,actor,enemy,record,beneficiary,beneficiaryRecord,serviceAt
 local shotsFired=0
 local introCleanupAt
 local priorityCapital,smallCrew,otherSmallCrew,priorityAt,priorityIdentity
+local restartStarts=0
+local gameplayStart=R.OnGameplayStart
+R.OnGameplayStart=function(self)
+    restartStarts=restartStarts+1
+    return gameplayStart(self)
+end
 local frame=R.OnFrame
 local updateService=R.UpdateFleetServices
 R.Config.Cinematic.Enabled=true
@@ -28,7 +34,10 @@ local function run()
         if not R.CinematicActive then return end
         cast=R.IntroShips; check(cast and #cast==6,'intro contains two mobile forces')
         baseHull={}
-        for _,kind in ipairs({'BLUE','RED'}) do local station=R:GetFactionCommandShip(kind); baseHull[kind]=station.HitpointsLeft end
+        for _,kind in ipairs({'BLUE','RED'}) do
+            local station=R:GetFactionCommandShip(kind)
+            baseHull[kind]=station and station:isValid() and station.HitpointsLeft or false
+        end
         stage=1
     elseif stage==1 then
         if R.CinematicActive then
@@ -42,10 +51,25 @@ local function run()
         if now-introCleanupAt<.1 then return end
         for _,ship in ipairs(cast) do check(not ship:isValid(),'intro hull removed') end
         check(shotsFired>0,'intro depicts native weapons fire')
-        for _,kind in ipairs({'BLUE','RED'}) do check(R:GetFactionCommandShip(kind).HitpointsLeft==baseHull[kind],'intro preserves '..kind..' station') end
+        for _,kind in ipairs({'BLUE','RED'}) do
+            local station=R:GetFactionCommandShip(kind)
+            local hull=station and station:isValid() and station.HitpointsLeft or false
+            check(hull==baseHull[kind],'intro preserves '..kind..' station presence and hull')
+        end
         check(next(R.UnitHistory)==nil,'intro does not commission real fleet')
         R:StartIntroCinematic(); check(#R.IntroShips==6,'intro can restart')
         R:EndIntroCinematic(true); check(not R.CinematicActive and R.IntroShips==nil,'skip removes restarted scene')
+        R:OpenExitMenu()
+        check(R:HandleExitMenuAction('restart'),'setup RTS menu requests native level restart')
+        stage=90
+    elseif stage==90 then
+        if restartStarts<2 or not R.CinematicActive then return end
+        if not introCleanupAt or now<introCleanupAt then introCleanupAt=now end
+        if now-introCleanupAt<3 then return end
+        check(R.IntroShips and #R.IntroShips==6,'level restart creates a fresh intro cast')
+        for _,ship in ipairs(R.IntroShips) do check(ship:isValid(),'restarted intro hull remains valid') end
+        R:EndIntroCinematic(true)
+        check(R.SetupActive and not R.CinematicActive,'restarted intro skips into setup')
         stage=2
     elseif stage==2 then
         if not R.RosterModelWarmup or not R.RosterModelWarmup.done then return end

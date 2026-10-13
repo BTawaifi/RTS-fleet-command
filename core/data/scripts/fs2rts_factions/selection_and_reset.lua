@@ -136,7 +136,7 @@ function RTS:ResetState()
     self.RosterModelWarmup=nil
     self.TimeScale=1; self.LastNonZeroTimeScale=1; self.Paused=false; self.PausedTimeScale=nil
     self.UIClock=0; self.RoleByClass={}; self.RosterIndex=nil; self.ShipCache=nil; self.ShipSignatureIndex=nil; self.FreeMoveWaypoints={}; self.ButtonControlMode=nil
-    self.BattleCamActive=false; self.FreeCamActive=false; self.BattleCamSignature=nil
+    self.BattleCamActive=false; self.FreeCamActive=false; self.BattleCamSignature=nil; self.BattleCamTargetSignature=nil
     self.BattleCamShotStart=nil; self.BattleCamShotUntil=0; self.CinematicTailHold=nil
     self.MapWindowDrag=nil; self.MapPanDrag=nil; self.SwallowMouseRelease=false
     self.EscapeKeyOverride=nil

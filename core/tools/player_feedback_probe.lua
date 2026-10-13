@@ -7,7 +7,33 @@ local function log(s) out:write(s..'\n'); out:flush() end
 local finished,stage,startTime=false,0,0
 local pairsToCheck={}
 local capital,victim,control,controlVictim
+local missileBomber,missileTarget
+local pilotMissiles,missileTimes={},{}
+local missileHomingSeen,missileExamined={},{}
+local pilotSwarm,swarmHomingSeen={},{}
+local swarmTriggerSent=false
+engine.addHook('On Weapon Created',function()
+    if (stage==3.7 or stage==3.72 or stage==3.75) and hv.Weapon and hv.Weapon:isValid() then
+        local parent=hv.Weapon.Parent
+        if parent and parent:isValid() and (parent==R:GetObserver() or parent==missileBomber) then
+            if stage==3.7 then
+                pilotMissiles[#pilotMissiles+1]=hv.Weapon
+                missileTimes[#missileTimes+1]=mn.getMissionTime()
+            else pilotSwarm[#pilotSwarm+1]=hv.Weapon end
+        end
+    end
+end)
 local flakCapital
+local screenshots={}; local skyView=1
+local originalBattleCam=R.UpdateBattleCam
+local skyDirections={ba.createVector(0,0,1),ba.createVector(1,0,0),ba.createVector(0,0,-1),
+    ba.createVector(-1,0,0),ba.createVector(0,1,0),ba.createVector(0,-1,0)}
+R.UpdateBattleCam=function(self)
+    if stage~=3.85 then return originalBattleCam(self) end
+    self.Camera.Position=ba.createVector(0,20000,0)
+    self.Camera.Orientation=skyDirections[skyView]:getOrientation()
+    gr.setCamera(self.Camera)
+end
 local pilotBeamShots,pilotBeamHits,pilotProjectileShots=0,0,0
 local firstMainBeamAt
 local noContactPositions={}
@@ -70,6 +96,11 @@ local originalFrame=R.OnFrame
 local originalPilotUpdate=R.UpdatePilotMode
 local motionOrigin,motionForward
 R.UpdatePilotMode=function(self,dt)
+    if stage==3.65 or stage==3.7 or stage==3.71 or stage==3.72 or stage==3.75 then
+        self.ControlInfo.clearLuaButtonInfo()
+        local held=stage==3.7 or stage==3.72 or (stage==3.75 and mn.getMissionTime()-startTime<.12)
+        self.ControlInfo.PrimaryCount=0; self.ControlInfo.SecondaryCount=held and 1 or 0
+    end
     if stage==2.1 then
         self:GetObserver().Target=nil
         assert(not self:GetObserver().Target:isValid(),'native no-target fixture cannot clear the proxy')
@@ -80,10 +111,18 @@ R.UpdatePilotMode=function(self,dt)
         controls.Forward=stage==3.5 and 1 or 0
         controls.ForwardCruise=0
     end
-    return originalPilotUpdate(self,dt)
+    local result=originalPilotUpdate(self,dt)
+    -- Lua button bits do not inject continuous controls. Drive the native
+    -- player fire API here; production Lua must not issue a second launch.
+    if stage==3.7 or stage==3.72 then self:GetObserver():fireSecondary()
+    elseif stage==3.75 and not swarmTriggerSent then
+        self:GetObserver():fireSecondary(); swarmTriggerSent=true
+    end
+    return result
 end
 local originalControlDown=R.IsPilotControlDown
 R.IsPilotControlDown=function(self,buttons,name)
+    if name=='FIRE_SECONDARY' and (stage==3.7 or stage==3.72 or (stage==3.75 and mn.getMissionTime()-startTime<.12)) then return true end
     if name=='FIRE_PRIMARY' and stage==2.1 then return true end
     if name=='FIRE_PRIMARY' and stage==3.2 then return true end
     if (name=='FIRE_PRIMARY' or name=='FIRE_SECONDARY') and stage==3 then return true end
@@ -101,9 +140,38 @@ end
 R.DrawHUD=function(self)
     if finished then return end
     local ok,err=pcall(originalHUD,self)
-    if not ok then log('FAIL HUD '..tostring(err)); quit() end
+    if not ok then log('FAIL HUD '..tostring(err)); quit(); return end
+    local name
+    if stage==3.65 and mn.getMissionTime()-startTime>.5 then name='pilot-native-banks'
+    elseif stage==3.8 and self:UINow()-uiAt>.5 then name='director-close-shot'
+    elseif stage==3.85 and self:UINow()-uiAt>.3 then name='sky-'..skyView end
+    if name and not screenshots[name] and not self.ReviewProbeHeadless then
+        local blob=gr.screenToBlob(); local file=cf.openFile(name..'.blob','w','data')
+        assert(file and file:isValid() and #blob>1000,'native screenshot capture failed: '..name)
+        file:write(blob); file:close(); screenshots[name]=true
+    end
 end
 local function probe(self)
+    if stage==3.7 then
+        for i,missile in ipairs(pilotMissiles) do
+            if not missileExamined[i] and missile:isValid() then
+                log('PILOT_MISSILE '..i..' class='..missile.Class.Name..' target='..tostring(missile.Target)..' homing='..tostring(missile.HomingObject)..' parent='..tostring(missile.Parent))
+                missileExamined[i]=true
+            end
+            if not missileHomingSeen[i] and missile:isValid() and missile.HomingObject:isValid() and missile.HomingObject==missileTarget then
+                check(missile.Parent==missileBomber,'pilot missile belongs to the real bomber')
+                missileHomingSeen[i]=true
+            end
+        end
+    end
+    if stage==3.75 then
+        for i,missile in ipairs(pilotSwarm) do
+            if not swarmHomingSeen[i] and missile:isValid() and missile.HomingObject:isValid() and missile.HomingObject==missileTarget then
+                check(missile.Parent==missileBomber,'queued pilot swarm missile belongs to the real bomber')
+                swarmHomingSeen[i]=true
+            end
+        end
+    end
     if stage==0 and self.SetupActive then
         self.SetupOpponents={RED=true,GOLD=true}; self.SetupAutoMode=false; self.SetupSentries=false
         self:StartScenario(); self.ActiveIncomePerSecond=0
@@ -310,7 +378,88 @@ local function probe(self)
             assert(ship:isValid()); ship:setFlag(true,'invulnerable','primaries-locked','secondaries-locked')
             movers[#movers+1]=ship
         end
-        self:SetTimeScale(8); stage=4
+        missileBomber=mn.createShip('Pilot missile bomber',tb.ShipClasses['GTB Medusa'],
+            ba.createOrientationFromVectors(ba.createVector(0,0,1)),ba.createVector(-40000,12000,-40000),mn.Teams[self.Config.FriendlyTeam],true)
+        check(missileBomber:isValid(),'native missile fixture creates a turret-equipped bomber')
+        self:InvalidateShipList()
+        missileTarget=target('Pilot missile target','GTF Hercules',missileBomber.Position+ba.createVector(0,0,800),mn.Teams[self.Config.HostileTeam])
+        check(tb.WeaponClasses['Harpoon']:loadWeapon(),'native aspect missile asset loads')
+        check(missileBomber.Position:getDistance(missileTarget.Position)<self:GetWeaponFiringRange(tb.WeaponClasses['Harpoon']),
+            'native missile contact is within the actual aspect-lock range')
+        for b=1,#missileBomber.SecondaryBanks do missileBomber.SecondaryBanks[b].AmmoLeft=0 end
+        missileBomber.SecondaryBanks[1].WeaponClass=tb.WeaponClasses['Harpoon']
+        missileBomber.SecondaryBanks[1].AmmoLeft=3; missileBomber.SecondaryBanks[1].Armed=true
+        missileBomber.SecondaryBanks.DualFire=false
+        check(self:StartPilotMode(missileBomber),'native missile fixture enters possession')
+        check(not self.PilotWeaponsHUDOverridden and #self:GetObserver().PrimaryBanks>0 and #self:GetObserver().SecondaryBanks>0,
+            'turret-equipped bomber retains native primary and secondary weapon display')
+        self:GetObserver().Target=missileTarget
+        self:SetTimeScale(1); startTime=mn.getMissionTime(); stage=3.65
+    elseif stage==3.65 and mn.getMissionTime()-startTime>5 then
+        startTime=mn.getMissionTime(); stage=3.7
+    elseif stage==3.7 and mn.getMissionTime()-startTime>15 then
+        check(#pilotMissiles==3,'holding missile fire launches exactly the three carried missiles')
+        check(missileBomber.SecondaryBanks[1].AmmoLeft==0 and self:GetObserver().SecondaryBanks[1].AmmoLeft==0,
+            'native pilot missile ammunition depletes on both hull and HUD proxy')
+        for i=1,#pilotMissiles do
+            check(missileHomingSeen[i],'native pilot aspect missile tracks the selected target')
+            if i>1 then check(missileTimes[i]-missileTimes[i-1]>=tb.WeaponClasses['Harpoon'].FireWait-.1,
+                'native pilot missile launches respect bank cooldown') end
+        end
+        self.ControlInfo.SecondaryCount=0; self.ControlInfo.clearLuaButtonInfo()
+        self:GetObserver().SecondaryBanks[1].AmmoLeft=1; self:GetObserver().SecondaryBanks[1].Armed=true
+        missileBomber.SecondaryBanks=self:GetObserver().SecondaryBanks
+        startTime=mn.getMissionTime(); stage=3.705
+    elseif stage==3.705 and mn.getMissionTime()-startTime>3 then
+        check(self:GetObserver():fireSecondary()>0 and self:GetObserver().SecondaryBanks[1].AmmoLeft==0
+            and missileBomber.SecondaryBanks[1].AmmoLeft==1,'native last-shot fixture has an unmirrored expenditure')
+        self:ExitPilotMode(nil,false)
+        check(missileBomber.SecondaryBanks[1].AmmoLeft==0,'immediate pilot exit commits the last native missile expenditure')
+        check(self:StartPilotMode(missileBomber),'last-shot bomber can be possessed again')
+        check(self:GetObserver().SecondaryBanks[1].AmmoLeft==0,'immediate pilot re-entry cannot refund the last missile')
+        self:GetObserver().Target=missileTarget
+        check(tb.WeaponClasses['Hornet']:loadWeapon(),'native queued swarm asset loads')
+        self:GetObserver().SecondaryBanks[1].WeaponClass=tb.WeaponClasses['Hornet']
+        self:GetObserver().SecondaryBanks[1].AmmoLeft=4
+        missileBomber.SecondaryBanks=self:GetObserver().SecondaryBanks
+        missileTarget.Position=missileBomber.Position+ba.createVector(0,0,500)
+        check(missileBomber.Position:getDistance(missileTarget.Position)<self:GetWeaponFiringRange(tb.WeaponClasses['Hornet']),
+            'native swarm contact is inside its lock range')
+        self:SetPaused(true); uiAt=self:UINow(); stage=3.72
+    elseif stage==3.72 and self:UINow()-uiAt>2 then
+        check(#pilotSwarm==0 and missileBomber.SecondaryBanks[1].AmmoLeft==4 and self:GetObserver().SecondaryBanks[1].AmmoLeft==4,
+            'native secondary trigger cannot spend ammunition while paused')
+        self.ControlInfo.clearLuaButtonInfo(); self:SetPaused(false)
+        startTime=mn.getMissionTime(); stage=3.71
+    elseif stage==3.71 and mn.getMissionTime()-startTime>5 then
+        startTime=mn.getMissionTime(); stage=3.75
+    elseif stage==3.75 and mn.getMissionTime()-startTime>8 then
+        check(#pilotSwarm==4,'one native trigger tap completes exactly one four-missile swarm after release')
+        check(missileBomber.SecondaryBanks[1].AmmoLeft==0 and self:GetObserver().SecondaryBanks[1].AmmoLeft==0,
+            'queued native swarm depletes ammunition without refilling the proxy')
+        for i=1,#pilotSwarm do check(swarmHomingSeen[i],'queued native swarm tracks the selected target') end
+        self.ControlInfo.SecondaryCount=0; self:ExitPilotMode(nil,false)
+        check(missileBomber.SecondaryBanks[1].AmmoLeft==0,'pilot exit preserves depleted ammunition')
+        check(self:StartPilotMode(missileBomber),'depleted bomber can be possessed again')
+        check(self:GetObserver().SecondaryBanks[1].AmmoLeft==0,'pilot re-entry does not refill missiles')
+        self:ExitPilotMode(nil,false)
+        self.FollowZoom=1; self.FollowYawOffset=0; self.FollowPitchOffset=.2
+        self:UpdateFollowCamera(missileBomber,capital)
+        local baseDistance=math.max(self.Config.Camera.FollowMinDistance,missileBomber.Radius*self.Config.Camera.FollowRadiusMultiplier)
+        check(self.FollowCamera.Position:getDistance(missileBomber.Position)<=baseDistance*2+1,
+            'native director stays close to the ship instead of framing a remote target')
+        self.BattleCamActive=true; self.BattleCamSignature=missileBomber:getSignature()
+        self.BattleCamTargetSignature=capital:getSignature()
+        self.BattleCamShotStart=self:UINow(); self.BattleCamShotUntil=self:UINow()+4; self.BattleCamYawStart=0
+        self:SetTimeScale(1); uiAt=self:UINow(); stage=3.8
+    elseif stage==3.8 and self:UINow()-uiAt>1 then
+        check(self:SetNebulaBackdrop(1,true) and #self.EnvironmentBackdropElements==6,
+            'native backdrop creates six sky faces without a wrapped maximum-scale quad')
+        self.BattleCamSignature=nil; self.BattleCamTargetSignature=nil
+        uiAt=self:UINow(); stage=3.85
+    elseif stage==3.85 and self:UINow()-uiAt>.6 then
+        if skyView<6 then skyView=skyView+1; uiAt=self:UINow()
+        else self:StopBattleCam(); self:SetTimeScale(8); stage=4 end
     elseif stage==4 then
         self.Selected={movers[1]:getSignature(),movers[2]:getSignature()}
         self:SetSelectedFormation('LINE_ABREAST')

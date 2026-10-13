@@ -82,6 +82,49 @@ class PlayerFeedbackTests(unittest.TestCase):
           assert(r.HoverReadout==nil)
         ''')
 
+    def test_hovered_enemy_draws_its_weapon_ranges(self):
+        self.check('''
+          local enemy=ship('Enemy range contact',class('SF Mara'),ba.createVector(0,0,3000),mn.Teams.hostile)
+          enemy.__role='fighter'; enemy.Radius=100
+          local rings={}
+          r.EachShip=function(self,fn) fn(enemy) end
+          r.GetShipList=function() return {enemy} end
+          r.GetShipAtScreen=function() return enemy end
+          r.ProjectShip=function() return 960,540 end
+          r.GetReticlePixelSize=function() return 20 end
+          r.GetFactionColorTable=function() return {255,0,0} end
+          r.GetReticleFactionColor=function() return {255,0,0} end
+          r.DrawBuildSignatures=function() end; r.ProjectionCacheNeedsPrune=function() return false end
+          r.ResetDecorationGrid=function() end; r.RecycleMarkerPoints=function() end
+          r.BuildViewportGate=function() return nil end; r.DrawSelectedReticleGroups=function() end
+          r.DrawReticle=function() return 10 end; r.DrawRoleMarker=function() end
+          r.ShouldDecorateReticle=function() return false end; r.DrawEdgeContactMarker=function() end
+          r.GetShipWeaponRanges=function(self,s)
+            assert(s==enemy); return {primary=1000,secondary=2000,beam=3000}
+          end
+          r.DrawWorldRangeRing=function(self,pos,range) rings[#rings+1]=range end
+          r.GetHoverOrderTarget=function() return nil end; r.GetHoverCourseProjection=function() return nil end
+          r.IsPointOnRTSUI=function() return false end
+          r.Selected={}; r.HoveredSelectionSigs={}; r:DrawWorldOverlays()
+          assert(#rings==3 and rings[1]==1000 and rings[2]==2000 and rings[3]==3000,
+            'hovering an enemy did not draw primary, secondary and beam ranges')
+        ''')
+
+    def test_battle_camera_stays_close_to_a_small_ship_with_a_distant_target(self):
+        self.check('''
+          local fighter=mkFighter('Director fighter',ba.createVector(0,0,0))
+          local target=ship('Director target',class('SF Mara'),ba.createVector(0,0,4000),mn.Teams.hostile)
+          fighter.Orientation={getFvec=function() return ba.createVector(0,0,1) end,
+            getRvec=function() return ba.createVector(1,0,0) end,
+            getUvec=function() return ba.createVector(0,1,0) end}
+          r.FollowCamera={Position=ba.createVector(0,0,-500),Orientation=nil,FOV=.8}
+          r.FollowZoom=1; r.FollowYawOffset=0; r.FollowPitchOffset=.2
+          r:UpdateFollowCamera(fighter,target)
+          assert(r.CameraFocus:getDistance(fighter.Position)<1,'director focused empty space between distant ships')
+          assert(r.FollowCamera.Position:getDistance(fighter.Position)<1000,
+            'director zoomed away from the fighter to frame a distant target')
+        ''')
+
     def test_pilot_comm_keeps_custom_panel_out_of_native_menu_and_resets_on_close(self):
         self.check('''
           local pilot=mkFighter('UI pilot'); r.PossessedSignature=pilot.signature
@@ -281,6 +324,22 @@ class PlayerFeedbackTests(unittest.TestCase):
           assert(not shipHook(),'capital beam damage was blocked')
           hv={Weapon=shot}; deletedHook(); assert(r.BaseDamageProtectedWeapons[shot.signature]==nil,'deleted projectile leaked its owner mark')
           hv={Beam=beam}; beamDeathHook(); assert(r.BaseDamageProtectedWeapons[beam.signature]==nil,'dead beam leaked its owner mark')
+        ''')
+
+    def test_pilot_player_proxy_missile_is_reassigned_to_the_flown_hull(self):
+        self.check('''
+          local created
+          engine={addHook=function(name,fn) if name=='On Weapon Created' then created=fn end; return true end}
+          r.BaseDamageProtectionHooks=nil; r:RegisterBaseDamageProtection()
+          tb.WeaponClasses={}
+          local pilot=mkFighter('Possessed owner'); local observer=mkFighter('Player proxy')
+          r.PossessedSignature=pilot:getSignature()
+          r.GetPossessedShip=function() return pilot end; r.GetObserver=function() return observer end
+          local weapon={Parent=observer,Class={Name='Unknown pilot missile'},signature=9010,
+            isValid=function() return true end,getSignature=function(self) return self.signature end,
+            vanish=function(self) self.vanished=true end}
+          hv={Weapon=weapon}; created()
+          assert(weapon.Parent==pilot,'the player proxy retained ownership of a possessed ship missile')
         ''')
 
     def test_fighter_blast_route_pages_once_preserves_bombers_and_rejects_failed_assets(self):
@@ -1124,6 +1183,27 @@ class PlayerFeedbackTests(unittest.TestCase):
             'native weapons gauge was retained, repeatedly rewritten or left hidden after release')
         ''')
 
+    def test_turret_equipped_ship_retains_its_native_weapon_banks_and_controls(self):
+        self.check('''
+          local pilot=mkFighter('Hybrid bomber')
+          pilot.PrimaryBanks={{Armed=true}}; pilot.SecondaryBanks={{Armed=true,AmmoLeft=3}}
+          r.PossessedSignature=pilot.signature; r.GetPossessedShip=function() return pilot end
+          r.PilotTurretGroups={{turrets={}}}; r.PilotWeaponsHUDOverridden=false
+          local hidden=false
+          hu={getHUDGaugeHandle=function() return {setRenderOverride=function(self,value) hidden=value end} end}
+          r:SetPilotWeaponsHUD(true)
+          assert(not hidden,'turret-equipped bomber lost its primary and secondary weapon display')
+          local hooks={}; io.Keybinding={}
+          for _,name in ipairs({'CYCLE_NEXT_PRIMARY','CYCLE_PREV_PRIMARY','CYCLE_SECONDARY'}) do
+            io.Keybinding[name]={Name=name,registerHook=function(self,callback) hooks[self.Name]=callback end,
+              enableScripting=function() end}
+          end
+          r:SetPilotWeaponCycleHooks(true)
+          for _,name in ipairs({'CYCLE_NEXT_PRIMARY','CYCLE_PREV_PRIMARY','CYCLE_SECONDARY'}) do
+            assert(hooks[name]()==false,'turret controls stole native bank selection: '..name)
+          end
+        ''')
+
     def test_outcome_text_is_drawn_directly_in_the_existing_large_font(self):
         self.check('''
           local normal={height=9,isValid=function() return true end}
@@ -1275,6 +1355,7 @@ class PlayerFeedbackTests(unittest.TestCase):
 
     def test_armed_sentry_world_gesture_places_instead_of_box_selecting(self):
         self.check('''
+          r.StationState.BLUE.levels.defenses=1
           r.ArmedCommand='sentry'; r.ArmedSentryIndex=1; r.CommandPoints=1000
           local world=stations.BLUE.Position+ba.createVector(2000,0,0)
           r.ScreenToPlane=function() return world end

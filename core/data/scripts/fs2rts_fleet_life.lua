@@ -27,6 +27,7 @@ function R:GetUnitHistory(ship)
 end
 
 function R:RecordShipCreated(ship,newCommission)
+    if self.SetupActive or self.CinematicActive then return nil end
     if not alive(ship) or ship.Name==self.Config.ObserverShip or self:IsCommandStation(ship) or self:IsStaticDefense(ship) then return nil end
     self.UnitHistory=self.UnitHistory or {}; self.HistoryBySignature=self.HistoryBySignature or {}
     local old=self:GetUnitHistory(ship)
@@ -252,7 +253,7 @@ function R:BeginShipWithdrawal(ship)
     ship.Target=nil
     for i=1,#ship do local turret=ship[i]; if turret:isTurret() then turret.Target=nil end end
     self.UserOrders[sig]=nil; self.PolicyApplied[sig]=nil; self.AIOrderState[sig]=nil
-    ship:clearOrders(); self:SetShipCommandDiscipline(ship,true); self:SetShipTurretLock(ship,true)
+    ship:clearOrders(); self:SetShipCommandDiscipline(ship,false); self:SetShipTurretLock(ship,true)
     local withdrawal={faction=kind,destination=destination,committedAt=mn.getMissionTime(),history=record and record.id,
         originalTeam=ship.Team,phase=destination and 'WITHDRAWING // EXPOSED' or 'STRANDED // NO CLEAR CORRIDOR'}
     self.Withdrawals[sig]=withdrawal
@@ -418,7 +419,7 @@ function R:UpdateFleetLife(now)
                         if not w.orderIssuedAt or now-w.orderIssuedAt>=5 or #ship.Orders==0 then
                             ship:clearOrders(); ship:giveOrder(ORDER_WAYPOINTS_ONCE,waypoint,nil,.99); w.orderIssuedAt=now
                         end
-                        self:SetShipCommandDiscipline(ship,true); self:SetShipTurretLock(ship,true)
+                        self:SetShipCommandDiscipline(ship,false); self:SetShipTurretLock(ship,true)
                     else w.phase='STRANDED // ROUTE UNAVAILABLE' end
                 end
             end

@@ -177,13 +177,16 @@ function RTS:NextProductionJobId()
     return self.ProductionJobSerial
 end
 
-function RTS:SpawnFriendly(option, spawned)
+function RTS:SpawnFriendly(option, spawned, job)
     local carrier=self:GetCarrier(); if not shipAlive(carrier) then return false,spawned end
     local class=tb.ShipClasses[option.class]; if class==nil or not class:isValid() then self:Log("Invalid build class: "..option.class); return false end
     local count=option.count or 1; spawned=spawned or {}; local failed=false; local wingLabel=count>1 and self:GetNextWingCallsign("BLUE") or nil
-    self.BuildBatchSerial=(self.BuildBatchSerial or 0)+1; local batch=self.BuildBatchSerial
+    local batch=job and job.spawnBatch
+    if not batch then self.BuildBatchSerial=(self.BuildBatchSerial or 0)+1; batch=self.BuildBatchSerial end
     for i=1,count do
-        self.BuildSerial=self.BuildSerial+1; local pos,orient=self:GetSpawnFrame(carrier,class,i,count,batch); local name=self:GetSafeShipName(wingLabel and (wingLabel.." "..tostring(i)) or (option.label.." "..tostring(self.BuildSerial)))
+        local preferred
+        for _,marker in ipairs(job and job.signaturePositions or {}) do if marker.slot==i then preferred=marker.pos; break end end
+        self.BuildSerial=self.BuildSerial+1; local pos,orient=self:GetSpawnFrame(carrier,class,i,count,batch,preferred); local name=self:GetSafeShipName(wingLabel and (wingLabel.." "..tostring(i)) or (option.label.." "..tostring(self.BuildSerial)))
         if pos==nil then failed=true; break end
         local ok,err=pcall(function()
         local ship=mn.createShip(name,class,orient,pos,carrier.Team,true); self:InvalidateShipList()
@@ -224,21 +227,52 @@ function RTS:NotifyNewUnits(spawned)
     self.NewUnitPopup=popup
 end
 
--- Warp-in points for hulls that are building: the spawn point the job's first hull
--- will use (GetSpawnFrame, the same placement the arrival uses). Recomputed every few
--- seconds per job rather than every frame, because GetSpawnFrame scans the ship list.
+-- Warp-in points for every hull in an active player or AI build. Use the same
+-- slot and batch inputs as the eventual spawn; refresh once per second because
+-- GetSpawnFrame scans the ship list.
 function RTS:GetBuildSignatures(now)
     local signatures={}
-    local carrier=self:GetCarrier()
-    if not shipAlive(carrier) then return signatures end
-    for _,job in ipairs(self.BuildQueue or {}) do
-        if job.started==true and job.option and job.option.class then
-            if job.signatureAt==nil or now-job.signatureAt>=5 then
-                local class=tb.ShipClasses[job.option.class]
-                job.signaturePos=class and (self:GetSpawnFrame(carrier,class,1,job.option.count or 1)) or nil
-                job.signatureAt=now
+    local function append(job,kind,anchor,option,count,batch)
+        if not shipAlive(anchor) or not option or not option.class then return end
+        count=math.max(1,tonumber(count) or 1)
+        local class=tb.ShipClasses[option.class]
+        if not class or not class:isValid() then return end
+        if job.signatureAt==nil or now-job.signatureAt>=1 or job.signatureClass~=class
+            or job.signatureCount~=count or job.signatureBatch~=batch
+            or job.signatureFaction~=kind or job.signatureAnchor~=anchor:getSignature() then
+            job.signaturePositions={}
+            for slot=1,count do
+                local pos=self:GetSpawnFrame(anchor,class,slot,count,batch)
+                if pos then job.signaturePositions[#job.signaturePositions+1]={pos=pos,slot=slot} end
             end
-            if job.signaturePos then signatures[#signatures+1]={pos=job.signaturePos,job=job} end
+            job.signatureAt=now; job.signatureClass=class; job.signatureCount=count
+            job.signatureBatch=batch; job.signatureFaction=kind; job.signatureAnchor=anchor:getSignature()
+        end
+        for _,placement in ipairs(job.signaturePositions or {}) do
+            signatures[#signatures+1]={pos=placement.pos,job=job,faction=kind,slot=placement.slot}
+        end
+    end
+
+    -- Allocate each manual build's scatter batch when it starts, so a frame
+    -- hitch or a capacity wait cannot swap two jobs' arrival locations.
+    if not self.AutoPlayerMode then
+        local carrier=self:GetCarrier()
+        if shipAlive(carrier) then
+            for _,job in ipairs(self.BuildQueue or {}) do
+                if job.started==true and job.option and job.option.class then
+                    append(job,'BLUE',carrier,job.option,job.option.count or 1,job.spawnBatch or (self.BuildBatchSerial or 0)+1)
+                end
+            end
+        end
+    end
+
+    -- Each AI faction's production uses its own station and serial as the batch.
+    for _,kind in ipairs(self:GetFactionKeys()) do
+        local state=self.AIStates and self.AIStates[kind]
+        local job=state and state.queue
+        local station=job and self:GetFactionCommandShip(kind)
+        if job and not (kind=='BLUE' and not self.AutoPlayerMode) then
+            append(job,kind,station,job.entry,job.count or 1,(state.serial or 0)+1)
         end
     end
     return signatures
@@ -291,6 +325,7 @@ function RTS:UpdateBuildQueue(now)
         if active>=self:GetBuildQueueSlots("BLUE") then break end
         if not item.started then
             item.started=true; item.startTime=now
+            self.BuildBatchSerial=(self.BuildBatchSerial or 0)+1; item.spawnBatch=self.BuildBatchSerial
             item.finishTime=now+item.option.time*scale*self:GetBuildTimeMultiplier("BLUE")
             self:EmitAIEvent("PRODUCTION",{action="BUILD_STARTED",producer="PLAYER",faction="BLUE",
                 jobId=item.id,class=item.option.class,role=item.option.role,tier=item.option.tier,count=item.option.count or 1,
@@ -311,7 +346,7 @@ function RTS:UpdateBuildQueue(now)
                 table.remove(self.BuildQueue,i)
                 local spawned={}
                 local ok,success,returned=pcall(function()
-                    local s,sp=self:SpawnFriendly(current.option,spawned)
+                    local s,sp=self:SpawnFriendly(current.option,spawned,current)
                     return s,sp
                 end)
                 if ok and returned then spawned=returned end
@@ -344,10 +379,10 @@ function RTS:UpdateBuildQueue(now)
     end
 end
 
-function RTS:SpawnFactionUnit(className,anchor,team,prefix,waveNumber,unitIndex,offsetIndex,slot,total,nameOverride,batch,spawned)
+function RTS:SpawnFactionUnit(className,anchor,team,prefix,waveNumber,unitIndex,offsetIndex,slot,total,nameOverride,batch,spawned,preferred)
     if not shipAlive(anchor) or team==nil or not team:isValid() then return nil end
     local class=tb.ShipClasses[className]; if class==nil or not class:isValid() then self:Log("Invalid faction class: "..className); return nil end
-    self.EnemySerial=self.EnemySerial+1; local serial=self.EnemySerial; local pos,orient=self:GetSpawnFrame(anchor,class,slot or 1,total or 1,batch)
+    self.EnemySerial=self.EnemySerial+1; local serial=self.EnemySerial; local pos,orient=self:GetSpawnFrame(anchor,class,slot or 1,total or 1,batch,preferred)
     if pos==nil then return nil end
     local name=self:GetSafeShipName(nameOverride or (prefix.." W"..tostring(waveNumber).."-"..tostring(unitIndex).."-"..tostring(serial)))
     local ship=mn.createShip(name,class,orient,pos,team,true); self:InvalidateShipList()
@@ -417,8 +452,9 @@ function RTS:InitializeUnitOrders()
     self:EachShip(function(ship)
         if ship.Name~=self.Config.ObserverShip then
             self:EnableFullArsenal(ship); self:AuditShipArsenal(ship)
-            if self:IsStaticDefense(ship) then return end
             local kind=self:GetFactionKey(ship)
+            if self:IsCommandStation(ship) and kind then self:ApplyStationDefenseProgression(kind,self:GetUpgradeLevel(kind,"defenses")) end
+            if self:IsStaticDefense(ship) then return end
             if kind=="BLUE" then
                 if self:IsCommandStation(ship) then self:HoldShip(ship,.70)
                 elseif self.AutoPlayerMode then self:AssignAIStrategicOrder(ship,"BLUE",true)

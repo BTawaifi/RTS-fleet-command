@@ -5,6 +5,21 @@ from test_station import SETUP, SCRIPTS
 
 
 class FleetLifeTests(unittest.TestCase):
+    def test_presentation_ships_are_not_commissioned_before_start(self):
+        self.lua.execute('''
+          local unit=ship('RTS Setup 1-1',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
+          r.GetShipList=function() return {unit} end
+          for _,phase in ipairs({'setup','intro'}) do
+            r:ResetFleetLife(); r.NextFleetLife=0
+            r.SetupActive=phase=='setup'; r.CinematicActive=phase=='intro'
+            assert(r:RecordShipCreated(unit)==nil,'presentation hull commissioned')
+            r:UpdateFleetLife(1)
+            assert(next(r.UnitHistory)==nil,'presentation hull enters real history')
+          end
+          r.SetupActive=false; r.CinematicActive=false
+          assert(r:RecordShipCreated(unit),'active gameplay cannot commission real hulls')
+        ''')
+
     def test_citations_require_paid_recovery_useful_rejoin_and_confirmed_cover_escape(self):
         self.lua.execute('''
           local unit=ship('Recovering crew',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
@@ -274,10 +289,18 @@ class FleetLifeTests(unittest.TestCase):
     def test_withdrawal_is_irreversible_and_only_confirmed_departure_marks_escape(self):
         self.lua.execute('''
           local unit=ship('Extract',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
+          unit.flags={}
+          function unit:getFlag(flag) return self.flags[flag]==true end
+          function unit:setFlag(value,flag) self.flags[flag]=value end
           local record=r:RecordShipCreated(unit)
           assert(not r:BeginShipWithdrawal(unit),'healthy faction withdrew before defeat/result')
+          r:SetShipCommandDiscipline(unit,true)
+          assert(unit:getFlag('no-dynamic'),'fixture: a prior move owns the native movement lock')
           r.BlueEliminated=true
           assert(r:BeginShipWithdrawal(unit) and r.Withdrawals[unit:getSignature()].destination)
+          assert(not unit:getFlag('no-dynamic'),'withdrawal still suppresses native missile evasion')
+          r.NextFleetLife=0; r:UpdateFleetLife(.5)
+          assert(not unit:getFlag('no-dynamic'),'the withdrawal tick re-enabled no-dynamic')
           local route=r.Withdrawals[unit:getSignature()].destination
           assert(r:BeginShipWithdrawal(unit) and r.Withdrawals[unit:getSignature()].destination==route)
           assert(not r:IsMovableFriendly(unit) and not r:BeginFleetService(unit,'MANUAL',0,true))

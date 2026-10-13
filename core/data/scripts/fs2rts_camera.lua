@@ -447,7 +447,7 @@ function RTS:ToggleBattleCam()
     if self.SetupActive or self.PostBattleActive or self.PossessedSignature~=nil then return end
     self:ExitFollowMode()
     self.RightDrag=nil; self.MovePreview=nil
-    self.BattleCamActive=true; self.BattleCamSignature=nil; self.BattleCamShotUntil=0
+    self.BattleCamActive=true; self.BattleCamSignature=nil; self.BattleCamTargetSignature=nil; self.BattleCamShotUntil=0
 end
 
 -- Shift+C: hide the RTS UI only; the normal camera controls stay live and
@@ -463,46 +463,68 @@ function RTS:StopBattleCam()
     if not self.BattleCamActive then return end
     local ship=self.BattleCamSignature and self:FindShipBySignature(self.BattleCamSignature)
     if shipValid(ship) then self.CameraFocus=copyVec(ship.Position) end
-    self.BattleCamActive=false; self.BattleCamSignature=nil
+    self.BattleCamActive=false; self.BattleCamSignature=nil; self.BattleCamTargetSignature=nil
     self.FollowZoom=1.0; self.FollowYawOffset=0; self.FollowPitchOffset=0.22
     gr.setCamera(self.Camera); self:UpdateCameraTransform(); self:SetStatus("Tactical camera",1.5)
 end
 
 function RTS:PickBattleCamTarget()
-    local best,bestScore=nil,-1
+    local best,bestTarget,bestScore=nil,nil,-1
     local now=mn.getMissionTime(); local activity=self.AIStats and self.AIStats.hits or {}
+    local function inReach(attacker,target)
+        return attacker.Position:getDistance(target.Position)-(attacker.Radius or 0)-(target.Radius or 0)<=self:GetShipWeaponRange(attacker)
+    end
     for _,ship in ipairs(self:GetShipList()) do
-        if ship.Name~=self.Config.ObserverShip and ship:getSignature()~=self.BattleCamSignature and not self:IsStaticDefense(ship) then
+        if shipAlive(ship) and ship.Name~=self.Config.ObserverShip and not self:IsCommandStation(ship) and not self:IsStaticDefense(ship) then
             local hull=ship.HitpointsMax>0 and ship.HitpointsLeft/ship.HitpointsMax or 1
             local id=ship:getSignature(); local hit=activity[id]; local recentHit=hit and hit.hostileTime and now-hit.hostileTime<=8
-            local target=objectValid(ship.Target) and ship.Target or nil
-            local attacking=target~=nil and self:AreEnemies(ship,target)
+            local target=shipAlive(ship.Target) and ship.Target or nil
+            local attacking=target~=nil and self:AreEnemies(ship,target) and inReach(ship,target)
             local targeters=(self.AITargetedBy or {})[id]; local underFire=false
-            if targeters then for faction,ships in pairs(targeters) do if faction~=self:GetFactionKey(ship) and next(ships) then underFire=true; break end end end
+            local incoming,bestDistance=nil,math.huge
+            if targeters then
+                for faction,ships in pairs(targeters) do
+                    if faction~=self:GetFactionKey(ship) then
+                        for _,attacker in pairs(ships) do
+                            if shipAlive(attacker) and self:AreEnemies(ship,attacker) and inReach(attacker,ship) then
+                                underFire=true
+                                local distance=ship.Position:getDistance(attacker.Position)
+                                if distance<bestDistance then incoming,bestDistance=attacker,distance end
+                            end
+                        end
+                    end
+                end
+            end
             local observation=(self.AIObservations or {})[id]
-            local active=recentHit or attacking or underFire or (observation and (observation.engaged or observation.hitObserved))
+            local active=recentHit or attacking or underFire or (observation and observation.time and now-observation.time<=8 and (observation.engaged or observation.hitObserved))
             local score=active and (100+(self:IsCapitalTarget(ship) and 8 or 0)+(underFire and 20 or 0)
                 +(attacking and 10 or 0)+(hull<.75 and 5 or 0))
                 or (self:IsCapitalTarget(ship) and 3 or 1)*(hull<0.97 and 2 or 1)*math.random()
-            if score>bestScore then best,bestScore=ship,score end
+            if id==self.BattleCamSignature then score=score-5 end
+            if score>bestScore then best,bestTarget,bestScore=ship,attacking and target or incoming,score end
         end
     end
-    return best
+    return best,bestTarget
 end
 
 function RTS:UpdateBattleCam()
     if self.PostBattleActive then self:StopBattleCam() return end
     local cfg=self.Config.BattleCam or {}
     local ship=self.BattleCamSignature and self:FindShipBySignature(self.BattleCamSignature)
-    if not shipValid(ship) or self:UINow()>=self.BattleCamShotUntil then
-        ship=self:PickBattleCamTarget()
+    if not shipAlive(ship) or self:UINow()>=self.BattleCamShotUntil then
+        local target
+        ship,target=self:PickBattleCamTarget()
         if ship==nil then self:StopBattleCam() return end
-        self.BattleCamSignature=ship:getSignature(); self.BattleCamShotUntil=self:UINow()+(cfg.ShotSeconds or 9)
+        self.BattleCamSignature=ship:getSignature()
+        self.BattleCamTargetSignature=shipValid(target) and target:getSignature() or nil
+        self.BattleCamShotUntil=self:UINow()+(cfg.ShotSeconds or 9)
         self.BattleCamShotStart=self:UINow(); self.BattleCamYawStart=math.random()*math.pi*2
-        self.FollowZoom=0.8+math.random()*0.9; self.FollowPitchOffset=-0.25+math.random()*0.7
+        self.FollowZoom=0.8+math.random()*0.4; self.FollowPitchOffset=-0.25+math.random()*0.7
     end
     self.FollowYawOffset=self.BattleCamYawStart+(self:UINow()-self.BattleCamShotStart)*(cfg.OrbitRadiansPerSecond or 0.12)
-    self:UpdateFollowCamera(ship)
+    local target=self.BattleCamTargetSignature and self:FindShipBySignature(self.BattleCamTargetSignature)
+    if not shipValid(target) or not self:AreEnemies(ship,target) then target=nil end
+    self:UpdateFollowCamera(ship,target)
 end
 
 function RTS:DrawBattleCamOverlay(sw, sh)
@@ -512,7 +534,9 @@ function RTS:DrawBattleCamOverlay(sw, sh)
     gr.setColor(0,0,0,255); gr.drawRectangle(0,0,sw,bar,true); gr.drawRectangle(0,sh-bar,sw,sh,true)
     local ship=self.BattleCamSignature and self:FindShipBySignature(self.BattleCamSignature)
     if shipValid(ship) then
-        gr.setColor(220,238,245,255); self:DrawCenteredTextClipped(ship.Name,edge,sw-edge,sh-bar+m.pad(14))
+        local target=self.BattleCamTargetSignature and self:FindShipBySignature(self.BattleCamTargetSignature)
+        local title=ship.Name..(shipValid(target) and ('  VS  '..target.Name) or '')
+        gr.setColor(220,238,245,255); self:DrawCenteredTextClipped(title,edge,sw-edge,sh-bar+m.pad(14))
         gr.setColor(120,205,225,255); self:DrawCenteredTextClipped(ship.Class.Name.."  //  "..tostring(self:GetFactionKey(ship) or ""),edge,sw-edge,sh-bar+m.pad(34))
     end
     local key=tostring((self.Config.HomeworldControls or {}).Cinematic or "C")
@@ -540,7 +564,7 @@ function RTS:StartFollowMode(ship)
     self:SetStatus("CHASE MODE: " .. ship.Name, 2)
 end
 
-function RTS:UpdateFollowCamera(ship)
+function RTS:UpdateFollowCamera(ship,target)
     if self.FollowCamera == nil or not shipValid(ship) then return end
     local radius=30; if ship.Class and ship.Class.Model then radius=math.max(1,ship.Class.Model.Radius) end
     local c=self.Config.Camera
@@ -551,8 +575,22 @@ function RTS:UpdateFollowCamera(ship)
     local cy,sy=math.cos(yaw),math.sin(yaw); local cp,sp=math.cos(pitch),math.sin(pitch)
     local horizontal = forward * (-cy) + right * sy
     local offset = horizontal * (distance*cp) + up * (distance*sp)
-    local position=ship.Position+offset
+    local focus=ship.Position
     local lookAt=ship.Position+forward*(radius*(c.FollowLookAheadRadii or 1.0))
+    if shipValid(target) and self:AreEnemies(ship,target) then
+        local separation=ship.Position:getDistance(target.Position)
+        local targetRadius=target.Radius or 30
+        -- A distant assignment must not turn a close ship shot into empty
+        -- space. Frame a nearby pair only while both hulls remain readable.
+        if separation<=baseDistance*2 and targetRadius<=radius*3 then
+            focus=(ship.Position+target.Position)*0.5
+            local fov=math.max(0.1,c.FollowFOV or c.FOV or 0.8)
+            distance=math.min(baseDistance*2,math.max(distance,(separation*.5+math.max(radius,targetRadius))/math.tan(fov*.5)))
+            offset=horizontal*(distance*cp)+up*(distance*sp)
+            lookAt=focus
+        end
+    end
+    local position=focus+offset
     self.FollowCamera.Position=position; self.FollowCamera.Orientation=(lookAt-position):getOrientation(); self.FollowCamera.FOV=c.FollowFOV or c.FOV
-    self.CameraFocus=copyVec(ship.Position); gr.setCamera(self.FollowCamera)
+    self.CameraFocus=copyVec(focus); gr.setCamera(self.FollowCamera)
 end

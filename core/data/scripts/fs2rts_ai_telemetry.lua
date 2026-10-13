@@ -509,6 +509,13 @@ function RTS:RegisterBaseDamageProtection()
         local weapon=hv['Weapon']
         if valid(weapon) then
             local parent=weapon.Parent
+            if self.PossessedSignature~=nil and valid(parent) then
+                local observer=self:GetObserver()
+                if valid(observer) and parent:getSignature()==observer:getSignature() then
+                    local possessed=self:GetPossessedShip()
+                    if valid(possessed) then weapon.Parent=possessed; parent=possessed end
+                end
+            end
             if valid(parent) and parent:getBreedName()=='Ship' then
                 local role=self:GetShipRole(parent)
                 if role=='fighter' then

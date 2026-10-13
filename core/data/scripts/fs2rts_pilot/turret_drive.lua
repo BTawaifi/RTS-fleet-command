@@ -105,6 +105,8 @@ function RTS:RestorePilotTurretGroups()
 end
 
 function RTS:SetPilotWeaponsHUD(active)
+    local ship=self:GetPossessedShip()
+    if active and shipValid(ship) and (#ship.PrimaryBanks>0 or #ship.SecondaryBanks>0) then active=false end
     if self.PilotWeaponsHUDOverridden==active then return end
     -- Resolve a fresh gauge handle on transitions; HUD gauge pointers may be
     -- rebuilt on mission restart and must not be retained across missions.
