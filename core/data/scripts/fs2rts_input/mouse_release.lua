@@ -156,6 +156,13 @@ function RTS:OnMouseReleased(button)
     elseif bit.checkBit(button,2) then self.MiddleDrag=nil end
 end
 
+-- Q/E zoom about the screen centre in wheel-sized steps; steps > 0 zooms in.
+function RTS:StepCameraZoom(steps)
+    local cam = self.Config.Camera
+    self.CameraDistance = clamp(self.CameraDistance * cam.ZoomFactor ^ steps, cam.MinDistance, cam.MaxDistance)
+    self:UpdateCameraTransform()
+end
+
 function RTS:OnMouseWheel(delta)
     if not self.Enabled or self.PossessedSignature ~= nil or self.CinematicActive or self.BattleCamActive or delta == nil or delta == 0 then return end
     local factor = self.Config.Camera.ZoomFactor

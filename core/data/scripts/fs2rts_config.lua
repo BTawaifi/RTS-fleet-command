@@ -152,6 +152,7 @@ return {
         MouseOrbitYaw = 0.006,
         MouseOrbitPitch = 0.004,
         ZoomFactor = 0.78,
+        KeyZoomSteps = 2, -- wheel notches per Q/E press
         FollowFOV = 0.95,
         FollowMinDistance = 150,
         FollowRadiusMultiplier = 3.2,

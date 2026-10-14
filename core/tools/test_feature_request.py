@@ -233,6 +233,19 @@ class KeyBindingTests(unittest.TestCase):
           assert(seen.HOLD and seen.RETREAT and seen.STANDOFF and seen.ENGAGE,
             'HOLD/RETREAT/STANDOFF/ENGAGE not all reachable by key')""")
 
+    def test_zoom_keys_step_instead_of_jumping_to_the_limits(self):
+        self.check("""local cam=r.Config.Camera; local start=cam.Distance; r.CameraDistance=start
+          r.UpdateCameraTransform=function() end
+          r:OnKeyPressed('Q','Q'); local out=r.CameraDistance
+          assert(out>start and out<cam.MaxDistance,'Q jumped to '..out)
+          r:OnKeyPressed('E','E'); assert(math.abs(r.CameraDistance-start)<1e-6,'Q then E did not return to '..start)
+          r:OnKeyPressed('E','E'); local near=r.CameraDistance
+          assert(near<start and near>cam.MinDistance,'E jumped to '..near)
+          for _=1,200 do r:OnKeyPressed('Q','Q') end
+          assert(r.CameraDistance==cam.MaxDistance,'Q is not clamped at MaxDistance')
+          for _=1,200 do r:OnKeyPressed('E','E') end
+          assert(r.CameraDistance==cam.MinDistance,'E is not clamped at MinDistance')""")
+
     def test_music_key_toggles_the_audio_stream(self):
         self.check("""musicCalls={}; r.EnvironmentMusicHandle=21
           r:OnKeyPressed('N','N'); assert(r.MusicMuted==true,'N did not mute')
