@@ -1,0 +1,444 @@
+; Generated optional MediaVP alias patches; load only with MediaVP assets.
+
+#Primary Weapons
+
+$Name: RTSF Subach HL-7
++nocreate
++Description:	XSTR("
+	Standard Terran Issue
+	Velocity: 450        Range: 900
+	DPS: 68 Hull, 53 Shield, 23 Subsystem
+	Power Use: 1W        ROF: 5/s", 999215)
+$end_multi_text
++Weapon Range:		900
+
+$Name: RTSF Subach HL-D
++nocreate
++Description:	XSTR("
+	Standard Terran Issue
+	Velocity: 450        Range: 900
+	DPS: 75 Hull, 75 Shield, 23 Subsystem
+	Power Use: 1W        ROF: 5/s", 999216)
+$end_multi_text
++Weapon Range:		900
+
+$Name: RTSF Mekhu HL-7
++nocreate
++Description:	XSTR("
+	Standard Vasudan Issue
+	Velocity: 485        Range: 970
+	DPS: 72 Hull, 64 Shield, 24 Subsystem
+	Power Use: 1.3W      ROF: 6.7/s", 999217)
+$end_multi_text
++Weapon Range:		970
+
+$Name: RTSF Mekhu HL-7D
++nocreate
++Description:	XSTR("
+	Standard Vasudan Issue
+	Velocity: 485        Range: 970
+	DPS: 112 Hull, 120 Shield, 24 Subsystem
+	Power Use: 1.3W      ROF: 6.7/s", 999218)
+$end_multi_text
++Weapon Range:		970
+
+$Name: RTSF Akheton SDG
++nocreate
++Description:	XSTR("
+	Penetrator - Destroys Subsystems
+	Velocity: 500        Range: 750
+	DPS: 0 Hull, 43 Shield, 86 Subsystem
+	Power Use: 4.6W      ROF: 2.9/s", 999219)
+$end_multi_text
++Weapon Range:		750
+
+$Name: RTSF Morning Star
++nocreate
++Description:	XSTR("
+	Long-Range High-Impulse Weapon
+	Velocity: 1000       Range: 2000
+	DPS: 23 Hull, 61 Shield, 9 Subsystem
+	Power Use: 5.3W      ROF: 6.7/s", 999220)
+$end_multi_text
++Weapon Range:		2000
+
+$Name: RTSF MorningStar D
++nocreate
++Description:	XSTR("
+	Long-Range High-Impulse Weapon
+	Velocity: 1000       Range: 2000
+	DPS: 21 Hull, 41 Shield, 8 Subsystem
+	Power Use: 4.7W      ROF: 5.9/s", 999221)
+$end_multi_text
++Weapon Range:		2000
+
+$Name: RTSF Prometheus R
++nocreate
++Description:	XSTR("
+	Medium Cannon
+	Velocity: 450        Range: 900
+	DPS: 44 Hull, 32 Shield, 14 Subsystem
+	Power Use: 1.3W      ROF: 2.2/s", 999222)
+$end_multi_text
++Weapon Range:		900
+
+$Name: RTSF Prometheus S
++nocreate
++Description:	XSTR("
+	Medium Cannon
+	Velocity: 750        Range: 1500
+	DPS: 77 Hull, 86 Shield, 30 Subsystem
+	Power Use: 2.9W      ROF: 2.9/s", 999223)
+$end_multi_text
++Weapon Range:		1500
+
+$Name: RTSF Prometheus D
++nocreate
++Description:	XSTR("
+	Medium Cannon
+	Velocity: 450        Range: 900
+	DPS: 53 Hull, 67 Shield, 23 Subsystem
+	Power Use: 1.3W      ROF: 3.3/s", 999224)
+$end_multi_text
++Weapon Range:		900
+
+$Name: RTSF Maxim
++nocreate
++Description:	XSTR("
+	High-Velocity Long-Range Cannon
+	Velocity: 1800       Range: 3600
+	DPS: 173 Hull, 27 Shield, 133 Subsystem
+	Power Use: 6.7W      ROF: 6.7/s", 999225)
+$end_multi_text
++Weapon Range:		3600
+
+$Name: RTSF Maxim D
++nocreate
++Description:	XSTR("
+	High-Velocity Long-Range Cannon
+	Velocity: 1800       Range: 2700
+	DPS: 107 Hull, 27 Shield, 133 Subsystem
+	Power Use: 6.7W      ROF: 6.7/s", 999226)
+$end_multi_text
++Weapon Range:		2700
+
+$Name: RTSF UD-8 Kayser
++nocreate
++Description:	XSTR("
+	Experimental Heavy Cannon
+	Velocity: 650        Range: 975
+	DPS: 112 Hull, 101 Shield, 39 Subsystem
+	Power Use: 4.8W      ROF: 4/s", 999227)
+$end_multi_text
++Weapon Range:		975
+
+$Name: RTSF UD-D Kayser
++nocreate
++Description:	XSTR("
+	Experimental Heavy Cannon
+	Velocity: 650        Range: 975
+	DPS: 56 Hull, 56 Shield, 33 Subsystem
+	Power Use: 10W       ROF: 3.3/s", 999228)
+$end_multi_text
++Weapon Range:		975
+
+$Name: RTSF Circe
++nocreate
++Description:	XSTR("
+	EM Cannon
+	Velocity: 450        Range: 1350
+	DPS: 0 Hull, 113 Shield, 0 Subsystem
+	Power Use: 2.5W      ROF: 2.5/s", 999229)
+$end_multi_text
++Weapon Range:		1350
+
+$Name: RTSF Lamprey
++nocreate
++Description:	XSTR("
+	Power Disruptor
+	Velocity: 450        Range: 900
+	DPS: 5 Hull, 47 Shield, 0 Subsystem
+	Power Use: 4W        ROF: 3.3/s", 999230)
+$end_multi_text
++Weapon Range:		900
+
+$Name: RTSF Training
++nocreate
++Weapon Range:		800
+
+$Name: RTSF Vasudan Light Laser
++nocreate
++Weapon Range:		900
+
+$Name: RTSF Shivan Heavy Laser
++nocreate
++Weapon Range:		950
+
+$Name: RTSF Shivan Mega Laser
++nocreate
++Weapon Range:		600
+
+#End
+
+
+
+#Secondary Weapons
+
+$Name: RTSF Rockeye
++nocreate
++Description:	XSTR("
+	Standard Missile, Passive
+	Velocity: 190        Range: 1900
+	Damage: 90 Hull, 72 Shield, 36 Subsystem
+	Fire Wait: 0.5s      Reload: 16/s", 999231)
+$end_multi_text
+$Detail distance:	( 0, 6, 25 )
++Weapon Range:		1900
+
+$Name: RTSF Rockeye D
++nocreate
++Description:	XSTR("
+	Standard Missile, Passive
+	Velocity: 190        Range: 1900
+	Damage: 90 Hull, 72 Shield, 36 Subsystem
+	Fire Wait: 1.5s      Reload: 16/s", 999232)
+$end_multi_text
+$Detail distance:	( 0, 6, 25 )
++Weapon Range:		1900
+
+$Name: RTSF Tempest
++nocreate
++Description:	XSTR("
+	Unguided Rocket
+	Velocity: 360        Range: 648
+	Damage: 81 Hull, 45 Shield, 27 Subsystem
+	Fire Wait: 0.3s      Reload: 48/s", 999233)
+$end_multi_text
+$Detail distance:	( 0, 3, 11 )
++Weapon Range:		648
+
+$Name: RTSF Tempest D
++nocreate
++Description:	XSTR("
+	Unguided Rocket
+	Velocity: 360        Range: 504
+	Damage: 76 Hull, 42 Shield, 25 Subsystem
+	Fire Wait: 0.3s      Reload: 48/s", 999234)
+$end_multi_text
+$Detail distance:	( 0, 3, 11 )
++Weapon Range:		504
+
+$Name: RTSF Hornet
++nocreate
++Description:	XSTR("
+	Swarm Missile, Lock-On
+	Velocity: 190        Range: 1330
+	Damage: 100 Hull, 50 Shield, 8 Subsystem
+	Fire Wait: 2s        Reload: 4/s
+	Launches In Swarms Of 4", 999235)
+$end_multi_text
+$Detail distance:	( 0, 3, 11 )
++Weapon Range:		1330
+
+$Name: RTSF Hornet D
++nocreate
++Description:	XSTR("
+	Swarm Missile, Lock-On
+	Velocity: 190        Range: 1330
+	Damage: 72 Hull, 36 Shield, 5 Subsystem
+	Fire Wait: 2s        Reload: 4/s
+	Launches In Swarms Of 4", 999236)
+$end_multi_text
+$Detail distance:	( 0, 3, 11 )
++Weapon Range:		1330
+
+$Name: RTSF Hornet#Weak
++nocreate
++Description:	XSTR("
+	Swarm Missile, Lock-On
+	Velocity: 190        Range: 1140
+	Damage: 30 Hull, 6 Shield, 5 Subsystem
+	Fire Wait: 2s        Reload: 4/s
+	Launches In Swarms Of 4", 999237)
+$end_multi_text
+$Detail distance:	( 0, 3, 11 )
++Weapon Range:		1140
+$Flags: ("player allowed")
+$Icon:	iconHornet
+$Anim:	hornet
+
+$Name: RTSF Tornado
++nocreate
++Description:	XSTR("
+	Swarm Missile, Fast Lock-On
+	Velocity: 230        Range: 1610
+	Damage: 100 Hull, 50 Shield, 8 Subsystem
+	Fire Wait: 2.5s      Reload: 4/s
+	Launches In Swarms Of 4", 999238)
+$end_multi_text
+$Detail distance:	( 0, 3, 12 )
++Weapon Range:		1610
+
+$Name: RTSF Tornado D
++nocreate
++Description:	XSTR("
+	Swarm Missile, Fast Lock-On
+	Velocity: 230        Range: 1610
+	Damage: 48 Hull, 34 Shield, 6 Subsystem
+	Fire Wait: 3s        Reload: 4/s
+	Launches In Swarms Of 4", 999239)
+$end_multi_text
+$Detail distance:	( 0, 3, 12 )
++Weapon Range:		1610
+
+$Name: RTSF Harpoon
++nocreate
++Description:	XSTR("
+	Dogfight Missile, Fast Lock-On
+	Velocity: 250        Range: 1250
+	Damage: 200 Hull, 160 Shield, 50 Subsystem
+	Fire Wait: 2s        Reload: 8/s", 999240)
+$end_multi_text
+$Detail distance:	( 0, 5, 21 )
++Weapon Range:		1250
+
+$Name: RTSF Harpoon D
++nocreate
++Description:	XSTR("
+	Dogfight Missile, Fast Lock-On
+	Velocity: 180        Range: 900
+	Damage: 140 Hull, 112 Shield, 35 Subsystem
+	Fire Wait: 3.5s      Reload: 8/s", 999241)
+$end_multi_text
+$Detail distance:	( 0, 5, 21 )
++Weapon Range:		900
+
+$Name: RTSF Harpoon#Weak
++nocreate
++Description:	XSTR("
+	Dogfight Missile, Fast Lock-On
+	Velocity: 250        Range: 1250
+	Damage: 120 Hull, 96 Shield, 30 Subsystem
+	Fire Wait: 3s        Reload: 8/s", 999242)
+$end_multi_text
+$Detail distance:	( 0, 5, 21 )
++Weapon Range:		1250
+$Flags: ("player allowed")
+
+$Name: RTSF Trebuchet
++nocreate
++Description:	XSTR("
+	Heavy Missile, Slow Lock-On
+	Velocity: 280        Range: 5040
+	Damage: 630 Hull, 350 Shield, 840 Subsystem
+	Fire Wait: 6s        Reload: 4/3s", 999243)
+$end_multi_text
+$Detail distance:	( 0, 7, 29 )
++Weapon Range:		5040
+
+$Name: RTSF TAG-A
++nocreate
++Description:	XSTR("
+	Designator Missile, Unguided
+	Velocity: 400        Range: 2000
+	Damage: 0
+	Fire Wait: 3s        Reload: 4/s", 999244)
+$end_multi_text
+$Detail distance:	( 0, 6, 24 )
++Weapon Range:		2000
+
+$Name: RTSF TAG-B
++nocreate
++Description:	XSTR("
+	Designator Missile, Slow Lock-On
+	Velocity: 325        Range: 1625
+	Damage: 2 Hull, 2 Shield, 1 Subsystem
+	Fire Wait: 8s        Reload: 4/2s", 999245)
+$end_multi_text
+$Detail distance:	( 0, 10, 40 )
++Weapon Range:		1625
+
+$Name: RTSF Piranha
++nocreate
++Description:	XSTR("
+	Anti-Fighter Weapon, Unguided, 15 Submunitions
+	Velocity: 90         Range: 360
+	Damage: 200 Hull, 150 Shield, 200 Subsystem
+	Submunition: 120 Hull, 120 Shield, 30 Subsystem
+	Fire Wait: 5s        Reload: 4/10s", 999247)
+$end_multi_text
+$Detail distance:	( 0, 7, 28 )
++Weapon Range:		360
+
+$Name: RTSF Stiletto II
++nocreate
++Description:	XSTR("
+	Penetrator Missile, Passive
+	Velocity: 220        Range: 5500
+	Damage: 4 Hull, 0 Shield, 775 Subsystem
+	Fire Wait: 2s        Reload: 4.8/s", 999248)
+$end_multi_text
+$Detail distance:	( 0, 8, 32 )
++Weapon Range:		5500
+
+$Name: RTSF Infyrno
++nocreate
++Description:	XSTR("
+	Anti-Bomber Weapon, Unguided, 14 Submunitions
+	Velocity: 120        Range: 840
+	Damage: 300 Hull, 225 Shield, 150 Subsystem
+	Submunition: 200 Hull, 200 Shield, 50 Subsystem
+	Fire Wait: 5s        Reload: 4/10s", 999249)
+$end_multi_text
+$Detail distance:	( 0, 3, 13 )
++Weapon Range:		840
+
+$Name: RTSF Infyrno D
++nocreate
++Description:	XSTR("
+	Anti-Bomber Weapon, Unguided, 5 Submunitions
+	Velocity: 165        Range: 1155
+	Damage: 200 Hull, 150 Shield, 100 Subsystem
+	Submunition: 200 Hull, 200 Shield, 50 Subsystem
+	Fire Wait: 5s        Reload: 4/10s", 999250)
+$end_multi_text
+$Detail distance:	( 0, 3, 13 )
++Weapon Range:		840
+
+$Name: RTSF Helios
++nocreate
++Description:	XSTR("
+	Anti-Matter Bomb, Very Slow Lock-On
+	Velocity: 65         Range: 1950
+	Damage: 13600 Hull, 272 Shield, 11560 Subsystem
+	Fire Wait: 30s       Reload: 4/50s
+	Weapon Must Lock On To Fire", 999253)
+$end_multi_text
+$Detail distance:	( 0, 20, 39, 78 )
++Weapon Range:		1950
+
+$Name: RTSF EMP Adv.
++nocreate
++Description:	XSTR("
+	Area Disruption Weapon, Fast Lock-On
+	Velocity: 275        Range: 1375
+	Damage: 90 Hull, 72 Shield, 45 Subsystem
+	Fire Wait: 2s        Reload: 8/s
+	EMP: 300m Radius, Lasts 20s", 999254)
+$end_multi_text
+$Detail distance:	( 0 )
++Weapon Range:		1375
+
+$Name: RTSF Cluster Baby
++nocreate
+$Detail distance:	( 0, 3, 11 )
++Weapon Range:		1050
+
+$Name: RTSF Cluster Bomb Baby
++nocreate
+$Detail distance:	( 0, 3, 11 )
++Weapon Range:		75
+
+#End
+
+

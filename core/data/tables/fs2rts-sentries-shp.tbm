@@ -1,0 +1,28 @@
+#Ship Classes
+; Both arcs need fighter defense: one laser plus one anti-capital cannon per gun.
+; CreateSentry installs the configured weapon classes in these two bank slots.
+$Name: GTSG Watchdog
++nocreate
+$Subsystem: turret01a, 20, 1.0
+    $Default PBanks: ("RTS Sentry Interceptor" "Vasudan Flux Cannon")
+    $Flags: ("use multiple guns")
+$Subsystem: turret02a, 20, 1.0
+    $Default PBanks: ("RTS Sentry Interceptor" "Vasudan Flux Cannon")
+    $Flags: ("use multiple guns")
+$Name: GVSG Ankh
++nocreate
+$Subsystem: turret01a, 20, 1.0
+    $Default PBanks: ("RTS Sentry Interceptor" "Vasudan Flux Cannon")
+    $Flags: ("use multiple guns")
+$Subsystem: turret02a, 20, 1.0
+    $Default PBanks: ("RTS Sentry Interceptor" "Vasudan Flux Cannon")
+    $Flags: ("use multiple guns")
+$Name: SSG Trident
++nocreate
+$Subsystem: turret01a, 20, 1.0
+    $Default PBanks: ("RTS Sentry Interceptor" "Vasudan Flux Cannon")
+    $Flags: ("use multiple guns")
+$Subsystem: turret02a, 20, 1.0
+    $Default PBanks: ("RTS Sentry Interceptor" "Vasudan Flux Cannon")
+    $Flags: ("use multiple guns")
+#End

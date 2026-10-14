@@ -1,0 +1,93 @@
+#Primary Weapons
+; Give the beam families damaging RTS command bases a shared damage type.
+; Their normal damage against ships stays unchanged; RTS Base Hull applies the
+; base-only multiplier.
+;
+; THIS LIST IS MACHINE-AUDITED. core/tools/test_table_references.py diffs it
+; against the real retail beam set (extracted from root_fs2.vp; every entry
+; with $BeamInfo:, a "beam" $Flags entry, or an @Laser Bitmap), and fails if a
+; retail beam is missing or if an entry here names a weapon retail does not
+; have. Do not hand-maintain it: a name that retail lacks is skipped by the
+; engine, so a wrong entry makes this list look fuller than it is while
+; changing nothing. That is how three dead entries survived here, and how
+; MjolnirBeam - a 750-damage continuous laser - stayed uncapped.
+;
+; Why an allowlist at all, when the mod does not own the beam tables: FSO armor
+; entries key their multipliers by damage type, so the cap has to be expressed
+; as "beams vs base hull". Rather than retyping all of retail, the base armor
+; type could carry a catch-all and weapons could opt out; that is not what ships
+; today, so the audit test above is what keeps this honest.
+$Name: BVas
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: AAAf
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: AAAh
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: SAAA
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: S-AAA-Weak
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: SRed
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: LRed
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: LTerSlash
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: TerSlash
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: VSlash
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: SGreen
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: Green Beam
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: BGreen
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: LRBGreen
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: SVas
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: ULTRA Anti-Fighter Beam
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: @Targeting Laser
++nocreate
+$Damage Type: RTS Capital Beam
+; The Mjolnir pair. 750 and 400 continuous damage per the retail table, and the
+; mod defines MjolnirBeam itself for a sentry beam role, so it was a mod-owned
+; weapon silently hitting command stations at full damage.
+$Name: MjolnirBeam
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: MjolnirBeam#home
++nocreate
+$Damage Type: RTS Capital Beam
+; The retail Beam-Fire family. BFRed was absent here and bypassed the base cap
+; entirely: a Shivan station turret did ~411 hull damage per uncapped hit and
+; solo-killed a 132,600 HP command station in four of eight headless matches.
+; BFBlue, BFBas and BFTerr were also listed as insurance against the same
+; family, but retail has no such weapons, so the engine discarded all three
+; entries and the list only appeared more thorough than it was. Only the names
+; retail actually defines are here now.
+$Name: BFRed
++nocreate
+$Damage Type: RTS Capital Beam
+$Name: BFGreen
++nocreate
+$Damage Type: RTS Capital Beam
+#End

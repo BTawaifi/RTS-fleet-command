@@ -1,0 +1,34 @@
+#Armor Type
+; Fleet capitals retain 10% capital-beam damage. Command stations take 25%
+; capital-beam damage and additionally resist light weapons and debris impacts.
+; Station hull/scaling lives in fs2rts_config.lua, not the old 132,600 HP sweeps.
+$Name: RTS Base Hull
+$Damage Type: RTS Capital Beam
++Calculation: multiplicative
++Value: 0.10
+$Damage Type: RTS Static Artillery
++Calculation: multiplicative
++Value: 0.10
+$Name: RTS Command Hull
+$Damage Type: RTS Capital Beam
++Calculation: multiplicative
++Value: 0.25
+$Damage Type: RTS Static Artillery
+; Cheap 11 km sentries defend approaches; mobile siege must finish a station.
++Calculation: multiplicative
++Value: 0.025
+$Damage Type: RTS Light Weapons
++Calculation: multiplicative
++Value: 0.05
+$Damage Type: RTS Fighter Weapons
++Calculation: multiplicative
++Value: 0.05
+$Damage Type: RTS Debris Impact
+; An upstream rush replay lost 53k hull to one wreckage impact. Keep small
+; impacts intact, but cap any one piece at <0.5% of a normal command station.
++Calculation: cap
++Value: 250
+; Subsystems share this armor. Avoid applying the nearest subsystem's armor
+; to the hull as well: native hull/subsystem paths each apply it once.
+$Flags: ("ignore subsystem armor")
+#End

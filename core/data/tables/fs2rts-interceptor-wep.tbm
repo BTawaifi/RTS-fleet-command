@@ -1,0 +1,29 @@
+#Primary Weapons
+; Dedicated sentry screen gun. Do not extend the player/fighter Subach loadout.
+; 6 km envelope, faster shots and lower fire rate than the retail close gun.
+$Name: RTS Sentry Interceptor
+$Model File: none
+@Laser Bitmap: newglo9
+@Laser Glow: 2_laserglow03
+@Laser Color: 250, 0, 0
+@Laser Color2: 0, 0, 250
+@Laser Length: 10.0
+@Laser Head Radius: 0.90
+@Laser Tail Radius: 0.90
+$Mass: 0.2
+$Velocity: 1200
+$Fire Wait: 0.6
+$Damage: 15
+$Armor Factor: 0.9
+$Shield Factor: 0.7
+$Subsystem Factor: 0.3
+$Lifetime: 5
+$Energy Consumed: 0.2
+$Cargo Size: 0
+$Homing: NO
+$LaunchSnd: 76
+$ImpactSnd: 85
++Weapon Range: 6000
+$Flags: ("small only" "stream")
+$Impact Explosion: none
+#End

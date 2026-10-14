@@ -1,0 +1,19 @@
+$Name: FS2 RTS - Escalation
+$Type: single
++Description:
+ XSTR("One-mission campaign entry for the FS2 RTS Fleet Command skirmish.", -1)
+$end_multi_text
+
++Starting Ships: ( "GTF Ulysses" )
+
++Starting Weapons: ( "Subach HL-7" "Rockeye" )
+
+$Mission: FS2_RTS_Escalation.fs2
++Flags: 0
++Formula: ( cond
+   ( ( true ) ( end-of-campaign ) )
+)
++Level: 0
++Position: 0
+
+#End

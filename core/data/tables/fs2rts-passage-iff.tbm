@@ -1,0 +1,10 @@
+#IFFs
+
+; Only committed ships inside their extraction corridor use this native IFF.
+; Logical faction/hostility and paint remain owned by the RTS records.
+$IFF Name: RTS Passage
+$Color: ( 180, 210, 220 )
+$Attacks: ( )
+$Flags: ( "exempt from all teams at war" )
+
+#End

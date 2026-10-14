@@ -1,0 +1,25 @@
+local RTS = require "fs2rts_state"
+
+require "fs2rts_ui_text"
+require "fs2rts_factions"
+require "fs2rts_player_wing"
+require "fs2rts_camera"
+require "fs2rts_pilot"
+require "fs2rts_selection"
+require "fs2rts_orders"
+require "fs2rts_input"
+require "fs2rts_environment"
+require "fs2rts_production"
+require "fs2rts_ai_production"
+require "fs2rts_station"
+require "fs2rts_service"
+require "fs2rts_strategy"
+require "fs2rts_operations"
+require "fs2rts_lifecycle"
+require "fs2rts_fleet_life"
+require "fs2rts_fleet_humanity"
+require "fs2rts_traitors"
+require "fs2rts_hud"
+
+require("fs2rts_ai")(RTS)
+return RTS

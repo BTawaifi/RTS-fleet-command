@@ -1,0 +1,6 @@
+#GAME SETTINGS
+
+$Use model eyepoint for set-camera-host: YES
+$Use model eyepoint normals: YES
+
+#End

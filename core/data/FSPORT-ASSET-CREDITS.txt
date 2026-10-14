@@ -1,0 +1,18 @@
+FS1 ships and model assets
+==========================
+
+GTF Apollo, GTF Valkyrie, GTB Athena, PVF Anubis, and SB Shaitan and their
+POF/map assets are from FreeSpace Port 3.7.3, files in `fsport3_7.vp`.
+
+FSPort README, section 10, states: “All original FreeSpace material included
+herein is copyright 1998-1999 Volition, Inc., Interplay, and THQ. Ported with
+permission to FreeSpace 2 by Peter Oliver (Galemp) and Ian Warfield
+(Goober5000). You may use these files for your own missions, campaigns, and
+mods on a no-cost non-commercial basis with attribution.”
+
+The bundled mod is non-commercial. FSPort VP files are not runtime
+dependencies. The standalone ship table uses stock FS2 weapons; these
+definitions preserve their hull/model identities and original handling,
+reactor, afterburner and countermeasure values without loading FSPort's
+ship or weapon tables. The restored values were read from that installed
+archive's ships.tbl during the solo review.

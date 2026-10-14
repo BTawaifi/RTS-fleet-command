@@ -1,0 +1,10 @@
+-- Pilot (possession) mode.
+require "fs2rts_pilot.common"
+require "fs2rts_pilot.weapon_helpers"
+require "fs2rts_pilot.turret_targeting"
+require "fs2rts_pilot.turret_groups"
+require "fs2rts_pilot.turret_drive"
+require "fs2rts_pilot.possession_state"
+require "fs2rts_pilot.directives"
+require "fs2rts_pilot.mode_lifecycle"
+require "fs2rts_pilot.eject_and_update"

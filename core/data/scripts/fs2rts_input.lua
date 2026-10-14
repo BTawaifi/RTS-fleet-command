@@ -1,0 +1,11 @@
+-- Tactical map, picking, UI hit-testing, mouse/keyboard input.
+require "fs2rts_input.common"
+require "fs2rts_input.projection"
+require "fs2rts_input.map_view"
+require "fs2rts_input.map_window"
+require "fs2rts_input.selection"
+require "fs2rts_input.panel_rects"
+require "fs2rts_input.mouse"
+require "fs2rts_input.mouse_release"
+require "fs2rts_input.keyboard"
+require "fs2rts_input.camera_input"

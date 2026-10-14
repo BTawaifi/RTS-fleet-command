@@ -1,0 +1,96 @@
+#Ship Classes
+$Name: GTC Fenris
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: GTD Hades
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: NTF Iceni
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: NTF Boadicea
++nocreate
+$Flags: ("generate icon")
++noreplace
+; Native shield gauges generate silhouettes from the real hull model when
+; retail capitals have no shield-icon animation. Preserve every other flag.
+$Name: GTC Aeolus
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: GTC Leviathan
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: GVC Mentu
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: GVC Aten
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: SC Cain
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: SC Rakshasa
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: SC Lilith
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: GTCv Deimos
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: GVCv Sobek
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: SCv Moloch
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: SD Ravana
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: GTD Hecate
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: GTD Orion
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: GVD Hatshepsut
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: GVD Typhon
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: SD Demon
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: GTVA Colossus
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: SJ Sathanas
++nocreate
+$Flags: ("generate icon")
++noreplace
+$Name: SD Lucifer
++nocreate
+$Flags: ("generate icon")
++noreplace
+#End

@@ -1,0 +1,108 @@
+#Primary Weapons
+; Routine small-ship weapons keep full damage against fleets. Command-station
+; armor scales this type; heavy turret weapons and siege torpedoes are separate.
+$Name: Subach HL-7
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: Prometheus R
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: UD-8 Kayser
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: Akheton SDG
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: Mekhu HL-7
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: Morning Star
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: Shivan Heavy Laser
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: Shivan Mega Laser
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: Subach HL-D
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: Mekhu HL-7D
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: MorningStar D
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: Prometheus S
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: Prometheus D
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: Maxim
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: Maxim D
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: UD-D Kayser
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: Circe
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: Lamprey
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: Vasudan Light Laser
++nocreate
+$Damage Type: RTS Light Weapons
+$Name: Shivan Light Laser
++nocreate
+$Damage Type: RTS Light Weapons
+#End
+#Secondary Weapons
+$Name: Harpoon
++nocreate
+$Damage Type: RTS Light Weapons
+$Shockwave damage type: RTS Light Weapons
+$Dinky shockwave:
++Shockwave damage type: RTS Light Weapons
+$Name: Hornet
++nocreate
+$Damage Type: RTS Light Weapons
+$Shockwave damage type: RTS Light Weapons
+$Dinky shockwave:
++Shockwave damage type: RTS Light Weapons
+$Name: Rockeye
++nocreate
+$Damage Type: RTS Light Weapons
+$Shockwave damage type: RTS Light Weapons
+$Dinky shockwave:
++Shockwave damage type: RTS Light Weapons
+$Name: Tempest
++nocreate
+$Damage Type: RTS Light Weapons
+$Shockwave damage type: RTS Light Weapons
+$Dinky shockwave:
++Shockwave damage type: RTS Light Weapons
+$Name: Tornado
++nocreate
+$Damage Type: RTS Light Weapons
+$Shockwave damage type: RTS Light Weapons
+$Dinky shockwave:
++Shockwave damage type: RTS Light Weapons
+$Name: Piranha
++nocreate
+$Damage Type: RTS Light Weapons
+$Shockwave damage type: RTS Light Weapons
+$Dinky shockwave:
++Shockwave damage type: RTS Light Weapons
+$Name: Stiletto II
++nocreate
+$Damage Type: RTS Light Weapons
+$Shockwave damage type: RTS Light Weapons
+$Dinky shockwave:
++Shockwave damage type: RTS Light Weapons
+#End

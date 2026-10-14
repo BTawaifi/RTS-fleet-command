@@ -1,0 +1,6 @@
+#AI Profiles
+$Profile Name: RTS Fleet Command
+; Retail selection rejects Huge/Bomber+ missiles such as loaded Trebuchets.
+; This profile inherits base defaults and enables native role-aware selection.
+$smart secondary weapon selection: YES
+#End

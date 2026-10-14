@@ -1,0 +1,158 @@
+#Conditional Hooks
+$Application: FS2_Open
+$On Game Init:
+[
+    RTS = require "fs2rts"
+    if type(RTS) ~= "table" then RTS = nil end
+]
+
+$Application: FS2_Open
+$On Gameplay Start:
+[
+    if type(RTS) == "table" then RTS:OnGameplayStart() end
+]
+
+$State: GS_STATE_GAME_PLAY
+$On Frame:
+[
+    if type(RTS) == "table" then RTS:OnFrame() end
+]
+
+$State: GS_STATE_GAME_PLAY
+$On HUD Draw:
+[
+    if type(RTS) == "table" then RTS:DrawHUD() end
+]
++Override:
+[
+    return type(RTS) == "table" and RTS:ShouldOverrideHUD() or false
+]
+
+$State: GS_STATE_GAME_PLAY
+$On Mouse Pressed:
+[
+    if type(RTS) == "table" then RTS:OnMousePressed(hv.MouseButton) end
+]
+
+$State: GS_STATE_GAME_PLAY
+$On Mouse Released:
+[
+    if type(RTS) == "table" then RTS:OnMouseReleased(hv.MouseButton) end
+]
+
+$State: GS_STATE_GAME_PLAY
+$On Mouse Moved:
+[
+    if type(RTS) == "table" then RTS:OnMouseMoved() end
+]
+
+$State: GS_STATE_GAME_PLAY
+$On Mouse Wheel:
+[
+    if type(RTS) == "table" then RTS:OnMouseWheel(hv.MouseWheelY) end
+]
+
+$State: GS_STATE_GAME_PLAY
+$On Key Pressed:
+[
+    if type(RTS) == "table" then RTS:OnKeyPressed(hv.Key, hv.RawKey) end
+]
++Override:
+[
+    return type(RTS) == "table" and RTS:ShouldOverrideKey(hv.Key, hv.RawKey) or false
+]
+
+$State: GS_STATE_GAME_PLAY
+$On Key Released:
+[
+    if type(RTS) == "table" then RTS:OnKeyReleased(hv.Key, hv.RawKey) end
+]
+
+$Application: FS2_Open
+$On Ship Death:
+[
+    if type(RTS) == "table" then RTS:OnShipDeath(hv.Ship,hv.Killer) end
+]
+
+$Application: FS2_Open
+$On Waypoints Done:
+[
+    if type(RTS) == "table" then RTS:OnWaypointsDone(hv.Ship) end
+]
+
+$Application: FS2_Open
+$On State End:
+[
+    if type(RTS) == "table" then RTS:OnStateEnd(hv.OldState, hv.NewState) end
+]
+
+$Application: FS2_Open
+$On State Start:
+[
+    if type(RTS) == "table" then RTS:OnStateStart(hv.OldState, hv.NewState) end
+]
+
+$Application: FS2_Open
+$On Weapon Collision:
+[
+    if type(RTS) == "table" and hv.Weapon and hv.Weapon:isValid() and hv.Ship and hv.Ship:isValid() then
+        RTS:RecordAIHit(hv.Weapon.Parent,hv.Ship,'PROJECTILE')
+    end
+]
+
+$Application: FS2_Open
+$On Beam Collision:
+[
+    if type(RTS) == "table" and hv.Beam and hv.Beam:isValid() and hv.Ship and hv.Ship:isValid() then
+        RTS:RecordAIHit(hv.Beam.ParentShip,hv.Ship,'BEAM')
+    end
+]
+
+$State: GS_STATE_GAME_PLAY
+$Object Type: Ship
+$On Object Render:
+[
+]
++Override:
+[
+    return type(RTS) == "table" and RTS:ShouldHideObject(hv.Self) or false
+]
+$State: GS_STATE_GAME_PLAY
+$On Countermeasure Fire:
+[
+    if type(RTS) == "table" then RTS:OnPilotCountermeasureFired(hv.Ship,hv.Countermeasure) end
+]
+
+$State: GS_STATE_GAME_PLAY
+$On Turret Fired:
+[
+    if type(RTS) == "table" then RTS:OnPilotTurretFired(hv.Weapon,hv.Ship) end
+]
+
+$State: GS_STATE_GAME_PLAY
+$On HUD Comm Menu Opened:
+[
+    if type(RTS) == "table" then RTS:OnPilotCommMenuOpened() end
+]
+
+$State: GS_STATE_GAME_PLAY
+$On HUD Comm Menu Closed:
+[
+    if type(RTS) == "table" then RTS:OnPilotCommMenuClosed() end
+]
+
+$State: GS_STATE_GAME_PLAY
+$On HUD Comm Order Issued:
+[
+    if type(RTS) == "table" then RTS:OnPilotCommOrder(hv.Recipient,hv.Order,hv.Target,hv.Subsystem,hv.Name) end
+]
++Override:
+[
+    return type(RTS) == "table" and RTS:ShouldOverridePilotCommOrder(hv.Recipient,hv.Order,hv.Name) or false
+]
+$State: GS_STATE_GAME_PLAY
+$On Ship Depart:
+[
+    if type(RTS) == "table" then RTS:OnShipDeparture(hv.Ship,hv.Method) end
+]
+#End

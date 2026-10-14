@@ -1,0 +1,10 @@
+-- Station upgrades, placeable sentries and faction command abilities.
+require "fs2rts_station.common"
+require "fs2rts_station.upgrades"
+require "fs2rts_station.sentry_registry"
+require "fs2rts_station.sentry_placement"
+require "fs2rts_station.sentry_runtime"
+require "fs2rts_station.abilities"
+require "fs2rts_station.ai_targeting"
+require "fs2rts_station.panel"
+require "fs2rts_station.overlays"

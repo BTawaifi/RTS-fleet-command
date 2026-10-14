@@ -1,0 +1,11 @@
+-- Scenario timing, faction/ship queries, spawning helpers, state reset.
+require "fs2rts_factions.common"
+require "fs2rts_factions.escalation"
+require "fs2rts_factions.faction_setup"
+require "fs2rts_factions.colors_and_relations"
+require "fs2rts_factions.time_and_roles"
+require "fs2rts_factions.spawn_helpers"
+require "fs2rts_factions.spawn_frame"
+require "fs2rts_factions.wings_time_visuals"
+require "fs2rts_factions.lookup"
+require "fs2rts_factions.selection_and_reset"

@@ -1,0 +1,33 @@
+#IFFs
+
+; New faction IFFs live in a separate modular table: upstream resets
+; its create flag between modular table parses, not between IFF entries.
+
+$IFF Name: RTS Faction 4
+$Color: ( 45, 190, 255 )
+
+$IFF Name: RTS Faction 5
+$Color: ( 70, 230, 105 )
+
+$IFF Name: RTS Faction 6
+$Color: ( 195, 115, 255 )
+
+$IFF Name: RTS Faction 7
+$Color: ( 255, 130, 45 )
+
+$IFF Name: RTS Faction 8
+$Color: ( 255, 100, 195 )
+
+$IFF Name: RTS Faction 9
+$Color: ( 190, 240, 70 )
+
+$IFF Name: RTS Faction 10
+$Color: ( 110, 100, 255 )
+
+$IFF Name: RTS Faction 11
+$Color: ( 60, 225, 185 )
+
+$IFF Name: RTS Faction 12
+$Color: ( 255, 115, 95 )
+
+#End
