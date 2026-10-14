@@ -86,7 +86,7 @@ function RTS:GetShipShortOrderLabel(ship)
     return label
 end
 
-function RTS:DrawButton(rect, text, enabled, active, icon, showLabel)
+function RTS:DrawButton(rect, text, enabled, active, icon, showLabel, foreground)
     if enabled == false then
         gr.setColor(38, 42, 48, 210)
     elseif active then
@@ -99,6 +99,7 @@ function RTS:DrawButton(rect, text, enabled, active, icon, showLabel)
     if enabled == false then gr.setColor(110, 115, 120, 255)
     elseif active then gr.setColor(235, 255, 255, 255)
     else gr.setColor(180, 235, 255, 255) end
+    if foreground and enabled~=false then gr.setColor(unpack(foreground)) end
     gr.drawRectangle(rect.x1, rect.y1, rect.x2, rect.y2, false)
 
     local m = self:GetUIMetrics()

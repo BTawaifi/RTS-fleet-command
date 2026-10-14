@@ -86,7 +86,7 @@ function RTS:DrawTopBar(sw)
     self.ExitMenuButtonRect=nil
     if not self.SetupActive and not self.PostBattleActive then
         self.ExitMenuButtonRect={x1=limit,y1=math.floor((barH-btnH)/2),x2=limit+m.pad(58),y2=math.floor((barH-btnH)/2)+btnH}
-        self:DrawButton(self.ExitMenuButtonRect,'EXIT',true,false)
+        self:DrawButton(self.ExitMenuButtonRect,'EXIT (ESC)',true,false)
         limit=self.ExitMenuButtonRect.x2+m.gap
     end
 

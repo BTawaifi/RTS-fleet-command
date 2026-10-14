@@ -123,7 +123,9 @@ function RTS:DrawSelectionPanel(sw,sh)
             local enabled,active=self:GetActionButtonState(id,commandable,pilotable,hasSelection)
             local label=ACTION_BUTTON_LABELS[id]
             if self.ShowHotkeyHints==false then label=label:gsub(' %b()$','') end
-            self:DrawButton(br,label,enabled,active); bx=bx+bw+gap
+            self:DrawButton(br,label,enabled,active)
+            if self:PointInside(br,io.getMouseX(),io.getMouseY()) then self.ButtonIconTooltip={text=ACTION_BUTTON_LABELS[id],rect=br} end
+            bx=bx+bw+gap
         end
     end
 

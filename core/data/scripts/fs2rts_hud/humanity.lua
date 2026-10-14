@@ -48,9 +48,7 @@ function R:GetCostOfCommandRows(summary,fleet)
     return rows
 end
 
-function R:DrawLiveHistoryPanel(x1,y1,x2,y2)
-    local m=self:GetUIMetrics(); local lh=m.lineHeight; local y=y1+8
-    self.FleetHistoryButtonRects={}
+function R:GetLiveHistoryRecords()
     local rows={}
     local filter=self.FleetHistoryFilter or 'all'
     for _,record in pairs(self.UnitHistory or {}) do
@@ -61,6 +59,26 @@ function R:DrawLiveHistoryPanel(x1,y1,x2,y2)
         if a.everPiloted~=b.everPiloted then return a.everPiloted==true end
         return tonumber(a.id:match('%d+'))<tonumber(b.id:match('%d+'))
     end)
+    return rows
+end
+
+function R:GetLiveHistoryPanelHeight(count,maxHeight)
+    local lh=self:GetUIMetrics().lineHeight
+    local detailHeight=self.UnitHistory[self.LiveHistoryDetail] and (lh*5+35) or 2*lh+8
+    local height=8+lh+6+24+6+math.max(1,count)*(lh+9)+12+detailHeight
+    local paging=maxHeight and height>maxHeight
+    return paging and maxHeight or height,detailHeight,paging and 38 or 12
+end
+
+local LOST_COLOR={255,110,100,255}
+
+function R:DrawLiveHistoryPanel(x1,y1,x2,y2,rows)
+    local m=self:GetUIMetrics(); local lh=m.lineHeight; local y=y1+8
+    self.FleetHistoryButtonRects={}
+    rows=rows or self:GetLiveHistoryRecords()
+    local height,detailHeight,pagerHeight=self:GetLiveHistoryPanelHeight(#rows,y2-y1)
+    y2=math.min(y2,y1+height)
+    local filter=self.FleetHistoryFilter or 'all'
     gr.setColor(255,225,145,255); self:DrawTextLine('CREW RECORDS // SELECT TO INSPECT',x1,y,x2-x1)
     y=y+lh+6
     local filters={{'all','ALL'},{'flown','FLOWN'},{'lost','LOST'},{'live','LIVE'}}
@@ -70,26 +88,37 @@ function R:DrawLiveHistoryPanel(x1,y1,x2,y2)
         self.FleetHistoryButtonRects['filter_'..choice[1]]=rect; self:DrawButton(rect,choice[2],true,filter==choice[1],false)
     end
     y=y+30
-    local detailHeight=math.max(lh*4+46,math.min(150,(y2-y1)*.43))
     local detailY=y2-detailHeight
     local rowHeight=lh+9
-    local capacity=math.max(1,math.floor((detailY-y-38)/rowHeight))
+    local capacity=math.max(1,math.floor((detailY-y-pagerHeight)/rowHeight))
     local pages=math.max(1,math.ceil(#rows/capacity)); self.FleetHistoryPageSize=capacity
     self.FleetHistoryOffset=math.floor(math.min(self.FleetHistoryOffset or 0,(pages-1)*capacity)/capacity)*capacity
     for i=1,capacity do
         local record=rows[i+self.FleetHistoryOffset]; if not record then break end
         local rect={x1=x1,y1=y,x2=x2,y2=y+rowHeight-3}; self.FleetHistoryButtonRects[record.id]=rect
-        self:DrawButton(rect,record.name..' // '..record.fate,true,self.LiveHistoryDetail==record.id,record.everPiloted and 'PILOT' or 'REPORT',true)
+        local color=record.fate=='LOST' and LOST_COLOR or nil
+        self:DrawButton(rect,'',true,self.LiveHistoryDetail==record.id,false,true,color)
+        local size=rowHeight-9; local px=rect.x1+6; local py=rect.y1+3
+        local texture=self:GetBriefingIcon(record.class,record.role,false)
+        if texture then gr.drawImage(texture,px,py,px+size,py+size)
+        else self:DrawShipRoleShape(record.role or 'combat',px,py,size) end
+        if color then gr.setColor(unpack(color)) else gr.setColor(180,235,255,255) end
+        local fateX=x2-6-self:TextWidth(record.fate)
+        self:DrawTextLine(record.name,px+size+8,py,math.max(1,fateX-px-size-16))
+        self:DrawTextLine(record.fate,fateX,py,x2-fateX-6)
         y=y+rowHeight
     end
     local prev={x1=x1,y1=detailY-32,x2=x1+58,y2=detailY-7}; local nextPage={x1=x2-58,y1=detailY-32,x2=x2,y2=detailY-7}
-    self.FleetHistoryButtonRects.prev=prev; self.FleetHistoryButtonRects.next=nextPage
-    self:DrawButton(prev,'PREV',self.FleetHistoryOffset>0,false)
-    self:DrawButton(nextPage,'NEXT',self.FleetHistoryOffset+capacity<#rows,false)
-    gr.setColor(180,200,210,255); self:DrawCenteredTextClipped('PAGE '..(self.FleetHistoryOffset/capacity+1)..'/'..pages,prev.x2+3,nextPage.x1-3,prev.y1+4)
+    if pages>1 then
+        self.FleetHistoryButtonRects.prev=prev; self.FleetHistoryButtonRects.next=nextPage
+        self:DrawButton(prev,'PREV',self.FleetHistoryOffset>0,false)
+        self:DrawButton(nextPage,'NEXT',self.FleetHistoryOffset+capacity<#rows,false)
+        gr.setColor(180,200,210,255); self:DrawCenteredTextClipped('PAGE '..(self.FleetHistoryOffset/capacity+1)..'/'..pages,prev.x2+3,nextPage.x1-3,prev.y1+4)
+    end
     local record=(self.UnitHistory or {})[self.LiveHistoryDetail]
-    if not record then gr.setColor(180,200,210,255); self:DrawTextLine('Select a record above. Focus is a separate action.',x1,detailY,x2-x1); return end
-    gr.setColor(255,225,145,255); self:DrawTextLine(record.name..' // '..record.fate,x1,detailY,x2-x1)
+    if not record then gr.setColor(180,200,210,255); self:DrawWrappedTextToWidth('Select a ship to see crew and history.',x1,detailY,x2-x1,lh,2); return end
+    if record.fate=='LOST' then gr.setColor(unpack(LOST_COLOR)) else gr.setColor(255,225,145,255) end
+    self:DrawTextLine(record.name..' // '..record.fate,x1,detailY,x2-x1)
     gr.setColor(195,215,225,255)
     self:DrawTextLine((record.everPiloted and ('YOU FLEW '..math.floor(self:GetPilotHistorySeconds(record))..'s') or 'NOT PILOTED BY YOU')..' / RETURNS '..record.recoveries,x1,detailY+lh,x2-x1)
     self:DrawTextLine('CREW '..(record.crewComplement or '?')..' (est) / EST DEAD '..(record.crewEstimatedDead or 0)..' / MISSING '..(record.crewMissing or 0),x1,detailY+2*lh,x2-x1)

@@ -19,7 +19,7 @@ function RTS:DrawBuildPanel(sw,sh)
     self.AutoBuildRequestRects={}; self.CancelAutoBuildRect=nil
     local rect=self:GetProductionPanelRect(sw,sh); local x1,y1,x2,y2=rect.x1,rect.y1,rect.x2,rect.y2
     local m=self:GetUIMetrics(sw,sh); local pad=m.panelPadding; local lh=m.lineHeight
-    if self.PanelTab=='history' then y2=sh-m.margin end
+    local historyRows=self.PanelTab=='history' and self:GetLiveHistoryRecords() or nil
     -- Page size comes from CountBuildRows, which counts rows using the same
     -- geometry this loop draws them with. It used to be a separate formula,
     -- floor((height-142)/50), while the loop tested y+44 against y2-74: the two
@@ -31,7 +31,7 @@ function RTS:DrawBuildPanel(sw,sh)
         self.BuildButtonRects={}; self.BuildNavRects={}; self.StationButtonRects={}; self.AutoModeRect=nil
         self.PanelTabRects={production={x1=x1+pad,y1=y1+pad,x2=x2-pad,y2=y1+pad+24}}
         self:DrawButton(self.PanelTabRects.production,'BACK TO BUILD',true,false)
-        self:DrawLiveHistoryPanel(x1+pad,y1+pad+28,x2-pad,y2-pad)
+        self:DrawLiveHistoryPanel(x1+pad,y1+pad+28,x2-pad,y2-pad,historyRows)
         return
     end
     if self.AftermathActive or self.BlueEliminated then

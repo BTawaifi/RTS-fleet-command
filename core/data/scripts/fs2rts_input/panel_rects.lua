@@ -87,9 +87,11 @@ function RTS:IsPointOnRTSUI(x,y)
     if y>=0 and y<=m.topBarHeight then return true end
     if self:IsPointOnTacticalMap(x,y) then return true end
     if self:PointInside(self:GetProductionPanelRect(sw,sh),x,y) then return true end
-    if m.quickGroupsVisible and self:PointInside(self:GetQuickGroupPanelRect(sw,sh),x,y) then return true end
-    if self:PointInside(self:GetPolicyPanelRect(sw,sh),x,y) then return true end
-    if self:PointInside(self:GetOptionsPanelRect(sw,sh),x,y) then return true end
+    if self.PanelTab~='history' then
+        if m.quickGroupsVisible and self:PointInside(self:GetQuickGroupPanelRect(sw,sh),x,y) then return true end
+        if self:PointInside(self:GetPolicyPanelRect(sw,sh),x,y) then return true end
+        if self:PointInside(self:GetOptionsPanelRect(sw,sh),x,y) then return true end
+    end
     if self:PointInside(self:GetSelectionPanelRect(sw,sh),x,y) then return true end
     if #self:GetSelectedShips()>0 and x>=m.margin and x<=m.margin+m.selectionWidth
         and y>=m.statsTop and y<=self:GetSelectedStatsBottom(sw,sh) then return true end

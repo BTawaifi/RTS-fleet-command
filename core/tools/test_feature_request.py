@@ -1460,6 +1460,35 @@ class HudClaimTests(unittest.TestCase):
           for _,key in ipairs(icons) do assert(key~='DURATION' and key~='PAUSE','speed control has a duplicate icon') end
         ''')
 
+    def test_crew_class_icons_red_losses_compact_geometry_and_hover_hotkeys(self):
+        self.check('''r:ResetState(); r.SetupActive=false; r.PanelTab='history'
+          local unit=mkFighter('Archived class'); local record=r:RecordShipCreated(unit,true)
+          r:RecordUnitFate(unit,'LOST','DESTROYED'); unit.valid=false
+          local classes={}; local redLost=false; local red=false
+          r.GetBriefingIcon=function(self,name,role) classes[#classes+1]={name=name,role=role}; return nil end
+          gr.setColor=function(a,b,c) red=a==255 and b==110 and c==100 end
+          local draw=r.DrawTextLine
+          r.DrawTextLine=function(self,text,...) if text=='LOST' then redLost=red end; return draw(self,text,...) end
+          r:DrawBuildPanel(1920,1080)
+          assert(classes[1].name==record.class and classes[1].role==record.role,'icon depends on a live ship or generic report symbol')
+          assert(redLost,'lost row is not red')
+          local rect=r:GetProductionPanelRect(1920,1080)
+          assert(rect.y2-rect.y1<300,'single-record panel still consumes the entire column')
+          assert(not r.FleetHistoryButtonRects.prev and not r.FleetHistoryButtonRects.next,'single page has unused navigation')
+          assert(not r:IsPointOnRTSUI(rect.x1+5,rect.y2+50),'empty space below compact panel blocks world input')
+          r.LiveHistoryDetail=record.id; r:DrawBuildPanel(1920,1080)
+          local focus=r.FleetHistoryButtonRects.focus
+          assert(focus and focus.y2<=r:GetProductionPanelRect(1920,1080).y2,'detail controls escaped the compact panel')
+          r.ShowHotkeyHints=false; r:DrawSelectionPanel(1920,1080)
+          local move=r.ActionButtonRects.move
+          io.getMouseX=function() return move.x1+1 end; io.getMouseY=function() return move.y1+1 end
+          r:DrawSelectionPanel(1920,1080)
+          assert(r.ButtonIconTooltip.text:find('('..r.Config.HomeworldControls.ArmMove..')',1,true),'hidden hints removed the hover hotkey')
+          local service=r.ActionButtonRects.service
+          io.getMouseX=function() return service.x1+1 end; io.getMouseY=function() return service.y1+1 end
+          r:DrawSelectionPanel(1920,1080); assert(r.ButtonIconTooltip.text=='SERVICE','invented a service hotkey')
+        ''')
+
     def test_the_control_legend_matches_the_speed_ladder_the_keys_select(self):
         """1/2/3/4/0 select 1x/2x/4x/8x/16x outright. The legend still described
         the old relative slower/pause/faster/reset scheme, so the player was

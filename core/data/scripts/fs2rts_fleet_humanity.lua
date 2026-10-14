@@ -14,6 +14,7 @@ end
 function R:InitializeCrewRecord(record,ship)
     local c=self.Config.FleetHumanity
     local role=self:IsCommandStation(ship) and 'station' or self:GetShipRole(ship)
+    record.role=role
     local count=c.ClassCrew[ship.Class.Name]
     if count==nil then count=c.RoleCrew[role] end
     if type(count)=='number' and count>=0 and count<math.huge then record.crewComplement=math.floor(count) end

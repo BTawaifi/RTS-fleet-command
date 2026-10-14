@@ -55,8 +55,7 @@ function RTS:ResetState()
     if self.ClearIntroScene then self:ClearIntroScene() end
     if self.ClearSetupBackdrop then self:ClearSetupBackdrop() end
     if self.StopEnvironment then self:StopEnvironment() end
-    -- 'NONE' keeps the mission's own nebula; a sky sprite is only added when picked.
-    self.EnvironmentPicker=false; self.SetupMusicChoice='RANDOM'; self.SetupBackdropChoice='NONE'
+    self.EnvironmentPicker=false; self.SetupMusicChoice='RANDOM'; self.SetupBackdropChoice='RANDOM'
     if self.ShowHotkeyHints==nil then self.ShowHotkeyHints=false end
     self.HotkeyHintsHeld=false; self.ExitMenuActive=false; self.ExitMenuResumeScale=nil; self.ExitMenuButtonRects={}
     self.PilotAIObjective=nil; self.PilotDirectiveWarningShown=false

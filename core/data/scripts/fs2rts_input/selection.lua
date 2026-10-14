@@ -189,6 +189,11 @@ function RTS:GetProductionPanelRect(sw, sh)
     local mapRect = self:GetDockedMapRect()
     local x1, x2 = m.sw - m.margin - m.rightPanelWidth, m.sw - m.margin
     local y1 = mapRect.y2 + m.gap
+    if self.PanelTab=='history' then
+        local inset=2*m.panelPadding+28
+        local wanted=inset+self:GetLiveHistoryPanelHeight(#self:GetLiveHistoryRecords(),m.sh-m.margin-y1-inset)
+        return {x1=x1,y1=y1,x2=x2,y2=math.min(m.sh-m.margin,y1+wanted)}
+    end
     if self.PanelTab == "station" then
         -- The station tab is laid out in its own fixed pixels (fs2rts_station.lua
         -- is not one of the files that may be rescaled) and needs 276px of

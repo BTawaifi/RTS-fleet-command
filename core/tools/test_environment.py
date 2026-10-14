@@ -35,6 +35,21 @@ class EnvironmentTests(unittest.TestCase):
     def check(self, code):
         self.lua.execute(code)
 
+    def test_reset_defaults_to_random_sky_and_start_respects_explicit_selection(self):
+        self.check('''
+          r:ResetState()
+          assert(r.SetupBackdropChoice=='RANDOM' and r.SetupMusicChoice=='RANDOM')
+          r.SpawnFactionStations=function() return true end -- stations already exist in this boundary fixture
+          engine={addHook=function() return true end}
+          local choices={}; local setSky=r.SetNebulaBackdrop
+          r.SetNebulaBackdrop=function(self,choice,silent) choices[#choices+1]=choice; return setSky(self,choice,silent) end
+          r:StartScenario()
+          assert(not r.SetupActive and choices[1]=='RANDOM' and #r.EnvironmentBackdropElements==6)
+          r:ResetState(); r.SetupBackdropChoice=19; r:StartScenario()
+          assert(choices[2]==19 and r.EnvironmentBackdropIndex==19,'explicit sky selection was randomized away')
+          r:ResetState(); assert(r.SetupBackdropChoice=='RANDOM' and #r.EnvironmentBackdropElements==0)
+        ''')
+
     def test_music_selection_loops_vfs_asset_and_mute_stays_on_custom_track(self):
         self.check('''
           assert(r:SetEnvironmentMusic(4,true))

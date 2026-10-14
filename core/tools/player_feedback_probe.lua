@@ -179,6 +179,8 @@ local function probe(self)
     if stage==0 and self.SetupActive then
         self.SetupOpponents={RED=true,GOLD=true}; self.SetupAutoMode=false; self.SetupSentries=false
         self:StartScenario(); self.ActiveIncomePerSecond=0
+        check(self.SetupBackdropChoice=='RANDOM' and self.EnvironmentBackdropIndex~=nil and #self.EnvironmentBackdropElements==6,
+            'native match start selects a random six-face nebula')
         -- Isolated batteries are deliberately tens of km apart. Declare that
         -- diagnostic arena rather than making their contacts illegal targets.
         self.ScenarioMapHalfExtent=250000
@@ -517,6 +519,8 @@ local function probe(self)
         local record=self:GetUnitHistory(movers[1])
         check(record.everPiloted and self:GetShipHistoryBadge(movers[1]):find('P',1,true),'native personal history persists after pilot exit')
         self.PanelTab='history'; self.LiveHistoryDetail=record.id
+        local panel=self:GetProductionPanelRect(gr.getScreenWidth(),gr.getScreenHeight())
+        check(panel.y2<gr.getScreenHeight()-self:GetUIMetrics().margin,'native CREWS panel ends after its content')
         uiAt=self:UINow(); stage=6.1
     elseif stage==6.1 and self:UINow()-uiAt>uiSeconds then
         local record=self:GetUnitHistory(movers[1]); local rect=self.FleetHistoryButtonRects[record.id]
