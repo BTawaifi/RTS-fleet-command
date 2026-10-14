@@ -29,6 +29,12 @@ You need **retail FreeSpace 2 assets** and **FreeSpace Open**. MediaVPs are opti
 
 Follow the [player guide](core/README.md) to install and launch the mod. Choose your teams, click **START ESCALATION**, and build your fleet. The guide also covers controls, optional MediaVP loading, station service, and piloting.
 
-## Credits and license
+## Contributing
 
-Created by Boutros. Original mod code, missions, and table definitions use the [MIT license](LICENSE). Third-party assets retain their owners' terms; see [asset credits](core/data/ASSET-CREDITS.txt), [FSPort credits](core/data/FSPORT-ASSET-CREDITS.txt), and [insignia credits](core/data/maps/README-insignias.txt).
+Want to extend Fleet Command? [Open an issue](https://github.com/BTawaifi/RTS-fleet-command/issues) to discuss an idea or report a bug, or [submit a pull request](https://github.com/BTawaifi/RTS-fleet-command/pulls) with your changes.
+
+Describe what the change does, why it is needed, and how you tested it. For gameplay bugs, include the FSO build, factions, team count, and steps to reproduce.
+
+## Credits
+
+Created by Boutros. Third-party assets retain their owners' terms; see [asset credits](core/data/ASSET-CREDITS.txt), [FSPort credits](core/data/FSPORT-ASSET-CREDITS.txt), and [insignia credits](core/data/maps/README-insignias.txt).

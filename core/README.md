@@ -129,4 +129,4 @@ Rare announced splinter raids warp in hostile ships or wings associated with any
 
 Gameplay settings are in `data/scripts/fs2rts_config.lua`; weapon and station definitions are in `data/tables`. The source repository includes maintainer checks and acceptance criteria. Large late-game fleets, twelve-team matches and high time compression can be expensive; sustained performance and every optional asset/loadout combination still need wider playtesting.
 
-Original mod code is MIT licensed; third-party assets retain their owners' terms. Credits and provenance are in `data/ASSET-CREDITS.txt`, `data/FSPORT-ASSET-CREDITS.txt` and `data/maps/README-insignias.txt`.
+Third-party assets retain their owners' terms. Credits and provenance are in `data/ASSET-CREDITS.txt`, `data/FSPORT-ASSET-CREDITS.txt` and `data/maps/README-insignias.txt`.

@@ -2,8 +2,8 @@ RTS Fleet Command asset credits
 ==============================
 
 Original Lua/Python code, mission content and table definitions:
-Boutros, 2026. MIT license; see LICENSE in the package root.
-This grant excludes third-party assets and copied game materials.
+Boutros, 2026.
+Third-party assets and copied game materials retain their owners' terms.
 
 FreeSpace Port ships, textures and insignias:
 See FSPORT-ASSET-CREDITS.txt and maps/README-insignias.txt for their
