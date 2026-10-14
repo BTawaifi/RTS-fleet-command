@@ -43,6 +43,38 @@ flowchart LR
 | **Fleet history and outcomes** | Ship histories, losses, crew estimates, citations, extraction, splinter raids, station results, and final fleet outcomes. | [Fleet life](core/data/scripts/fs2rts_fleet_life.lua), [crew records](core/data/scripts/fs2rts_fleet_humanity.lua), [raids](core/data/scripts/fs2rts_traitors.lua) |
 | **Content and packaging** | Missions define the scenario; tables define ships, weapons, armor, and factions. Models and textures supply assets, with optional MediaVP compatibility patches and launcher metadata. | [Configuration](core/data/scripts/fs2rts_config.lua), [scenario](core/data/missions/FS2_RTS_Escalation.fs2), [package metadata](mod.json), [MediaVP support](mediavps/README.txt) |
 
+### How the systems work
+
+#### Camera, input, selection and HUD
+
+Mouse and keyboard hooks feed the input layer, which routes actions to camera movement, selection, interface buttons, or fleet commands. Selection and control groups store native ship signatures; the runtime resolves those identifiers back to living ships when an action needs them. World-to-screen projection connects ships in the 3D battle to picking and tactical overlays.
+
+The HUD reads the same runtime state used by gameplay. A selected-ship card can show whether a unit is following your order, under automatic control, or being piloted. The tactical map and world view provide different views of the same fleet. [The HUD modules](core/data/scripts/fs2rts_hud.lua) separate map rendering, selection panels, production controls, and pilot displays.
+
+#### Orders and direct piloting
+
+[The order system](core/data/scripts/fs2rts_orders.lua) records player intent and translates it into native attack, guard, and movement goals. Formation movement assigns ships destinations with hull clearance, then reconciles their progress and final facing. Explicit player orders remove those ships from normal autonomous planning; service and withdrawal have their own control rules.
+
+[Piloting](core/data/scripts/fs2rts_pilot.lua) connects native flight controls and the native HUD to a possessed fleet ship through an observer proxy. The proxy mirrors the ship's position, loadout, shields, energy, and target, while the real fleet hull remains the combat entity. Capital piloting adds turret-group selection, aiming, and manual firing. Returning to the tactical view hands control back according to the ship's current order state.
+
+#### Economy, production, stations and service
+
+Faction configuration supplies rosters and abilities. Production combines configured entries with loaded ship properties to build the purchase catalog. Command points fund queued construction, station upgrades, defensive platforms, and fleet service. Production checks budget, unlocks, and fleet capacity before progressing jobs and creating native ships.
+
+[Station service](core/data/scripts/fs2rts_service.lua) coordinates an actual round trip: reserve a pad, route the ship to it, wait for arrival and capacity, then spend command points on hull, subsystem, and ammunition recovery. A damaged bomber can retain its previous assignment while undergoing service; completion restores that assignment. A fresh player command cancels service and releases the ship for its new task. Travel time never accumulates repair credit.
+
+#### AI strategy, operations and observation
+
+[AI planning](core/data/scripts/fs2rts_ai_planning.lua) builds a battlefield context containing ships, factions, positions, hull condition, weapons, and current targets. Spatial queries reuse that context to find nearby threats and support. Objective scoring evaluates possible tasks for groups, and commitment rules decide whether to keep an existing assignment or issue another.
+
+[Operations](core/data/scripts/fs2rts_operations.lua) coordinate multiple wings around shared objectives, including assembly, screening, and strikes. Native AI executes immediate flight and combat. [Execution observation](core/data/scripts/fs2rts_ai_planning/observation.lua) checks native goals and target acquisition, while combat hooks record hits. These observations allow decision telemetry to distinguish what the planner requested from what ships actually did.
+
+#### Fleet history, extraction and battle outcomes
+
+[Fleet records](core/data/scripts/fs2rts_fleet_life.lua) follow ships through commissioning, piloting, service, combat, loss, and departure. CREWS and battle reports use these match-local records; crew and casualty estimates are derived from configured models and labeled as estimates. Ship deaths and departures also clear references held by selection, orders, and other systems.
+
+[Losing a station and resolving the battle](core/data/scripts/fs2rts_lifecycle.lua) are separate transitions. The global station result stops further economy and construction, while surviving fleets can continue fighting or extracting. Extraction routes ships toward departure areas and requests native warp-out. A ship is recorded as escaped only when the engine reports its departure, so reaching an exit waypoint alone does not count as survival.
+
 ### Runtime flow
 
 During normal gameplay, [the frame loop](core/data/scripts/fs2rts_lifecycle.lua) updates the active view before checking whether mod simulation updates should proceed. Input and HUD drawing also have their own engine hooks. The simplified flow below shows the main update sequence; individual systems apply their own scenario and lifecycle checks.
