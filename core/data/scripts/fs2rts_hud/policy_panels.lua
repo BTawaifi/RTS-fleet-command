@@ -43,6 +43,7 @@ function RTS:DrawQuickGroupsPanel(sw,sh)
     for i=1,4 do
         local br={x1=bx,y1=y1+m.pad(34),x2=bx+bw,y2=y2-m.pad(9)}; self.QuickGroupRects[i]=br; local count=self:GetControlGroupCount(i)
         self:DrawButton(br,'',true,count>0)
+        self:DrawActionIcon('FORMATION',br.x1+3,br.y1+3,8)
         local lineHeight=self:TextHeight('M'); local textY=br.y1+math.floor((br.y2-br.y1-2*lineHeight-4)/2)
         gr.setColor(235,245,250,255); self:DrawCenteredTextClipped(tostring(i),br.x1+4,br.x2-4,textY)
         gr.setColor(count>0 and 235 or 155,count>0 and 245 or 180,count>0 and 250 or 190,255)
@@ -123,6 +124,7 @@ function RTS:GetNotificationRect(sw,sh,height,slot)
     local right=sw-m.margin-m.rightPanelWidth-m.gap
     if right<=left then return nil end
     local y=m.topBarHeight+m.gap
+    if not self.SetupActive and not self.CinematicActive and slot~='status' and self.GetLiveCostHeight then y=y+self:GetLiveCostHeight()+m.gap end
     if slot=='ready' and self.AnnouncementText and self:UINow()<=(self.AnnouncementUntil or -1) then
         y=y+m.lineHeight+m.pad(20)+m.gap
     elseif slot=='status' then

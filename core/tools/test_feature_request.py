@@ -1343,6 +1343,80 @@ class BattleReportAccuracyTests(unittest.TestCase):
 
 
 class HudClaimTests(unittest.TestCase):
+    def test_crew_estimates_are_opt_in_and_hotkey_repeats_do_not_retoggle(self):
+        self.lua.execute('''r:ResetState(); r.Enabled=true; r.SetupActive=false
+          assert(r.ShowFleetCost==false and r:GetLiveCostHeight()==0)
+          local texts=captureStrings(function() r:DrawLiveFleetCost(1920,1080) end)
+          assert(#texts==0,'hidden estimates still draw')
+          assert(r:ShouldOverrideKey('F9','F9'))
+          r:OnKeyPressed('F9','F9'); assert(r.ShowFleetCost and r:GetLiveCostHeight()>0)
+          r:OnKeyPressed('F9','F9'); assert(r.ShowFleetCost,'key repeat toggled overlay')
+          r.PossessedSignature=123; r:OnKeyReleased('F9','F9'); assert(not r.FleetCostKeyHeld)
+          r:OnKeyPressed('F9','F9'); assert(not r.ShowFleetCost)
+          r:ResetState(); assert(not r.ShowFleetCost and not r.FleetCostKeyHeld)
+        ''')
+
+    def test_crew_navigation_selects_without_focusing_and_pages_and_filters_explicitly(self):
+        self.lua.execute('''r:ResetState(); r.SetupActive=false; r.PanelTab='history'
+          for i=1,25 do local unit=mkFighter('Crew '..i); local record=r:RecordShipCreated(unit,true)
+            record.everPiloted=i%2==0; if i%3==0 then record.fate='LOST' end
+          end
+          local focused=0; r.FocusHistoryShip=function() focused=focused+1 end
+          local function draw() r:DrawLiveHistoryPanel(100,100,450,600) end
+          local function click(key) local rect=r.FleetHistoryButtonRects[key]; assert(rect,key)
+            assert(r:HandleFleetHistoryClick(rect.x1+1,rect.y1+1)) end
+          draw(); assert(r.FleetHistoryPageSize>1)
+          local first
+          for key in pairs(r.FleetHistoryButtonRects) do if r.UnitHistory[key] then first=key; break end end
+          click(first); assert(r.LiveHistoryDetail==first and focused==0)
+          draw(); click('focus'); assert(focused==1)
+          click('next'); assert(r.FleetHistoryOffset==r.FleetHistoryPageSize)
+          draw(); click('prev'); assert(r.FleetHistoryOffset==0)
+          click('filter_lost'); draw(); assert(r.LiveHistoryDetail==nil)
+          for key in pairs(r.FleetHistoryButtonRects) do if r.UnitHistory[key] then assert(r.UnitHistory[key].fate=='LOST') end end
+          click('filter_flown'); draw()
+          for key in pairs(r.FleetHistoryButtonRects) do if r.UnitHistory[key] then assert(r.UnitHistory[key].everPiloted) end end
+        ''')
+
+    def test_crew_panel_controls_do_not_overlap_at_supported_window_sizes(self):
+        self.lua.execute('''r:ResetState(); r.SetupActive=false; r.PanelTab='history'
+          for i=1,25 do r:RecordShipCreated(mkFighter('Crew '..i),true) end
+          for _,size in ipairs({{800,600},{1280,720},{1920,1080}}) do
+            gr.getScreenWidth=function() return size[1] end; gr.getScreenHeight=function() return size[2] end
+            r:DrawBuildPanel(size[1],size[2])
+            local buttons=r.FleetHistoryButtonRects
+            for key,a in pairs(buttons) do
+              assert(a.y1>=0 and a.y2<=size[2],key..' outside screen')
+              for other,b in pairs(buttons) do
+                if key~=other then assert(a.x2<=b.x1 or b.x2<=a.x1 or a.y2<=b.y1 or b.y2<=a.y1,
+                  key..' overlaps '..other..' at '..size[1]..'x'..size[2]) end
+              end
+            end
+          end
+        ''')
+
+    def test_live_history_costs_and_svg_style_buttons_share_real_state(self):
+        self.lua = boot()
+        self.lua.execute('''r:ResetState(); r.SetupActive=false; r.ShowFleetCost=true
+          local unit=mkFighter('Personally flown'); local record=r:RecordShipCreated(unit,true)
+          r:RecordPilotTime(unit,0,true); r:RecordPilotTime(unit,0,false)
+          record.recoveries=2; r:AwardFleetCitation(record,'GALLANTRY','Protected an injured crew')
+          local texts=captureStrings(function() r:DrawLiveFleetCost(1920,1080); r:DrawLiveHistoryPanel(1300,100,1800,700) end)
+          assert(anyContains(texts,'EST DEAD') and anyContains(texts,'Personally flown'))
+          assert(r.FleetHistoryButtonRects[record.id],'live history is not inspectable during battle')
+          r.PanelTab='history'; r.PostBattleActive=false; r.FocusOnSelection=function() end
+          local rect=r.FleetHistoryButtonRects[record.id]
+          assert(r:HandleFleetHistoryClick(rect.x1+1,rect.y1+1) and r.LiveHistoryDetail==record.id)
+          local before=r:GetFleetCrewSummary('BLUE').dead
+          r:RecordUnitFate(unit,'LOST','DESTROYED')
+          texts=captureStrings(function() r:DrawLiveFleetCost(1920,1080) end)
+          assert(anyContains(texts,'YOU FLEW Personally flown') and r:GetFleetCrewSummary('BLUE').dead>=before)
+          local lines,circles=0,0; gr.drawLine=function() lines=lines+1 end; gr.drawCircle=function() circles=circles+1 end
+          r:DrawActionIcon('UNLISTED CONFIG',0,0,20)
+          assert(circles==0 and lines==0,'generic crosshair decoration returned')
+          r:DrawActionIcon('MOVE',0,0,20); assert(lines>0,'action icon missing')
+        ''')
+
     """The HUD is how the player finds out what a key or a system does. Every
     line here is checked against the code that runs it."""
 
@@ -1365,8 +1439,26 @@ class HudClaimTests(unittest.TestCase):
           local texts=captureStrings(function() r:DrawTopBar(1920) end)
           assert(not anyContains(texts,'real time'),
             'the top bar still advertises a real-time tier clock: '..joinAll(texts))
-          assert(anyContains(texts,'Tiers + income: 8x mission time'),
-            'the top bar does not state the speed the whole game runs at: '..joinAll(texts))""")
+          assert(not anyContains(texts,'Tiers + income'), 'redundant mission-time note returned')
+          assert(anyContains(texts,'TIER') and anyContains(texts,'ELAPSED') and anyContains(texts,'8x'),
+            'tier, elapsed clock or speed control missing: '..joinAll(texts))""")
+
+    def test_annotated_ui_controls_do_not_duplicate_icons_or_clip_flown_filter(self):
+        self.check('''r:ResetState(); r.SetupActive=false
+          local icons={}; r.DrawActionIcon=function(self,key) icons[#icons+1]=key end
+          r:DrawButton({x1=0,y1=0,x2=200,y2=30},'NORMAL',true,false,false)
+          r:DrawButton({x1=0,y1=0,x2=60,y2=30},'8x',true,false,false)
+          assert(#icons==0,'text-only controls drew decorative icons')
+          r:DrawButton({x1=0,y1=0,x2=75,y2=30},'ENGAGE',true,false)
+          assert(#icons==1 and icons[1]=='ENGAGE','policy action is not a single meaningful icon')
+          local named=mkFighter('MOVE veteran'); r:RecordShipCreated(named,true)
+          icons={}; local texts=captureStrings(function() r:DrawLiveHistoryPanel(100,100,490,700) end)
+          assert(anyContains(texts,'FLOWN'),'FLOWN filter was clipped')
+          assert(anyContains(texts,'MOVE veteran'),'ship name was mistaken for an icon-only action')
+          for _,key in ipairs(icons) do assert(key~='ALL' and key~='FLOWN' and key~='LOST' and key~='LIVE') end
+          icons={}; r:DrawTopBar(1920)
+          for _,key in ipairs(icons) do assert(key~='DURATION' and key~='PAUSE','speed control has a duplicate icon') end
+        ''')
 
     def test_the_control_legend_matches_the_speed_ladder_the_keys_select(self):
         """1/2/3/4/0 select 1x/2x/4x/8x/16x outright. The legend still described

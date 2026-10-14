@@ -218,13 +218,21 @@ function RTS:DrawWorldOverlays()
         local size=self:GetReticlePixelSize(ship)
         if selected then size=math.max(size,(sel.SelectedBracketPadding or 18)*2) end
         if hovered then size=size+8 end
+        self:DrawFleetHistoryBadge(ship,sx+size*.5+3,sy+size*.5+3,math.max(1,sw-sx-size*.5-6))
         local colour=selected and RETICLE_COLOR_SELECTED or (hovered and RETICLE_COLOR_HOVERED or self:GetReticleFactionColor(ship))
         if selected and self:IsFriendly(ship) then
             selectedContacts[#selectedContacts+1]={ship=ship,x=sx,y=sy,size=size}
             return
         end
-        local half=self:DrawReticle(ship,sx,sy,size,colour,selected and "selected" or nil)
-        self:DrawRoleMarker(ship,sx-half,sy-half,sx+half,sy+half)
+        local half=size*.5
+        if selected or hovered then
+            half=self:DrawReticle(ship,sx,sy,size,colour,selected and "selected" or nil)
+            self:DrawRoleMarker(ship,sx-half,sy-half,sx+half,sy+half)
+        else
+            local iconSize=self:GetUIMetrics().pad(10)
+            gr.setColor(colour[1],colour[2],colour[3],210)
+            self:DrawShipTypeIcon(ship,sx-iconSize*.5,sy-iconSize*.5,iconSize)
+        end
         if self:ShouldDecorateReticle(sx,sy,half,selected or hovered) then
             self:DrawHullBarForShip(ship,sx-half,sy-half,sx+half,sy+half)
         end

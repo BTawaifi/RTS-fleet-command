@@ -21,7 +21,7 @@ function RTS:DrawOptionsPanel(sw,sh)
     local descH=2*lh
     local top=y1+m.pad(6); local bottom=y2-m.pad(6)
     self.FormationButtonRect={x1=x1+m.buttonPadding,y1=top,x2=x2-musicW-m.buttonPadding,y2=bottom-descH-m.pad(4)}
-    self:DrawButton(self.FormationButtonRect,label,true,false)
+    self:DrawButton(self.FormationButtonRect,label,true,false,'FORMATION')
     gr.setColor(150,180,195,255)
     local dx1,dx2=x1+m.pad(16),x2-musicW-m.pad(8)
     self:DrawCenteredWrappedTextToWidth(desc or "",dx1,dx2,bottom-descH,dx2-dx1,lh,2)
@@ -58,7 +58,7 @@ end
 
 function RTS:DrawPostBattleOverlay(sw,sh)
     if not self.PostBattleActive then return end
-    local summary=self.BattleSummary or {}; local fleet=summary.fleetHistory or {records={},wings={}}
+    local summary=self.BattleSummary or {}; local fleet=summary.fleetHistory or self:GetFleetHistorySummary()
     local w=math.min(860,sw-32); local h=math.min(540,sh-64); local x=(sw-w)/2; local y=(sh-h)/2
     gr.setColor(0,0,0,170); gr.drawRectangle(0,0,sw,sh,true)
     gr.setColor(3,9,15,250); gr.drawRectangle(x,y,x+w,y+h,true)
@@ -70,28 +70,19 @@ function RTS:DrawPostBattleOverlay(sw,sh)
     for i,name in ipairs(tabs) do local bw=(w-40)/4; local rect={x1=x+12+(i-1)*(bw+5),y1=y+101,x2=x+12+(i-1)*(bw+5)+bw,y2=y+129}; self.PostBattleButtonRects['page_'..name]=rect; self:DrawButton(rect,name,true,(self.ReportPage or 'SUMMARY')==name) end
     local rows={}; local page=self.ReportPage or 'SUMMARY'
     if page=='SUMMARY' then
-        local victor=summary.strategicVictor or 'UNRESOLVED'
-        rows={ 'Player station: '..(summary.playerStationLost and 'LOST' or 'PRESENT'),
-            'Original station result: '..(victor=='UNRESOLVED' and 'UNRESOLVED' or victor=='NONE' and 'DRAW' or self:GetFactionDisplayName(victor)..' VICTOR'),
-            'Fleet: '..(fleet.escaped or 0)..' escaped / '..(fleet.present or 0)..' still present / '..(fleet.lost or 0)..' lost',
-            'After-result losses: '..(fleet.afterResultLosses or 0)..' // Stranded: '..(fleet.stranded or 0),
-            'Returned from damaged service: '..(fleet.recoveries or 0)..' // Ships piloted: '..(fleet.piloted or 0),
-            'Battle length: '..self:FormatTime(summary.durationSeconds or 0)..' // Tier '..tostring(summary.tier or 1),
-            'CP spent (net refunds): '..math.floor(summary.cpSpent or 0)..' // Remaining '..math.floor(summary.cpRemaining or 0),
-            'Enemy kills: '..tostring(summary.kills or 0)..' // Capital losses: '..tostring(summary.capitalLosses or 0),
-            self.AftermathActive and 'Global aftermath: construction, income, abilities and refitting ended.' or 'Other surviving stations retain production, income and service.' }
+        rows=self:GetCostOfCommandRows(summary,fleet)
     elseif page=='SHIPS' then
         for _,id in ipairs(fleet.records or {}) do local r=self.UnitHistory[id]; local text=r.name..' // '..r.class..' // '..r.fate
             if self.HistoryDetail==id then text=text..string.format(' // min hull %d%% // %d recoveries // piloted %ss',math.floor(r.lowestHull*100),r.recoveries,math.floor(r.pilotSeconds)) end
             rows[#rows+1]={text=text,id=id}
-            if self.HistoryDetail==id then rows[#rows+1]='  Crew exposure: '..(r.crewExposureEstimate or 'UNKNOWN')..' (role estimate; no head count)' end
-            for _,kind in ipairs({'RECOVERY_REJOIN','WITHDRAWAL_COVER'}) do
-                local citation=(r.citations or {})[kind]
-                if citation then rows[#rows+1]='  CITATION // '..citation.reason end
-            end
+            if self.HistoryDetail==id then rows[#rows+1]='  CREW '..(r.crewComplement or '?')..' (design estimate) / EST DEAD '..(r.crewEstimatedDead or 0)..' / MISSING '..(r.crewMissing or 0) end
+            for _,citation in ipairs(self:GetRecordCitations(r)) do rows[#rows+1]='  CITATION // '..citation.reason end
         end
     elseif page=='WINGS' then
-        for _,wing in ipairs(fleet.wings or {}) do rows[#rows+1]=wing.label..' // Original '..wing.original..' / Escaped '..wing.escaped..' / Present '..wing.present..' / Lost '..wing.lost end
+        for _,wing in ipairs(fleet.wings or {}) do
+            rows[#rows+1]=wing.label..' // Original '..wing.original..' / Escaped '..wing.escaped..' / Present '..wing.present..' / Lost '..wing.lost
+            for _,citation in ipairs(self:GetRecordCitations(self.WingHistory[wing.id] or {})) do rows[#rows+1]='  WING CITATION // '..citation.reason end
+        end
     else
         for _,faction in ipairs(summary.factions or {}) do rows[#rows+1]=faction.label..' // '..(faction.eliminated and 'STATION LOST' or 'STATION PRESENT')..' // Mobile '..(faction.mobileShips or 0)..' / Installations '..(faction.installations or 0) end
     end

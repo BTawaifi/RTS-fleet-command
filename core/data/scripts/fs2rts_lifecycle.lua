@@ -725,6 +725,7 @@ function RTS:OnFrame()
     self:UpdateAIStrategicObjectives(now)
     self:UpdateSurvivorCombat(now)
     self:UpdateFleetLife(now)
+    self:UpdateTraitorRaids(now)
     self:AuditWorldPositions(now)
     if not self.AftermathActive and not self.SetupActive and self.ScenarioStartTime ~= nil then
         local tier = self:GetCurrentEscalationTier(now)
@@ -771,7 +772,7 @@ function RTS:ResolveKillRewardShip(killer)
     if not objectValid(killer) then return nil end
     local breed=killer:getBreedName()
     if breed=='Ship' then return killer end
-    if breed=='Weapon' then return shipValid(killer.Parent) and killer.Parent or nil end
+    if breed=='Weapon' then local source=self:GetWeaponCombatSource(killer); return shipValid(source) and source or nil end
     if breed=='Beam' then return shipValid(killer.ParentShip) and killer.ParentShip or nil end
     return nil
 end

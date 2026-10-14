@@ -75,6 +75,7 @@ function RTS:AssignAIStrategicOrder(ship,kind,force)
     if not shipValid(ship) or self:IsStaticDefense(ship) or (self.IsShipWithdrawing and self:IsShipWithdrawing(ship)) then return end
     local station=self:GetFactionCommandShip(kind); if not shipValid(station) or ship:getSignature()==station:getSignature() then return end
     local sig=ship:getSignature()
+    if self.FleetProtection and self.FleetProtection[sig] then return end
     if kind=="BLUE" then if not self.AutoPlayerMode or self.PossessedSignature==sig or self.UserOrders[sig]~=nil then return end end
     local primary=self:GetStablePrimaryTarget(kind); if not shipValid(primary) then return end
     if not self:CanDamageBase(ship) then self:IssueStrategicOrder(ship,station,"AI SCREEN: DEFEND "..station.Name,"SCREEN",mn.getMissionTime(),force)

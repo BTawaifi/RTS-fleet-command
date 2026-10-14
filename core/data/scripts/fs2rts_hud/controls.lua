@@ -34,7 +34,7 @@ function RTS:GetControlLegendLines()
         "RMB order  |  RMB DRAG from empty space = move + facing  |  "..(c.ArmMove or "M").." move, "..(c.ArmAttack or "K").." attack  |  "..(c.Stop or "R").." hold  |  "..(c.Engage or "T").." engage  |  "..(c.Release or "G").." release",
         -- Alt selects the absolute speed ladder; plain digits own groups.
         "1-4 recall group | Shift+1-4 assign | Alt+1/2/3/4/0 = 1x/2x/4x/8x/16x speed | = / - step | Space pause | Esc exit menu | "..(c.HoldPolicy or "J").."/"..(c.PassivePolicy or "Z").."/"..(c.DefensivePolicy or "X").."/"..(c.AggressivePolicy or "V").." policy",
-        "WASD pan | MMB pan | RMB drag orbit | Wheel zoom | "..(c.ZoomFar or "Q").."/"..(c.ZoomNear or "E").." zoom | "..(c.Focus or "F").." focus | "..(c.FocusBase or "H").." home | "..(c.MuteMusic or "N").." music | "..(c.Cinematic or "C").." cinematic | "..(self.Config.HotkeyHintsKey or 'F10').." hints",
+        "WASD pan | MMB pan | RMB drag orbit | Wheel zoom | "..(c.ZoomFar or "Q").."/"..(c.ZoomNear or "E").." zoom | "..(c.Focus or "F").." focus | "..(c.FocusBase or "H").." home | "..(c.MuteMusic or "N").." music | "..(c.Cinematic or "C").." cinematic | "..(self.Config.FleetCostToggleKey or 'F9').." crew estimates | "..(self.Config.HotkeyHintsKey or 'F10').." hints",
     }
     self.ControlLegendLines=cached
     self.ControlLegendKeys=c.SelectAll; self.ControlLegendStop=c.Stop

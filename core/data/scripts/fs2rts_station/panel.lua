@@ -95,7 +95,7 @@ function RTS:DrawStationPanel(x1, y1, x2, y2)
         elseif reason == "TIER" then label = "[" .. pips .. "] " .. t.label .. "  L" .. offer.level .. " needs T" .. offer.tier
         else label = "[" .. pips .. "] " .. t.label .. "  L" .. offer.level .. "  " .. offer.cost .. " CP  " .. math.ceil(offer.seconds * (self:GetEscalationProfile().buildTimeScale or 1)) .. "s" end
         local r = { x1 = x1, y1 = y, x2 = x2, y2 = y + 24 }; rects["track_" .. track] = r
-        self:DrawButton(r, label, offer ~= nil and reason == nil, false)
+        self:DrawButton(r, label, offer ~= nil and reason == nil, false,track)
         y = y + 26
     end
 
@@ -110,13 +110,12 @@ function RTS:DrawStationPanel(x1, y1, x2, y2)
     local w = math.floor((x2 - x1 - 4) / 2); local bx = x1
     local tier = self:GetCurrentEscalationTier(now)
     for i, option in ipairs(options) do
-        -- 44px holds two lines, so the build time wraps to its own row instead of being
-        -- dropped. The label reads "name cost CP" then "Ns build", with no dangling "/".
+        -- Keep tier/hull and price/build time on separate lines within the 44px row.
         local r = { x1 = bx, y1 = y, x2 = bx + w, y2 = y + 44 }; rects["sentry_" .. i] = r
         local short = option.class:gsub("^%S+%s", "")
         local armed = self.ArmedCommand == "sentry" and self.ArmedSentryIndex == i
-            self:DrawButton(r, option.tier <= tier and (short .. " " .. option.cost .. " CP " .. cfg(self).Sentries.BuildSeconds .. "s build") or (short .. " T" .. option.tier),
-            option.tier <= tier and self.CommandPoints >= option.cost and sentries < self:GetSentryCap(kind), armed)
+            self:DrawButton(r, option.tier <= tier and (short .. " T" .. option.tier .. " " .. option.hull .. "HP\n" .. option.cost .. " CP / " .. cfg(self).Sentries.BuildSeconds .. "s") or (short .. " T" .. option.tier .. " " .. option.hull .. "HP"),
+            option.tier <= tier and self.CommandPoints >= option.cost and sentries < self:GetSentryCap(kind), armed,'DEFENSES')
         bx = bx + w + 4
         if i % 2 == 0 then bx=x1; y=y+50 end
     end
@@ -133,7 +132,7 @@ function RTS:DrawStationPanel(x1, y1, x2, y2)
     local abilityStatus=self:GetAbilityStatus(kind,now)
     local abilityReady=abilityStatus=="READY"
     local abilityLabel=ability.name..": "..abilityStatus
-    self:DrawButton(r, abilityLabel, abilityReady, self.ArmedCommand == "strike")
+    self:DrawButton(r, abilityLabel, abilityReady, self.ArmedCommand == "strike",ability.kind)
 end
 
 -- Hover text for the STATION tab, drawn left of the panel.

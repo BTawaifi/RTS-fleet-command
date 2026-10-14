@@ -1,6 +1,7 @@
 -- HUD drawing.
 require "fs2rts_hud.common"
 require "fs2rts_hud.widgets"
+require "fs2rts_hud.humanity"
 require "fs2rts_hud.topbar"
 require "fs2rts_hud.selected_unit"
 require "fs2rts_hud.selection_panel"

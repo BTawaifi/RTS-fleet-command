@@ -155,7 +155,9 @@ class HudLayoutTests(unittest.TestCase):
           local rect={x1=100,y1=100,x2=220,y2=140}
           r:DrawButton(rect,'BUILD',true,false)
           local label=drawLog.strings[1]
-          assert(label.x1==math.floor((rect.x1+rect.x2-gr.getStringWidth('BUILD'))/2),'button label is left-biased')
+          local m=r:GetUIMetrics(); local inset=math.min(m.buttonPadding,math.floor((rect.x2-rect.x1)*.15))
+          local left=rect.x1+inset+math.min(m.pad(18),rect.y2-rect.y1-8)+m.pad(6)
+          assert(label.x1==math.floor((left+rect.x2-inset-gr.getStringWidth('BUILD'))/2),'button label is not centered beside its icon')
           -- +1 is the measured optical correction: the caps sit ~1.5px above the
           -- font-cell centre at 1920x1080, so the label is nudged down one pixel.
           assert(label.y1==math.floor((rect.y1+rect.y2-r:TextHeight('BUILD'))/2)+1,'button label uses line pitch instead of ink height')
@@ -626,7 +628,7 @@ class HudLayoutTests(unittest.TestCase):
           local legendLabels={['YOUR ORDER']=true,['POLICY']=true,['AUTO']=true,['PILOT']=true,['SENTRY']=true}
           local chips={}
           for _,t in ipairs(drawLog.strings) do
-            if legendLabels[t.text] then chips[#chips+1]=t end
+            if legendLabels[t.text] and t.y1<r.LegendBottomY then chips[#chips+1]=t end
           end
           assert(#chips==5,'only '..#chips..' of the 5 legend chips were drawn at '..at)
           for _,t in ipairs(chips) do

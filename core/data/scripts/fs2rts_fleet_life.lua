@@ -11,6 +11,9 @@ function R:GetCrewExposureEstimate(ship)
 end
 
 function R:ResetFleetLife()
+    if self.ResetTraitorRaids then self:ResetTraitorRaids() end
+    if self.ResetFleetHumanity then self:ResetFleetHumanity() end
+    self.PilotPrimaryWeapons={}
     self.UnitHistory={}; self.HistoryBySignature={}; self.WingHistory={}; self.HistorySerial=0; self.TerminalShipSignatures={}
     self.Withdrawals={}; self.Rearguards={}; self.ExtractionAreas={}; self.ExtractionOperations={}; self.ExtractionExtent=nil; self.FactionStationRadii={}
     self.AllowWithdrawal={}; self.PassageTurretOverrides={}; self.NextFleetLife=0
@@ -43,6 +46,7 @@ function R:RecordShipCreated(ship,newCommission)
         commissionedAt=mn.getMissionTime(),lowestHull=ship.HitpointsLeft/math.max(1,ship.HitpointsMax),
         recoveries=0,serviceVisits=0,pilotSeconds=0,fate='PRESENT'}
     local _,label=self:GetCrewExposureEstimate(ship); record.crewExposureEstimate=label
+    if self.InitializeCrewRecord then self:InitializeCrewRecord(record,ship) end
     self.UnitHistory[id]=record; self.HistoryBySignature[record.signature]=id
     return record
 end
@@ -68,7 +72,7 @@ function R:RecordServiceStart(ship,now)
 end
 
 function R:RecordServiceFinish(ship,now,service)
-    local r=self:GetUnitHistory(ship); if not r then return end
+    local r=self:GetUnitHistory(ship); if not r or r.fate~='PRESENT' then return end
     r.serviceVisits=r.serviceVisits+1
     if r.serviceEntryHull and r.serviceEntryHull<.98 then
         r.recoveries=r.recoveries+1
@@ -79,6 +83,10 @@ function R:RecordServiceFinish(ship,now,service)
     end
     r.serviceCitationEligible=nil; r.hostileProjectileHull=0; r.friendlyDamageEpisode=nil
     r.serviceEntryHull=nil
+    if self.RecordCollectiveCover then
+        self:RecordCollectiveCover(r,r.protectionContributors,'returned from paid service')
+        r.protectionContributors=nil
+    end
 end
 
 function R:AwardFleetCitation(record,kind,reason)
@@ -86,8 +94,31 @@ function R:AwardFleetCitation(record,kind,reason)
     if record.citations[kind] then return false end
     record.citations[kind]={reason=reason,time=mn.getMissionTime()}
     if record.faction=='BLUE' then self.FleetCitationNotice={name=record.name,reason=reason,untilTime=self:UINow()+8} end
+    if record.faction=='BLUE' and self.PushFleetHumanityNotice then self:PushFleetHumanityNotice(record.name..' // '..reason,1) end
     self:EmitAIEvent('FLEET_CITATION',{history=record.id,ship=record.signature,faction=record.faction,kind=kind,reason=reason})
     return true
+end
+
+function R:GetWeaponCombatSource(weapon)
+    if not U.objectValid(weapon) then return nil end
+    if not self.PilotPrimaryWeapons or not next(self.PilotPrimaryWeapons) then return weapon.Parent end
+    local entry=(self.PilotPrimaryWeapons or {})[weapon:getSignature()]
+    if entry and entry.weapon==weapon then return entry.parent end
+    return weapon.Parent
+end
+
+function R:TrackPilotPrimaryWeapon(weapon,parent)
+    if not self.Enabled or not valid(parent) or parent:getSignature()~=self.PossessedSignature
+        or not weapon.Class:isNonBeamPrimary() then return end
+    local observer=self:GetObserver(); if not valid(observer) then return end
+    self.PilotPrimaryWeapons=self.PilotPrimaryWeapons or {}
+    for id,entry in pairs(self.PilotPrimaryWeapons) do if not U.objectValid(entry.weapon) then self.PilotPrimaryWeapons[id]=nil end end
+    self.PilotPrimaryWeapons[weapon:getSignature()]={weapon=weapon,parent=parent}
+    -- FSO culls untargeted same-team laser pairs for non-player parents before
+    -- collision hooks. Native physics needs a player parent; game logic retains
+    -- the actual firing hull through GetWeaponCombatSource.
+    weapon.Parent=observer
+    weapon.Position=weapon.Position -- invalidate pairs cached under the AI parent
 end
 
 function R:RegisterCrewProjectileEvidence()
@@ -101,16 +132,24 @@ function R:RegisterCrewProjectileEvidence()
         if not record or record.id~=sample.history or record.fate~='PRESENT' then return end
         local removed=math.max(0,sample.hull-sample.target.HitpointsLeft)/math.max(1,sample.target.HitpointsMax)
         if removed<=0 then return end
-        if sample.hostile then record.hostileProjectileHull=(record.hostileProjectileHull or 0)+removed
-        else record.friendlyDamageEpisode=true; record.serviceCitationEligible=false; record.recoveryRejoinPending=nil end
+        if sample.hostile then
+            record.hostileProjectileHull=(record.hostileProjectileHull or 0)+removed
+            record.lastHostileHullSource=sample.sourceHistory; record.lastHostileHullTime=mn.getMissionTime()
+        else
+            record.friendlyDamageEpisode=true; record.friendlyDamageEver=true; record.serviceCitationEligible=false; record.recoveryRejoinPending=nil
+            local owner=self.UnitHistory[sample.sourceHistory]
+            if owner then owner.friendlyFireEver=true end
+        end
     end,{},function()
         self.CrewProjectileBefore=nil
         if self.Enabled and not self.SetupActive and not self.CinematicActive then
             local target,weapon=hv.Ship,hv.Weapon
-            local source=U.objectValid(weapon) and weapon.Parent or nil
+            local source=self:GetWeaponCombatSource(weapon)
             local record=valid(target) and self:GetUnitHistory(target)
             if record and record.fate=='PRESENT' and valid(source) and source:getBreedName()=='Ship' then
-                self.CrewProjectileBefore={target=target,weapon=weapon,history=record.id,hull=target.HitpointsLeft,hostile=self:AreEnemies(source,target)}
+                local owner=self:GetUnitHistory(source)
+                self.CrewProjectileBefore={target=target,weapon=weapon,history=record.id,hull=target.HitpointsLeft,
+                    sourceHistory=owner and owner.id,hostile=self:AreEnemies(source,target)}
             end
         end
         return false
@@ -124,6 +163,7 @@ function R:RecordFleetCombatKill(source,target)
         or not self:AreEnemies(source,target) or self:IsCommandStation(target) or self:IsStaticDefense(target) then return end
     local record=self:GetUnitHistory(source)
     if not record or record.fate~='PRESENT' then return end
+    if self.RecordExtendedFleetKill then self:RecordExtendedFleetKill(source,target) end
     if record.recoveryRejoinPending and not self:IsShipWithdrawing(source) and not (self.FleetServices or {})[record.signature] then
         self:AwardFleetCitation(record,'RECOVERY_REJOIN','Recovered from hostile fire and returned to effective combat')
         record.recoveryRejoinPending=nil
@@ -140,18 +180,31 @@ end
 
 function R:RecordPilotTime(ship,now,entering)
     local r=self:GetUnitHistory(ship) or self:RecordShipCreated(ship); if not r then return end
-    if entering then r.pilotStartedAt=now
+    if entering then r.everPiloted=true; r.pilotStartedAt=r.pilotStartedAt or now
     elseif r.pilotStartedAt then r.pilotSeconds=r.pilotSeconds+math.max(0,now-r.pilotStartedAt); r.pilotStartedAt=nil end
 end
 
 function R:RecordUnitFate(ship,fate,reason)
+    if self.GetInstallationHistory and self:IsCommandStation(ship) then
+        local base=self:GetInstallationHistory(ship,true)
+        if not base or base.fate~='PRESENT' then return false end
+        base.fate=fate; base.fateAt=mn.getMissionTime(); base.reason=reason
+        self:RecordCrewFate(base); return true
+    end
     local r=self:GetUnitHistory(ship); if not r or r.fate~='PRESENT' then return false end
     if r.pilotStartedAt then self:RecordPilotTime(ship,mn.getMissionTime(),false) end
     r.fate=fate; r.fateAt=mn.getMissionTime(); r.reason=reason
+    if self.RecordCrewFate then self:RecordCrewFate(r) end
     if fate=='ESCAPED' then
         for id in pairs(r.coverContributors or {}) do
             local contributor=self.UnitHistory[id]
             if contributor then self:AwardFleetCitation(contributor,'WITHDRAWAL_COVER','Removed a pursuing threat; '..r.name..' escaped') end
+        end
+        if self.RecordCollectiveCover then
+            local contributors={}
+            for id in pairs(r.coverContributors or {}) do contributors[id]=true end
+            for id in pairs(r.protectionContributors or {}) do contributors[id]=true end
+            self:RecordCollectiveCover(r,contributors,'escaped')
         end
     end
     self.TerminalShipSignatures=self.TerminalShipSignatures or {}; self.TerminalShipSignatures[r.signature]=true
@@ -388,6 +441,7 @@ function R:ClearFleetLifeReferences(ship)
 end
 
 function R:UpdateFleetLife(now)
+    if self.SetupActive or self.CinematicActive then return end
     if now<(self.NextFleetLife or 0) then return end
     self.NextFleetLife=now+.5
     for signature in pairs(self.TerminalShipSignatures or {}) do
@@ -395,6 +449,7 @@ function R:UpdateFleetLife(now)
     end
     for _,ship in ipairs(self:GetShipList()) do
         if alive(ship) then
+            if self.GetInstallationHistory and self:IsCommandStation(ship) then self:GetInstallationHistory(ship,true) end
             local r=self:GetUnitHistory(ship) or self:RecordShipCreated(ship)
             if r and r.fate=='PRESENT' then
                 local hp=ship.HitpointsLeft/math.max(1,ship.HitpointsMax); r.lowestHull=math.min(r.lowestHull,hp)
@@ -426,6 +481,7 @@ function R:UpdateFleetLife(now)
         end
     end
     if next(self.Withdrawals or {}) or next(self.PassageTurretOverrides or {}) then self:UpdatePassageInterception() end
+    if self.UpdateCrewProtection then self:UpdateCrewProtection(now) end
 end
 
 function R:UpdatePassageInterception()
@@ -534,7 +590,9 @@ function R:UpdateDefeatedFleetExtraction(now)
                         for _,enemy in ipairs(self:GetShipList()) do
                             if alive(enemy) and self:CanAutoEngage(ship,enemy) then distance=math.min(distance,ship.Position:getDistance(enemy.Position)) end
                         end
-                        local value=distance+(role=='escort' and -2000 or 0)
+                        local benefit=0
+                        for _,other in ipairs(ships) do if other~=ship then benefit=benefit+self:GetCrewExposureEstimate(other) end end
+                        local value=(self.GetCrewCoverScore and self:GetCrewCoverScore(ship,benefit,distance) or distance)+(role=='escort' and -2000 or 0)
                         if not score or value<score or value==score and ship:getSignature()<best:getSignature() then best,score=ship,value end
                     end
                 end
@@ -612,7 +670,7 @@ function R:GetFleetHistorySummary()
             summary.records[#summary.records+1]=record.id
             summary.recoveries=summary.recoveries+record.recoveries
             for _ in pairs(record.citations or {}) do summary.citations=summary.citations+1 end
-            if record.pilotSeconds>0 or record.pilotStartedAt then summary.piloted=summary.piloted+1 end
+            if record.everPiloted or record.pilotSeconds>0 or record.pilotStartedAt then summary.piloted=summary.piloted+1 end
             if record.fate=='LOST' then summary.lost=summary.lost+1; if record.afterResult then summary.afterResultLosses=summary.afterResultLosses+1 end
             elseif record.fate=='ESCAPED' then summary.escaped=summary.escaped+1
             elseif record.fate=='PRESENT' then summary.present=summary.present+1; local w=self.Withdrawals[record.signature]; if w and w.phase:find('STRANDED',1,true) then summary.stranded=summary.stranded+1 end end
@@ -632,7 +690,9 @@ function R:GetFleetHistorySummary()
 end
 
 function R:FocusHistoryShip(id,service)
-    local r=self.UnitHistory[id]; local ship=r and r.fate=='PRESENT' and self:FindShipBySignature(r.signature)
+    local r=self.UnitHistory[id]
+    if not r or r.fate~='PRESENT' then return false end
+    local ship=self:FindShipBySignature(r.signature)
     if not alive(ship) then return false end
     self.Selected={r.signature}; self.PrimarySelectionSignature=r.signature
     self:FocusOnSelection()

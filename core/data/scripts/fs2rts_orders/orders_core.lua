@@ -45,6 +45,7 @@ function RTS:SetUserOrder(ship, order)
     end
     local sig = ship:getSignature()
     self.UserOrders[sig] = order
+    if self.FleetProtection then self.FleetProtection[sig]=nil end
     self:SetShipCommandDiscipline(ship,order.kind=='move' or order.kind=='hold')
     self:DropPursuit(sig)
     if order.kind~='move' and order.kind~='service' then self:SetShipTurretLock(ship,false) end

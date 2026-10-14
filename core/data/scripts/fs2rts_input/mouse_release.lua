@@ -188,6 +188,7 @@ end
 
 function RTS:ClearInputGestures()
     self.HotkeyHintsHeld=false
+    self.FleetCostKeyHeld=false
     self.KeyDown={}; self.FastKeyDown={}; self.ShiftDown=false; self.CtrlDown=false; self.AltDown=false
     self.LeftDrag=nil; self.RightDrag=nil; self.MiddleDrag=nil; self.MapDrag=nil
     self.MapWindowDrag=nil; self.MapPanDrag=nil; self.FollowOrbitDrag=nil; self.MovePreview=nil

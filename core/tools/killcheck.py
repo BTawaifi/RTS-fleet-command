@@ -1279,8 +1279,8 @@ GUARDS.extend([
             new="        local ar={x1=badgeX-autoWidth,x2=badgeX,\n",what="AI to badge gap")],
         tests=["test_hud_layout.py::HudLayoutTests::test_build_ai_button_badge_and_details_have_separate_padded_columns"],note="Cost and build time remain visible in a separate line."),
     Guard(name="ui_button_glyph_alignment",title="Button labels are visually centered",file="fs2rts_hud.lua",
-        mutations=[Replacement(old="        self:DrawCenteredTextClipped(line,rect.x1+inset,rect.x2-inset,textY+(i-1)*m.lineHeight)\n",
-            new="        gr.drawString(line,rect.x1+inset,textY+(i-1)*m.lineHeight)\n",what="button centering")],
+        mutations=[Replacement(old="        self:DrawCenteredTextClipped(line,textLeft,rect.x2-inset,textY+(i-1)*m.lineHeight)\n",
+            new="        gr.drawString(line,textLeft,textY+(i-1)*m.lineHeight)\n",what="button centering")],
         tests=["test_hud_layout.py::HudLayoutTests::test_button_labels_are_centered_using_actual_glyph_height"],note="Checks measured glyph bounds rather than guessed offsets."),
     Guard(
         name="healthy_focused_service_scan_gate",

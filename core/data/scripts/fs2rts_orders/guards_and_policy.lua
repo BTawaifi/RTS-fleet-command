@@ -86,6 +86,8 @@ function RTS:ApplyPolicyToShip(ship, force, defendTarget)
     local sig = ship:getSignature()
     if self.FleetServices and self.FleetServices[sig] then return end
     if self.PossessedSignature == sig or self.UserOrders[sig] ~= nil then return end
+    local protection=self.FleetProtection and self.FleetProtection[sig]
+    if protection and protection.policy==self.GlobalPolicy then return end
     if not force and self.PolicyApplied[sig] == self.GlobalPolicy then return end
 
     local priority = self.Config.Policy.Priority or 0.65

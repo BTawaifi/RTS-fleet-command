@@ -144,7 +144,11 @@ R.DrawHUD=function(self)
     local name
     if stage==3.65 and mn.getMissionTime()-startTime>.5 then name='pilot-native-banks'
     elseif stage==3.8 and self:UINow()-uiAt>.5 then name='director-close-shot'
-    elseif stage==3.85 and self:UINow()-uiAt>.3 then name='sky-'..skyView end
+    elseif stage==3.85 and self:UINow()-uiAt>.3 then name='sky-'..skyView
+    elseif stage==6 and self:UINow()-uiAt>.3 then name='command-estimates-hidden'
+    elseif stage==6.1 and self:UINow()-uiAt>.3 then name='crew-record-detail'
+    elseif stage==6.2 and self:UINow()-uiAt>.3 then name='command-estimates-shown'
+    elseif stage==7 and self:UINow()-uiAt>.3 then name='cost-of-command' end
     if name and not screenshots[name] and not self.ReviewProbeHeadless then
         local blob=gr.screenToBlob(); local file=cf.openFile(name..'.blob','w','data')
         assert(file and file:isValid() and #blob>1000,'native screenshot capture failed: '..name)
@@ -506,6 +510,29 @@ local function probe(self)
         check(self.SelectionRows[1].rect.y1>self.LegendBottomY,'native selection rows clear the complete legend')
         self.AIOrderState[victim:getSignature()]={label='PRIVATE ORDER',reason='PRIVATE RATIONALE',targetSignature=capital:getSignature()}
         check(self:GetHoverOrderTarget(victim)==nil and self:GetHoverCourseProjection(victim,0,0)==nil,'native hostile inspection hides targets and courses')
+        check(not self.ShowFleetCost and self:GetLiveCostHeight()==0,'native crew estimates start hidden')
+        check(require('fs2rts_util').shipAlive(false)==false,'native shared validity rejects boolean handles')
+        check(self:StartPilotMode(movers[1]),'native personal-history craft can be piloted')
+        self:ExitPilotMode(nil,false)
+        local record=self:GetUnitHistory(movers[1])
+        check(record.everPiloted and self:GetShipHistoryBadge(movers[1]):find('P',1,true),'native personal history persists after pilot exit')
+        self.PanelTab='history'; self.LiveHistoryDetail=record.id
+        uiAt=self:UINow(); stage=6.1
+    elseif stage==6.1 and self:UINow()-uiAt>uiSeconds then
+        local record=self:GetUnitHistory(movers[1]); local rect=self.FleetHistoryButtonRects[record.id]
+        check(rect~=nil,'native CREWS list contains the piloted lifetime')
+        local focus=self.CameraFocus
+        check(self:HandleFleetHistoryClick(rect.x1+1,rect.y1+1) and self.LiveHistoryDetail==record.id and self.CameraFocus==focus,
+            'native CREWS row selects without moving the camera')
+        local fate=record.fate; record.fate='LOST'
+        check(not self:FocusHistoryShip(record.id,false),'native archived crew focus rejects removed lifetime without indexing false')
+        record.fate=fate; self.PanelTab='production'
+        self:OnKeyPressed('F9','F9'); self:OnKeyPressed('F9','F9')
+        check(self.ShowFleetCost and self:GetLiveCostHeight()>0,'native F9 repeat keeps estimates visible')
+        self:OnKeyReleased('F9','F9'); uiAt=self:UINow(); stage=6.2
+    elseif stage==6.2 and self:UINow()-uiAt>uiSeconds then
+        self:OnKeyPressed('F9','F9'); self:OnKeyReleased('F9','F9')
+        check(not self.ShowFleetCost,'native F9 toggles estimates off')
         self.GameStatus='VICTORY'; self.BattleSummary={}; self.PostBattleActive=true; self.PostBattleResult='ALL OPPOSING STATIONS DESTROYED'
         uiAt=self:UINow(); log('UI READY victory'); stage=7
     elseif stage==7 and self:UINow()-uiAt>uiSeconds then

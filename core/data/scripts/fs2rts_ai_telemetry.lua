@@ -558,6 +558,7 @@ function RTS:RegisterBaseDamageProtection()
                 elseif not self:CanDamageBase(parent) then
                     protected[weapon:getSignature()]=true
                 end
+                self:TrackPilotPrimaryWeapon(weapon,parent)
             end
         end
     end)
@@ -593,7 +594,7 @@ function RTS:RegisterBaseDamageProtection()
                 local projectile=valid(weapon) and weapon or valid(beam) and beam or nil
                 if valid(target) and self:IsCommandStation(target) and projectile then
                     local parent
-                    if projectile==weapon then parent=weapon.Parent else parent=beam.ParentShip end
+                    if projectile==weapon then parent=self:GetWeaponCombatSource(weapon) else parent=beam.ParentShip end
                     local chipAllowed=protected[projectile:getSignature()]==false
                     local blocked
                     if chipAllowed then blocked=false

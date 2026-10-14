@@ -507,7 +507,15 @@ function RTS:DrawHoverReadout(ship, mouseX, mouseY, target, courseSeconds)
     -- instead of being cut ("PRIMARY ...") and the rows below move down with it.
     local actionLines=friendly and self:WrapTextLinesToWidth("ACTION: "..self:GetHoverActionLabel(ship),width-18,2) or {}
     local extra=math.max(0,#actionLines-1)*lh
-    local height=16+lh*(friendly and 9 or 3)+extra
+    local historyLines={}
+    if friendly and self.GetShipHistoryLines then
+        for _,line in ipairs(self:GetShipHistoryLines(ship)) do
+            for _,piece in ipairs(self:WrapTextLinesToWidth(line,width-18,2)) do historyLines[#historyLines+1]=piece end
+        end
+    end
+    local limit=math.max(0,math.floor((sh-72-extra)/lh)-9)
+    while #historyLines>limit do table.remove(historyLines) end
+    local height=16+lh*((friendly and 9 or 3)+#historyLines)+extra
     -- Keep clear of the right-hand column: the station upgrade and sentry buttons
     -- it describes were hidden behind the card.
     local columnLeft=sw-m.margin-m.rightPanelWidth-m.gap
@@ -550,6 +558,8 @@ function RTS:DrawHoverReadout(ship, mouseX, mouseY, target, courseSeconds)
     self:DrawTextLine(string.format("BEAM: %dm",ranges.beam),x+9,(y+7+extra+7*lh),width-18)
     gr.setColor(175,195,205,255)
     self:DrawTextLine("Max loaded reach; arcs/target limits apply",x+9,(y+7+extra+8*lh),width-18)
+    gr.setColor(255,225,145,255)
+    for i,line in ipairs(historyLines) do self:DrawTextLine(line,x+9,y+7+extra+(8+i)*lh,width-18) end
 end
 
 function RTS:DrawCurrentHoverReadout()

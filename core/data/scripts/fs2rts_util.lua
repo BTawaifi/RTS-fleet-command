@@ -35,7 +35,8 @@ local function distance2(x1, y1, x2, y2)
 end
 
 local function objectValid(object)
-    return object ~= nil and object:isValid()
+    local kind=type(object)
+    return (kind=='userdata' or kind=='table') and type(object.isValid)=='function' and object:isValid()==true
 end
 
 local function shipValid(ship)

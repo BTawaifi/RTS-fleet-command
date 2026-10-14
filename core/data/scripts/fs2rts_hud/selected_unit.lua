@@ -141,7 +141,8 @@ function RTS:DrawSelectedUnitStats(sw,sh)
     y=y+self:DrawWrappedTextToWidth(self:GetShipControlDescription(ship),x1+pad,y,inner-(x1+pad),lh,2)
     y=y+4
     local role=self:GetShipRole(ship)
-    gr.setColor(155,185,198,255); self:DrawTextLine("Role: "..string.upper(role),x1+pad,y,inner-(x1+pad))
+    local badge=self:GetShipHistoryBadge(ship)
+    gr.setColor(155,185,198,255); self:DrawTextLine("Role: "..string.upper(role)..(badge~='' and (' | '..badge) or ''),x1+pad,y,inner-(x1+pad))
     local friendly=self:IsFriendly(ship)
     if not friendly then return end
     local sig=ship:getSignature()

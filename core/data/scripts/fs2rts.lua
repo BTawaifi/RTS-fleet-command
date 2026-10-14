@@ -17,6 +17,8 @@ require "fs2rts_strategy"
 require "fs2rts_operations"
 require "fs2rts_lifecycle"
 require "fs2rts_fleet_life"
+require "fs2rts_fleet_humanity"
+require "fs2rts_traitors"
 require "fs2rts_hud"
 
 require("fs2rts_ai")(RTS)

@@ -13,7 +13,7 @@ $Mission Desc:
  XSTR("Choose Terran, Shivan or Vasudan forces, set the number of hostile factions, and command your fleet from a tactical camera. Destroy every opposing command station.", -1)
 $end_multi_text
 +Game Type Flags: 1
-+Flags: 1024
++Flags: 1040
 +Fog Near Mult: 1.000000
 +Fog Far Mult: 1.000000
 +Disallow Support: 1

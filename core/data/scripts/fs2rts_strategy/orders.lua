@@ -98,6 +98,7 @@ function RTS:IssueStrategicOrder(ship,target,label,mission,now,force,options)
     if not shipAlive(ship) or not shipAlive(target) or (self.IsShipWithdrawing and self:IsShipWithdrawing(ship)) then return false end
     if self.FleetServices and self.FleetServices[ship:getSignature()] then return false end
     local sig=ship:getSignature(); local tsig=target:getSignature(); local previous=self.AIOrderState[sig]; local kind=self:GetFactionKey(ship)
+    if self.FleetProtection and self.FleetProtection[sig] and previous and previous.protectionHistory then return false end
     local enemies=canAutoEngage(self,ship,target)
     -- Fighter chip damage permits player pressure, not a committed AI siege force.
     if enemies and self:IsCommandStation(target) and not self:CanDamageBase(ship) then

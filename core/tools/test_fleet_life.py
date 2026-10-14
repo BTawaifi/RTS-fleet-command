@@ -5,6 +5,184 @@ from test_station import SETUP, SCRIPTS
 
 
 class FleetLifeTests(unittest.TestCase):
+    def test_rare_traitor_raids_support_every_origin_warn_before_warp_and_reset(self):
+        self.lua.execute('''
+          local team={Name='Traitor',isValid=function() return true end}
+          team.attacks=function(self,other) return other~=self end; mn.Teams.Traitor=team
+          r.Config.TraitorRaids.MaxEvents=3; r.Config.TraitorRaids.WarningSeconds=12
+          r.GetAIRoster=function() return {{class='GTF Ulysses',role='fighter',tier=1}} end
+          r.ShipCostMap={['GTF Ulysses']={cost=100}}; r.TraitorRandom=function() return 0 end
+          local spawned=0
+          r.SpawnFactionUnit=function(self,name,anchor,t,prefix,wave,index,offset,slot,total,label,batch,list)
+            assert(type(batch)=='number','arrival scatter batch must be numeric')
+            spawned=spawned+1; local unit=ship(label,class(name),anchor.Position,t)
+            self:RecordShipCreated(unit,true); list[#list+1]=unit; return unit
+          end
+          for _,origin in ipairs({'BLUE','RED','GOLD'}) do
+            assert(r:BeginTraitorRaid(origin,0),'missing origin '..origin)
+            assert(spawned==(r.TraitorRaidCount-1)*3,'warning spawned immediately')
+            r:UpdateTraitorRaids(11); assert(r.PendingTraitorRaid)
+            r:UpdateTraitorRaids(12); assert(not r.PendingTraitorRaid)
+          end
+          assert(spawned==9 and not r:BeginTraitorRaid('BLUE',100),'per-match bound failed')
+          for signature,raid in pairs(r.TraitorShips) do
+            local unit=r:FindShipBySignature(signature)
+            assert(r:GetFactionKey(unit)=='TRAITOR' and r:GetUnitHistory(unit).traitorOrigin==raid.origin)
+          end
+          r:ResetFleetLife(); assert(r.TraitorRaidCount==0 and not r.PendingTraitorRaid and next(r.TraitorShips)==nil)
+        ''')
+
+    def test_traitor_probability_is_checked_on_mission_time_without_pause_or_catchup_bursts(self):
+        self.lua.execute('''
+          local draws=0; r.TraitorRandom=function() draws=draws+1; return 1 end
+          r.Config.TraitorRaids.DelaySeconds=480; r.Config.TraitorRaids.IntervalSeconds=180
+          r:UpdateTraitorRaids(479); assert(draws==0)
+          r.Paused=true; r:UpdateTraitorRaids(480); assert(draws==0)
+          r.Paused=false; r:UpdateTraitorRaids(480); assert(draws==1)
+          r:UpdateTraitorRaids(659); assert(draws==1)
+          r:UpdateTraitorRaids(10000); r:UpdateTraitorRaids(10000); assert(draws==2,'skipped time burst event rolls')
+          r.AftermathActive=true; r:UpdateTraitorRaids(11000); assert(draws==2)
+        ''')
+
+    def test_pilot_primary_friendly_collision_uses_native_player_parent_and_preserves_owner(self):
+        self.lua.execute('''
+          local hooks={}; engine={addHook=function(name,fn,condition,pre) hooks[name]={fn=fn,pre=pre}; return true end}
+          r:RegisterCrewProjectileEvidence()
+          local pilot=ship('Pilot',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
+          local friend=ship('Friendly',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
+          local enemy=ship('Enemy',class('SF Mara'),stations.RED.Position,mn.Teams.hostile)
+          r:RecordShipCreated(pilot,true); local record=r:RecordShipCreated(friend,true)
+          local observer=ship('Observer',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
+          r.GetObserver=function() return observer end
+          r.Enabled=true; r.PossessedSignature=pilot.signature
+          local primary=true; local live=true
+          local weapon={Parent=pilot,isValid=function() return live end,getSignature=function() return 999 end,
+            Class={isNonBeamPrimary=function() return primary end}}
+          hv={Weapon=weapon}; r:TrackPilotPrimaryWeapon(weapon,pilot)
+          assert(weapon.Parent==observer and r:GetWeaponCombatSource(weapon)==pilot,'native collision parent or real source missing')
+          r.PossessedSignature=nil -- shots remain player-fired after pilot exit
+          hv.Ship=friend; assert(hooks['On Weapon Collision'].pre()==false)
+          assert(weapon.Parent==observer,'native AI-friendly-fire immunity still applies')
+          r:RecordAIHit(weapon.Parent,friend,'PROJECTILE')
+          assert(r.AIStats.hits[pilot.signature] and not r.AIStats.hits[observer.signature],'hit telemetry credits the proxy')
+          friend.HitpointsLeft=friend.HitpointsLeft-10; hooks['On Weapon Collision'].fn()
+          assert(r:GetWeaponCombatSource(weapon)==pilot and record.friendlyDamageEver,'ownership or measured friendly injury was lost')
+          assert(r:GetUnitHistory(pilot).friendlyFireEver and not r:GetUnitHistory(pilot).friendlyDamageEver,
+            'friendly shooter and friendly casualty were conflated')
+          hv.Ship=enemy; hooks['On Weapon Collision'].pre(); assert(r:GetWeaponCombatSource(weapon)==pilot)
+          hooks['On Weapon Collision'].fn()
+          r:ResetFleetLife(); weapon.Parent=pilot; r.PossessedSignature=pilot.signature; primary=false
+          hv.Ship=friend; r:TrackPilotPrimaryWeapon(weapon,pilot); hooks['On Weapon Collision'].pre()
+          assert(weapon.Parent==pilot,'secondary ownership was changed'); hooks['On Weapon Collision'].fn()
+          primary=true; r.PossessedSignature=nil; r:TrackPilotPrimaryWeapon(weapon,pilot); hooks['On Weapon Collision'].pre()
+          assert(weapon.Parent==pilot,'ordinary AI friendly-fire behavior changed')
+          hooks['On Weapon Collision'].fn()
+        ''')
+
+    def test_ever_piloted_badges_crew_outcomes_and_replacements(self):
+        self.lua.execute('''
+          local unit=ship('Personal crew',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
+          local record=r:RecordShipCreated(unit,true)
+          assert(r:GetShipHistoryBadge(unit)=='')
+          r:RecordPilotTime(unit,10,true); r:RecordPilotTime(unit,10,false)
+          assert(record.everPiloted and record.pilotSeconds==0 and r:GetShipHistoryBadge(unit)=='P')
+          record.recoveries=2; r:AwardFleetCitation(record,'GALLANTRY','Confirmed protection')
+          assert(r:GetShipHistoryBadge(unit)=='P R2 C1')
+          r:RecordUnitFate(unit,'LOST','DESTROYED'); r:RecordUnitFate(unit,'LOST','DUPLICATE')
+          local cost=r:GetFleetCrewSummary('BLUE')
+          assert(cost.dead+cost.missing==record.crewComplement and cost.shipsLost==1 and cost.pilotedLost==1)
+          assert(r:GetShipHistoryBadge(unit)=='','lost hull keeps a live badge')
+          local fresh=r:RecordShipCreated(unit,true)
+          assert(fresh.id~=record.id and not fresh.everPiloted and r:GetShipHistoryBadge(unit)=='')
+          r:ResetFleetLife(); assert(next(r.InstallationHistory)==nil and next(r.FleetProtection)==nil)
+        ''')
+
+    def test_crew_model_preserves_unknown_station_and_escape_accounting(self):
+        self.lua.execute('''
+          local unit=ship('Escaping crew',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
+          local record=r:RecordShipCreated(unit,true); local crew=record.crewComplement
+          r:RecordUnitFate(unit,'ESCAPED','NATIVE_DEPARTURE')
+          assert(r:GetFleetCrewSummary('BLUE').escaped==crew and record.crewEstimatedDead==0)
+          local base=r:GetInstallationHistory(stations.BLUE,true)
+          assert(base.installation and base.crewComplement==2500)
+          r:RecordUnitFate(stations.BLUE,'LOST','DESTROYED'); r:RecordUnitFate(stations.BLUE,'LOST','DUPLICATE')
+          local s=r:GetFleetCrewSummary('BLUE')
+          assert(s.basesLost==1 and s.dead==2000 and s.missing==500 and s.escaped==crew)
+          local unknown=ship('Unknown crew',class('GTF unknown'),stations.BLUE.Position,mn.Teams.friendly)
+          local rec=r:RecordShipCreated(unknown,true); rec.crewComplement=nil
+          r:RecordUnitFate(unknown,'LOST','DESTROYED')
+          assert(r:GetFleetCrewSummary('BLUE').unknown==1 and rec.crewEstimatedDead==0)
+        ''')
+
+    def test_extended_awards_require_damage_evidence_distinct_victims_and_wing_contributors(self):
+        self.lua.execute('''
+          local a=ship('Cover one',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
+          local b=ship('Cover two',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
+          local protected=ship('Protected crew',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
+          local ra=r:RecordShipCreated(a,true); local rb=r:RecordShipCreated(b,true); local rp=r:RecordShipCreated(protected,true)
+          r:RecordWingHistory({id=99,label='Original protectors',signatures={a.signature,b.signature}})
+          rp.coverContributors={[ra.id]=true}; r:RecordUnitFate(a,'LOST','DESTROYED')
+          r:RecordUnitFate(protected,'ESCAPED','NATIVE_DEPARTURE')
+          assert(ra.citations.JUSTIFIED_SACRIFICE and not r.WingHistory[99].citations)
+          r:RecordCollectiveCover(rp,{[ra.id]=true,[rb.id]=true},'escaped')
+          assert(r.WingHistory[99].citations.WITHDRAWAL_COVER)
+          local source=ship('Distinguished',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
+          local rs=r:RecordShipCreated(source,true); now=200; rs.commissionedAt=0
+          for i=1,5 do
+            local enemy=ship('Opponent '..i,class('SF Mara'),stations.RED.Position,mn.Teams.hostile)
+            r:RecordShipCreated(enemy,true); r:RecordFleetCombatKill(source,enemy); r:RecordFleetCombatKill(source,enemy)
+          end
+          assert(rs.hostileKills==5 and rs.citations.DISTINGUISHED_SERVICE,'duplicate victim credit or missing sustained award')
+          local beneficiary=ship('Injured',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
+          local rr=r:RecordShipCreated(beneficiary,true); beneficiary.HitpointsLeft=beneficiary.HitpointsMax*.2
+          local enemy=ship('Damaging attacker',class('SF Mara'),stations.RED.Position,mn.Teams.hostile)
+          local re=r:RecordShipCreated(enemy,true); enemy.Target=beneficiary
+          r:RecordFleetCombatKill(source,enemy)
+          assert(not rs.citations.GALLANTRY,'assigned targeting alone earned gallantry')
+          local damaging=ship('Measured attacker',class('SF Mara'),stations.RED.Position,mn.Teams.hostile)
+          local rd=r:RecordShipCreated(damaging,true); damaging.Target=beneficiary
+          rr.lastHostileHullSource=rd.id; rr.lastHostileHullTime=now
+          r:RecordFleetCombatKill(source,damaging)
+          assert(rs.citations.GALLANTRY and rr.protectionContributors[rs.id])
+        ''')
+
+    def test_crew_cover_score_and_ownership_guards(self):
+        self.lua.execute('''
+          local low=ship('Low exposure',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
+          local high=ship('High exposure',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
+          r.GetCrewExposureEstimate=function(self,s) return s==high and 4 or 1 end
+          assert(r:GetCrewCoverScore(low,5,100)<r:GetCrewCoverScore(high,5,100))
+          r:RecordShipCreated(low,true); r.FleetProtection[low.signature]={history='dummy',policy=r.GlobalPolicy}
+          r.AIOrderState[low.signature]={protectionHistory='dummy'}
+          assert(r:IssueStrategicOrder(low,stations.RED,'New attack','PRIMARY',0,true)==false,'planner stole crew-protection order')
+          r:SetUserOrder(low,{kind='hold'})
+          assert(r.FleetProtection[low.signature]==nil and r.UserOrders[low.signature].kind=='hold','manual ownership not restored')
+        ''')
+
+    def test_crew_protection_assigns_native_guard_and_releases_without_overwriting_manual_orders(self):
+        self.lua.execute('''
+          local beneficiary=ship('Service crew',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
+          local cover=ship('Cover crew',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
+          local record=r:RecordShipCreated(beneficiary,true); r:RecordShipCreated(cover,true)
+          r.GetShipList=function() return {beneficiary,cover} end
+          r.GetShipRole=function() return 'fighter' end
+          r.AIProfile=function() return {armed=true} end
+          r.IsFleetFocusedByHostiles=function(self,s) return s==beneficiary end
+          local installed
+          cover.giveOrder=function(self,kind,target) installed={kind=kind,target=target}; return true end
+          r.FleetServices[beneficiary.signature]={manual=true}; r.AIOrderState[cover.signature]={mission='PRIMARY'}
+          r:UpdateCrewProtection(0); assert(not r.FleetProtection[cover.signature],'committed assault was reassigned')
+          r.AIOrderState[cover.signature]=nil; r:UpdateCrewProtection(3)
+          assert(r.FleetProtection[cover.signature].history==record.id and r.AIOrderState[cover.signature].reason=='CREW_PROTECTION')
+          assert(installed.kind==ORDER_GUARD and installed.target==beneficiary,'protection did not install a physical guard goal')
+          local restores=0; r.ReturnToDefaultControl=function() restores=restores+1 end
+          r.FleetServices[beneficiary.signature]=nil; r:UpdateCrewProtection(6)
+          assert(not r.FleetProtection[cover.signature] and restores==1,'finished service did not release its escort')
+          r.FleetServices[beneficiary.signature]={}; r.AIOrderState[cover.signature]=nil; r:UpdateCrewProtection(9)
+          r:SetUserOrder(cover,{kind='hold'}); r:UpdateCrewProtection(12)
+          assert(r.UserOrders[cover.signature].kind=='hold' and not r.FleetProtection[cover.signature])
+        ''')
+
     def test_presentation_ships_are_not_commissioned_before_start(self):
         self.lua.execute('''
           local unit=ship('RTS Setup 1-1',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
@@ -18,6 +196,25 @@ class FleetLifeTests(unittest.TestCase):
           end
           r.SetupActive=false; r.CinematicActive=false
           assert(r:RecordShipCreated(unit),'active gameplay cannot commission real hulls')
+        ''')
+
+    def test_lost_and_escaped_history_clicks_do_not_index_false_as_a_ship(self):
+        self.lua.execute('''
+          local U=require 'fs2rts_util'
+          for _,value in ipairs({false,true,7,'not a handle',{},function() end}) do
+            assert(not U.objectValid(value) and not U.shipValid(value) and not U.shipAlive(value))
+          end
+          local unit=ship('Archived crew',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
+          local record=r:RecordShipCreated(unit,true)
+          r.PanelTab='history'; r.FleetHistoryButtonRects={[record.id]={x1=10,y1=10,x2=100,y2=40}}
+          for _,fate in ipairs({'LOST','ESCAPED'}) do
+            record.fate=fate
+            assert(r:HandleFleetHistoryClick(20,20) and r.LiveHistoryDetail==record.id)
+            assert(not r:FocusHistoryShip(record.id,false) and not r:FocusHistoryShip(record.id,true))
+          end
+          assert(not r:FocusHistoryShip('missing',false))
+          record.fate='PRESENT'; r.FocusOnSelection=function() end
+          assert(r:FocusHistoryShip(record.id,false) and r.PrimarySelectionSignature==record.signature)
         ''')
 
     def test_citations_require_paid_recovery_useful_rejoin_and_confirmed_cover_escape(self):
@@ -43,7 +240,8 @@ class FleetLifeTests(unittest.TestCase):
           r:RecordUnitFate(unit,'LOST','DESTROYED')
           r:RecordUnitFate(evacuee,'ESCAPED','SHIP_DEPARTED_WARP')
           assert(record.citations.WITHDRAWAL_COVER and record.fate=='LOST','lost covering ship was forgotten')
-          assert(r:GetFleetHistorySummary().citations==2)
+          assert(record.citations.JUSTIFIED_SACRIFICE,'lost confirmed covering contributor has no sacrifice citation')
+          assert(r:GetFleetHistorySummary().citations==3)
           local fresh=r:RecordShipCreated(unit,true)
           assert(fresh.id~=record.id and not fresh.citations)
           r:ResetFleetLife(); assert(next(r.UnitHistory)==nil)
@@ -52,12 +250,12 @@ class FleetLifeTests(unittest.TestCase):
     def test_projectile_evidence_measures_actual_hull_loss_and_friendly_damage_invalidates_it(self):
         self.lua.execute('''
           local callback,override
-          engine={addHook=function(name,fn,condition,pre) callback=fn; override=pre; return true end}
+          engine={addHook=function(name,fn,condition,pre) if name=='On Weapon Collision' then callback=fn; override=pre end; return true end}
           r:RegisterCrewProjectileEvidence()
           local unit=ship('Damaged crew',class('GTF Ulysses'),stations.BLUE.Position,mn.Teams.friendly)
           local enemy=ship('Enemy',class('SF Mara'),stations.BLUE.Position,mn.Teams.hostile)
           local record=r:RecordShipCreated(unit)
-          local weapon={Parent=enemy,isValid=function() return true end}
+          local weapon={Parent=enemy,isValid=function() return true end,getSignature=function() return 999 end}
           hv={Ship=unit,Weapon=weapon}
           assert(override()==false); callback()
           assert(not record.hostileProjectileHull,'zero-damage contact credited injury')

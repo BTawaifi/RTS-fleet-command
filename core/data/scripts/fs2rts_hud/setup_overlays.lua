@@ -6,7 +6,7 @@ function RTS:DrawSetupOverlay(sw,sh)
     local w=math.min(900,sw-32); local h=math.min(740,sh-32); local x1=(sw-w)/2; local y1=(sh-h)/2; local x2=x1+w; local y2=y1+h
     gr.setColor(2,7,12,190); gr.drawRectangle(x1,y1,x2,y2,true); gr.setColor(100,210,240,255); gr.drawRectangle(x1,y1,x2,y2,false)
     gr.setColor(110,235,255,255); self:DrawCenteredText("ESCALATION BATTLE CONFIGURATION",x1+20,x2-20,y1+14)
-    gr.setColor(190,210,220,255); self:DrawCenteredText("Choose each faction independently. Mirror factions remain enemies with separate colors.",x1+24,x2-24,y1+43)
+    gr.setColor(190,210,220,255); self:DrawCenteredText("Click a setting or faction to change it. Matching factions remain enemies.",x1+24,x2-24,y1+43)
     local diff=self.Config.Setup.Difficulties[self.SetupDifficultyIndex]; local eco=self.Config.Setup.Economies[self.SetupEconomyIndex]; local dist=self:GetBaseDistanceProfile()
     self.SetupButtonRects={}; self.SetupColorRects={}; local y=y1+74
     local function row(id,label,value,help)
@@ -16,19 +16,19 @@ function RTS:DrawSetupOverlay(sw,sh)
             local right={x1=x2-66,y1=y-2,x2=x2-26,y2=y+24}
             local middle={x1=x1+239,y1=y-2,x2=x2-70,y2=y+24}
             self.SetupButtonRects.factions_less=left; self.SetupButtonRects.factions=middle; self.SetupButtonRects.factions_more=right
-            self:DrawButton(left,"-",true,false); self:DrawButton(middle,value,true,false); self:DrawButton(right,"+",true,false)
+            self:DrawButton(left,"-",true,false,false); self:DrawButton(middle,value,true,false,false); self:DrawButton(right,"+",true,false,false)
         else
-            local r={x1=x1+195,y1=y-2,x2=x2-26,y2=y+24}; self.SetupButtonRects[id]=r; self:DrawButton(r,value,true,false)
+            local r={x1=x1+195,y1=y-2,x2=x2-26,y2=y+24}; self.SetupButtonRects[id]=r; self:DrawButton(r,value,true,false,false)
         end
         -- Caption starts 3px below the box border; it used to sit on the border.
         gr.setColor(145,175,190,255); gr.drawString(help,x1+199,y+27,x2-28,y+43); y=y+48
     end
-    row("difficulty","DIFFICULTY",diff.name.." // click","AI income, production cadence and aggression.")
-    row("factions","TOTAL FACTIONS",tostring(self.SetupFactionCount).." of "..self:GetMaxFactionCount().." // click","Includes you. Each faction is a separate hostile team.")
+    row("difficulty","DIFFICULTY",diff.name,"AI income, production cadence and aggression.")
+    row("factions","TOTAL FACTIONS",tostring(self.SetupFactionCount).." of "..self:GetMaxFactionCount(),"Includes you. Each faction is a separate hostile team.")
     local layout=self:GetBaseLayoutProfile()
-    row("layout","START LAYOUT",layout.name.." // click",layout.desc)
-    row("distance","BASE DISTANCE",dist.name.." // "..tostring(math.floor((dist.distance or 18000)/1000)).." km // click","Minimum distance between command stations.")
-    row("economy","ECONOMY",eco.name.." // click","Starting command points and passive income.")
+    row("layout","START LAYOUT",layout.name,layout.desc)
+    row("distance","BASE DISTANCE",dist.name.." // "..tostring(math.floor((dist.distance or 18000)/1000)).." km","Minimum distance between command stations.")
+    row("economy","ECONOMY",eco.name,"Starting command points and passive income.")
 
     local keys=self:GetFactionKeys(); local pageSize=math.max(1,math.min(5,math.floor((h-418)/44)))
     self.SetupFactionPageSize=pageSize
@@ -48,10 +48,11 @@ function RTS:DrawSetupOverlay(sw,sh)
         gr.setColor(210,230,238,255); local owner=index==1 and "PLAYER" or string.format("AI %02d",index)
         gr.drawString(owner.." // "..(def.short or string.format("TEAM %02d",index)),x1+62,y+4,x1+255,y+23)
         local r={x1=x1+265,y1=y,x2=x2-90,y2=y+25}; self.SetupButtonRects["faction_"..kind]=r
-        self:DrawButton(r,label.." // click to change",true,false)
+        self:DrawButton(r,label,true,false,false)
         local swatch={x1=x2-82,y1=y,x2=x2-26,y2=y+25}; self.SetupButtonRects["color_"..kind]=swatch
         gr.setColor(color[1],color[2],color[3],255); gr.drawRectangle(swatch.x1,swatch.y1,swatch.x2,swatch.y2,true)
         gr.setColor(225,235,240,255); gr.drawRectangle(swatch.x1,swatch.y1,swatch.x2,swatch.y2,false)
+        self:DrawActionIcon('COLOR',swatch.x1+4,swatch.y1+4,math.min(16,swatch.y2-swatch.y1-8))
         gr.setColor(145,175,190,255)
         self:DrawTextLine(race and race.doctrine and (race.doctrine.." // "..race.ability.name) or "Random faction resolves before the battle starts",x1+62,y+27,w-88)
         y=y+44

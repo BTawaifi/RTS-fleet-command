@@ -15,6 +15,7 @@ function RTS:StartPilotMode(ship)
         self:SetStatus("PILOT: cannot take control after extraction begins",3)
         return false
     end
+    if self.FleetProtection then self.FleetProtection[signature]=nil end
 
     if self.FollowSignature ~= nil then self:ExitFollowMode() end
     self:OnPilotCommMenuClosed()

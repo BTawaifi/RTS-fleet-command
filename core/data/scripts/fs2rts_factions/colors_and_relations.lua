@@ -26,6 +26,7 @@ function RTS:GetFactionTeamColorName(kind)
 end
 
 function RTS:GetFactionColor(kind)
+    if kind=='TRAITOR' then return 255,70,70 end
     local index=self:GetFactionColorIndex(kind)
     local color=index and self.Config.FactionColors and self.Config.FactionColors[index]
     if color then return color[1],color[2],color[3] end

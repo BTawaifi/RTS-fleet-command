@@ -14,8 +14,6 @@ local TOPBAR_COLOR_TITLE={92,220,255,255}
 
 local TOPBAR_COLOR_TIER={255,220,110,255}
 
-local TOPBAR_COLOR_NOTE={140,165,180,255}
-
 -- The four left-hand readouts, most important first, in a full and an
 -- abbreviated form, with both widths measured once per value change.
 --
@@ -76,7 +74,7 @@ function RTS:DrawTopBar(sw)
         local r = {x1=bx, y1=math.floor((barH-btnH)/2), x2=bx+btnW, y2=math.floor((barH-btnH)/2)+btnH}
         self.TimeButtonRects[d[1]] = r
         local active = (d[1]=="pause" and self.Paused==true) or tonumber(d[1])==(self.TimeScale or 1)
-        self:DrawButton(r, d[2], true, active==true)
+        self:DrawButton(r, d[2], true, active==true,false)
         bx = bx + pitch
     end
 
@@ -99,30 +97,11 @@ function RTS:DrawTopBar(sw)
             local elapsed = self:FormatTime(self:GetScenarioElapsed())
             local tierLong = "TIER "..tier.."   ELAPSED "..elapsed
             local tierShort = "T"..tier.."  "..elapsed
-            -- Every clock in the scenario is mission time, escalation included:
-            -- the wall-clock tier accumulator was removed in 1.4.1 because it
-            -- was the one thing in a match the speed control did not touch. So
-            -- the note reports the speed the whole game is running at, and
-            -- there is no second "real time" claim to make.
-            local scale = self.TimeScale or 1
-            local noteLong = scale<=0 and "PAUSED"
-                or (scale>1 and string.format("Tiers + income: %dx mission time", math.floor(scale))
-                   or "Tiers + income: mission time")
-            local noteShort = scale<=0 and "TIME PAUSED" or ("TIME x"..math.floor(scale))
-            local wTierLong=self:TextWidth(tierLong); local wNoteLong=self:TextWidth(noteLong)
-            local wTierShort=self:TextWidth(tierShort); local wNoteShort=self:TextWidth(noteShort)
+            local wTierLong=self:TextWidth(tierLong)
+            local wTierShort=self:TextWidth(tierShort)
             local space = cursor - limit
-            -- Deliberate order: both in full, both abbreviated, the escalation
-            -- clock alone (full then abbreviated), then nothing. The speed note
-            -- is given up before the clock because the seven speed buttons
-            -- immediately to its right already state the speed, while the clock
-            -- is the only place the match timer appears at all.
-            local tierText, noteText, tierW, noteW
-            if wTierLong + wNoteLong + 2*m.gap <= space then
-                tierText, noteText, tierW, noteW = tierLong, noteLong, wTierLong, wNoteLong
-            elseif wTierShort + wNoteShort + 2*m.gap <= space then
-                tierText, noteText, tierW, noteW = tierShort, noteShort, wTierShort, wNoteShort
-            elseif wTierLong + m.gap <= space then
+            local tierText, tierW
+            if wTierLong + m.gap <= space then
                 tierText, tierW = tierLong, wTierLong
             elseif wTierShort + m.gap <= space then
                 tierText, tierW = tierShort, wTierShort
@@ -131,11 +110,6 @@ function RTS:DrawTopBar(sw)
                 gr.setColor(TOPBAR_COLOR_TIER[1],TOPBAR_COLOR_TIER[2],TOPBAR_COLOR_TIER[3],TOPBAR_COLOR_TIER[4])
                 gr.drawString(tierText, cursor - tierW, textY)
                 cursor = cursor - tierW - m.gap
-            end
-            if noteText ~= nil then
-                gr.setColor(TOPBAR_COLOR_NOTE[1],TOPBAR_COLOR_NOTE[2],TOPBAR_COLOR_NOTE[3],TOPBAR_COLOR_NOTE[4])
-                gr.drawString(noteText, cursor - noteW, textY)
-                cursor = cursor - noteW - m.gap
             end
         end
     end

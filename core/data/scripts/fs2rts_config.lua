@@ -10,7 +10,16 @@ return {
     HostileTeam = "hostile",
     ThirdTeam = "neutral",
     ObserverShip = "RTS Observer",
+    FleetHumanity = {
+        ModelVersion = 1,
+        -- Gameplay estimates, not canonical crew facts. Destruction leaves the rest missing/unconfirmed.
+        RoleCrew = {fighter=1,bomber=3,escort=80,capital=250,heavy=1500,juggernaut=6000,station=2500},
+        ClassCrew = {}, DestructionDeathFraction = .80,
+    },
     HotkeyHintsKey = "F10",
+    FleetCostToggleKey = "F9",
+    TraitorRaids = {Enabled=true,DelaySeconds=480,IntervalSeconds=180,Chance=.02,
+        MaxEvents=1,WarningSeconds=12,WingChance=.65,WingSize=3},
     CarrierShip = "RTS Team 01 Station",
     EnemyCommandShip = "RTS Team 02 Station",
     ThirdCommandShip = "RTS Team 03 Station",

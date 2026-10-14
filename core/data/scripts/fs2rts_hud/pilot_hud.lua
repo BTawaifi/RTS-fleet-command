@@ -158,11 +158,13 @@ function RTS:DrawPilotHUD(sw, sh)
         for _,line in ipairs(self:WrapTextLinesToWidth(text,width-2*pad,3)) do hints[#hints+1]={text=line,colour=yellow} end
     end
     hint((self.Config.HotkeyHintsKey or 'F10')..(self.ShowHotkeyHints==false and ' SHOW CONTROL HINTS' or ' HIDE CONTROL HINTS'))
+    hint((self.Config.FleetCostToggleKey or 'F9')..' CREW ESTIMATES')
     if self.PendingPilotEject then
         add('CRAFT DESTROYED',{255,135,95})
         add(string.format('RETURNING TO RTS IN %.1fs',math.max(0,self.PendingPilotEjectRemaining or 0)),yellow)
     else
         add('PILOT: '..ship.Name,cyan)
+        for _,line in ipairs(self:GetShipHistoryLines(ship)) do add(line,yellow) end
         local notice=self.FleetRecoveryNotice
         if notice and self:UINow()<=notice.untilTime then
             local record=(self.UnitHistory or {})[notice.id]

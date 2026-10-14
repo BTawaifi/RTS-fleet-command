@@ -86,6 +86,9 @@ function RTS:DrawSelectionPanel(sw,sh)
         -- The faction prefix ("GTA // ") is already conveyed by the badge and colour, and
         -- it is what pushed the rest of the name into the ellipsis.
         local name=#row.ships==1 and (tostring(row.ships[1].Name or ""):gsub("^%u+ // ","")) or (row.className.." x"..#row.ships)
+        local badges={}; local seen={}
+        for _,ship in ipairs(row.ships) do local badge=self:GetShipHistoryBadge(ship); if badge~='' and not seen[badge] then badges[#badges+1]=badge; seen[badge]=true end end
+        if #badges>0 then name='['..table.concat(badges,' / ')..'] '..name end
         local role=self:GetShipRole(row.ships[1]); self:DrawRoleBadge(role,r.x1+3,r.y1+math.floor((m.selectionRowHeight-badgeSize)/2),badgeSize)
         self:DrawTextLine((primary and ">" or " ")..name,nameX,r.y1+math.floor((m.selectionRowHeight-lh)/2),hpX-nameX-m.pad(6))
         self:DrawTextLine(string.format("%3.0f%%",hp/#row.ships),hpX,r.y1+math.floor((m.selectionRowHeight-lh)/2),labelX-hpX-m.pad(4))

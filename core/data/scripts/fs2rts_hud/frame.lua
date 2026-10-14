@@ -15,6 +15,7 @@ local function drawHUDContents(self)
     -- Clearing first means a frame that skipped the owning panel cannot leave
     -- clickable ghosts behind for HandleUILeftClick to act on.
     self.BuildButtonRects={}; self.BuildNavRects={}; self.ActionButtonRects={}
+    self.FleetHistoryButtonRects={}; self.HumanityOpenRect=nil
     self.AutoBuildRequestRects={}; self.CancelAutoBuildRect=nil
     self.PolicyButtonRects={}; self.QuickGroupRects={}; self.PanelTabRects={}
     self.StationButtonRects={}
@@ -42,8 +43,8 @@ local function drawHUDContents(self)
         if self:UINow()<(self.FreeCamHintUntil or 0) then gr.setColor(150,175,185,220); self:DrawCenteredTextClipped("UI HIDDEN  //  WASD / MOUSE TO FRAME SHOTS  //  SHIFT+"..tostring((self.Config.HomeworldControls or {}).Cinematic or "C").." TO RETURN",m.margin,sw-m.margin,m.pad(20)) end
         return
     end
-    if self.PostBattleActive then self:DrawWorldOverlays(); self:DrawTopBar(sw); self:DrawTacticalMap(sw); self:DrawPostBattleOverlay(sw,sh); self:DrawCurrentHoverReadout(); return end
-    if self.PossessedSignature~=nil then self:DrawPilotHullHUD(); self:DrawPilotObjectiveMarker(sw,sh); self:DrawPilotHUD(sw,sh); self:DrawFleetCitationNotice(sw,sh); return end
+    if self.PostBattleActive then self:DrawWorldOverlays(); self:DrawTopBar(sw); self:DrawTacticalMap(sw); self:DrawPostBattleOverlay(sw,sh); return end
+    if self.PossessedSignature~=nil then self:DrawLiveFleetCost(sw,sh); self:DrawPilotHullHUD(); self:DrawPilotObjectiveMarker(sw,sh); self:DrawPilotHUD(sw,sh); self:DrawFleetCitationNotice(sw,sh); return end
     if not self.SetupActive then self:RefreshSelectionListRects(sw,sh) end
     -- The tactical map is drawn with the world layer, BEFORE the panels and the
     -- transient text. It used to be redrawn after DrawAnnouncement when popped
@@ -53,6 +54,7 @@ local function drawHUDContents(self)
     if not self.SetupActive then self:DrawStrikeWarnings() end
     self:DrawTopBar(sw)
     self:DrawTacticalMap(sw)
+    if not self.SetupActive then self:DrawLiveFleetCost(sw,sh) end
     if self.SetupActive then
         self:DrawSetupOverlay(sw,sh); self:DrawCurrentHoverReadout(); self:DrawFleetLifeOverlay(sw,sh)
         local fade=math.max(0,(self.IntroFadeInUntil or 0)-self:UINow())
@@ -60,7 +62,7 @@ local function drawHUDContents(self)
         return
     end
     self:DrawSelectedUnitStats(sw,sh); self:DrawSelectionPanel(sw,sh); self:DrawBuildPanel(sw,sh)
-    if self.PanelTab~="station" then self:DrawQuickGroupsPanel(sw,sh); self:DrawOptionsPanel(sw,sh); self:DrawPolicyPanel(sw,sh) end
+    if self.PanelTab~="station" and self.PanelTab~='history' then self:DrawQuickGroupsPanel(sw,sh); self:DrawOptionsPanel(sw,sh); self:DrawPolicyPanel(sw,sh) end
     self:DrawControls(sw,sh); self:DrawChaseBanner(sw)
     self:FlushTopLayer()
     if self.LeftDrag then local left=math.min(self.LeftDrag.x1,self.LeftDrag.x2); local right=math.max(self.LeftDrag.x1,self.LeftDrag.x2); local top=math.min(self.LeftDrag.y1,self.LeftDrag.y2); local bottom=math.max(self.LeftDrag.y1,self.LeftDrag.y2); gr.setColor(90,220,255,220); gr.drawRectangle(left,top,right,bottom,false) end
@@ -82,12 +84,13 @@ local function drawHUDContents(self)
 end
 
 function RTS:DrawHUD()
+    self.ButtonIconTooltip=nil
     local previous=gr.CurrentFont
     -- Render the retail eleven-pixel face directly, without scaling a texture
     -- of font01's nine-pixel glyphs. Native gauges retain their own fonts.
     local body=gr.Fonts and gr.Fonts[3]
     if objectValid(body) then gr.CurrentFont=body end
-    local ok,message=pcall(drawHUDContents,self)
+    local ok,message=pcall(function() drawHUDContents(self); self:DrawButtonIconTooltip() end)
     if previous then gr.CurrentFont=previous end
     assert(ok,message)
 end

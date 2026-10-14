@@ -3,6 +3,8 @@ local _shared = require "fs2rts_input.common"
 local RTS, clamp, shipValid = _shared.RTS, _shared.clamp, _shared.shipValid
 
 function RTS:HandleUILeftClick(x,y)
+    if self.HandleFleetHistoryClick and not self.ExitMenuActive and not self.PostBattleActive and not self.SetupActive
+        and not self.CinematicActive and self:HandleFleetHistoryClick(x,y) then return true end
     if self.ExitMenuActive then
         for action,rect in pairs(self.ExitMenuButtonRects or {}) do
             if self:PointInside(rect,x,y) then return self:HandleExitMenuAction(action) end

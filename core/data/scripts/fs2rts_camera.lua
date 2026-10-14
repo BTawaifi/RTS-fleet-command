@@ -108,7 +108,8 @@ function RTS:VanishShipGroup(group)
     local weapons={}
     for i=1,#(mn.Weapons or {}) do
         local weapon=mn.Weapons[i]
-        if objectValid(weapon) and shipValid(weapon.Parent) and signatures[weapon.Parent:getSignature()] then weapons[#weapons+1]=weapon end
+        local parent=objectValid(weapon) and self:GetWeaponCombatSource(weapon)
+        if shipValid(parent) and signatures[parent:getSignature()] then weapons[#weapons+1]=weapon end
     end
     for _,weapon in ipairs(weapons) do weapon:vanish() end
     for _,ship in ipairs(group or {}) do

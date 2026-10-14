@@ -335,7 +335,7 @@ class PlayerFeedbackTests(unittest.TestCase):
           local pilot=mkFighter('Possessed owner'); local observer=mkFighter('Player proxy')
           r.PossessedSignature=pilot:getSignature()
           r.GetPossessedShip=function() return pilot end; r.GetObserver=function() return observer end
-          local weapon={Parent=observer,Class={Name='Unknown pilot missile'},signature=9010,
+          local weapon={Parent=observer,Class={Name='Unknown pilot missile',isNonBeamPrimary=function() return false end},signature=9010,
             isValid=function() return true end,getSignature=function(self) return self.signature end,
             vanish=function(self) self.vanished=true end}
           hv={Weapon=weapon}; created()
@@ -836,7 +836,7 @@ class PlayerFeedbackTests(unittest.TestCase):
           r.DrawReticle=function() return 11 end
           r.ShouldDecorateReticle=function() return false end
           r.DrawHullBarForShip=function() assert(false,'fixture must cull hull bars') end
-          local icons=0; r.DrawRoleMarker=function() icons=icons+1 end
+          local icons=0; r.DrawShipTypeIcon=function() icons=icons+1 end
           r:DrawWorldOverlays()
           assert(icons==#group,'zoomed-out overlap culling hides ship type icons')
         ''')

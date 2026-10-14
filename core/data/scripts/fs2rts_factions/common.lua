@@ -14,6 +14,7 @@ local function factionForTeam(self,ship,team)
     local withdrawal=self.Withdrawals and next(self.Withdrawals) and self.Withdrawals[ship:getSignature()]
     if withdrawal and withdrawal.inCorridor then return withdrawal.faction end
     if team==nil or not team:isValid() then return nil end
+    if lower(team.Name)=='traitor' then return 'TRAITOR' end
     local kind=self.FactionKeyByTeam and self.FactionKeyByTeam[lower(team.Name)] or nil
     if kind=="BLUE" and ship.Name==self.Config.ObserverShip then return nil end
     return kind

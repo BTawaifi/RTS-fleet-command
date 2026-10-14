@@ -9,6 +9,7 @@ local cast,baseHull,actor,enemy,record,beneficiary,beneficiaryRecord,serviceAt
 local shotsFired=0
 local introCleanupAt
 local priorityCapital,smallCrew,otherSmallCrew,priorityAt,priorityIdentity
+local friendlyShooter,friendlyVictim,friendlyRecord,friendlyAt
 local restartStarts=0
 local gameplayStart=R.OnGameplayStart
 R.OnGameplayStart=function(self)
@@ -187,9 +188,41 @@ local function run()
         log('PASS critical crew danger preserves explicit player commitment')
         check(R.UserOrders[priorityCapital:getSignature()].kind=='guard','player commitment remains owned')
         check(R:GetUnitHistory(priorityCapital).id==priorityIdentity,'recovery and risk retain crew identity')
+        friendlyShooter=spawn('Pilot Primary Shooter','GTF Hercules',ba.createVector(30000,30000,-30000),mn.Teams.friendly)
+        friendlyVictim=spawn('Pilot Primary Friendly','GTF Hercules',friendlyShooter.Position+ba.createVector(0,0,400),mn.Teams.friendly)
+        friendlyVictim.HitpointsMax=100000; friendlyVictim.HitpointsLeft=100000
+        friendlyVictim:setFlag(true,'immobile','primaries-locked','secondaries-locked')
+        friendlyShooter.Orientation=ba.createVector(0,0,1):getOrientation()
+        friendlyShooter.PrimaryBanks[1].WeaponClass=tb.WeaponClasses['Subach HL-7']
+        friendlyShooter.Target=nil; friendlyRecord=R:GetUnitHistory(friendlyVictim)
+        check(R:StartPilotMode(friendlyShooter),'native friendly-fire shooter can be piloted')
+        R:SetTimeScale(1); friendlyAt=now; stage=12.1
+    elseif stage==12.1 then
+        if now-friendlyAt<3 then return end
+        R:ExitPilotMode(nil,false)
+        check(friendlyVictim.HitpointsLeft<100000,'untargeted pilot primaries cause native friendly hull damage')
+        check(friendlyRecord.friendlyDamageEver and R:GetUnitHistory(friendlyShooter).friendlyFireEver,'native friendly primary injury and shooter attribution enter crew history')
+        check(R:GetObserver().Team==mn.Teams.friendly,'friendly primary damage preserves the command proxy faction')
+        friendlyAt=now; stage=12.2
+    elseif stage==12.2 then
+        if now-friendlyAt<1 then return end
+        friendlyVictim.HitpointsLeft=100000; friendlyAt=now; stage=12.3
+    elseif stage==12.3 then
+        friendlyShooter.PrimaryTriggerDown=true; friendlyShooter:firePrimary()
+        if now-friendlyAt<3 then return end
+        check(friendlyVictim.HitpointsLeft==100000,'ordinary untargeted AI primaries retain native friendly-fire immunity')
+        friendlyShooter.PrimaryTriggerDown=false
         log('COMPLETE crew intro, upstream citations, recovery priorities and player risk ownership')
         R:SetTimeScale(1); ba.postGameEvent(ba.GameEvents.GS_EVENT_QUIT_GAME); stage=13
     end
+end
+local pilotUpdate=R.UpdatePilotMode
+R.UpdatePilotMode=function(self,dt)
+    if stage==12.1 then
+        self.ControlInfo.PrimaryCount=1; self.ControlInfo.Heading=0; self.ControlInfo.Pitch=0
+        self.ControlInfo.Bank=0; self.ControlInfo.Forward=0; self.ControlInfo.ForwardCruise=0
+    end
+    return pilotUpdate(self,dt)
 end
 R.OnFrame=function(self)
     frame(self)

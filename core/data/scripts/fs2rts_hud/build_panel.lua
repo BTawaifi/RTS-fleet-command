@@ -19,6 +19,7 @@ function RTS:DrawBuildPanel(sw,sh)
     self.AutoBuildRequestRects={}; self.CancelAutoBuildRect=nil
     local rect=self:GetProductionPanelRect(sw,sh); local x1,y1,x2,y2=rect.x1,rect.y1,rect.x2,rect.y2
     local m=self:GetUIMetrics(sw,sh); local pad=m.panelPadding; local lh=m.lineHeight
+    if self.PanelTab=='history' then y2=sh-m.margin end
     -- Page size comes from CountBuildRows, which counts rows using the same
     -- geometry this loop draws them with. It used to be a separate formula,
     -- floor((height-142)/50), while the loop tested y+44 against y2-74: the two
@@ -26,6 +27,13 @@ function RTS:DrawBuildPanel(sw,sh)
     -- on the first iteration, so the production panel drew NO build rows at all.
     self.BuildRowsPerPage=self:CountBuildRows(sw,sh)
     gr.setColor(4,10,18,220); gr.drawRectangle(x1,y1,x2,y2,true); gr.setColor(100,190,220,255); gr.drawRectangle(x1,y1,x2,y2,false); gr.setColor(100,190,220,255)
+    if self.PanelTab=='history' then
+        self.BuildButtonRects={}; self.BuildNavRects={}; self.StationButtonRects={}; self.AutoModeRect=nil
+        self.PanelTabRects={production={x1=x1+pad,y1=y1+pad,x2=x2-pad,y2=y1+pad+24}}
+        self:DrawButton(self.PanelTabRects.production,'BACK TO BUILD',true,false)
+        self:DrawLiveHistoryPanel(x1+pad,y1+pad+28,x2-pad,y2-pad)
+        return
+    end
     if self.AftermathActive or self.BlueEliminated then
         self.BuildButtonRects={}; self.BuildNavRects={}; self.PanelTabRects={}; self.StationButtonRects={}; self.AutoModeRect=nil
         -- Show the outcome the battle already resolved to. The generic AFTERMATH
@@ -44,13 +52,15 @@ function RTS:DrawBuildPanel(sw,sh)
         self:DrawWrappedTextToWidth(message,x1+pad,y1+pad+2*lh,x2-x1-2*pad,lh,12)
         self.AftermathReportRect={x1=x1+pad,y1=y2-m.pad(50),x2=x2-pad,y2=y2-m.pad(8)}
         self:DrawButton(self.AftermathReportRect,'BATTLE REPORT',true,false)
+        self.HumanityOpenRect={x1=x1+pad,y1=y2-m.pad(78),x2=x2-pad,y2=y2-m.pad(54)}
+        self:DrawButton(self.HumanityOpenRect,'CREWS',true,false)
         return
     end
     self.AftermathReportRect=nil
-    local tabW=math.floor((x2-x1-2*m.pad(12))/2); local stationTab=self.PanelTab=="station"
+    local tabW=math.floor((x2-x1-2*m.pad(12))/3); local stationTab=self.PanelTab=="station"
     local tabY1=y1+m.buildTabTop; local tabY2=tabY1+m.buildTabHeight
-    self.PanelTabRects={production={x1=x1+m.pad(8),y1=tabY1,x2=x1+m.pad(8)+tabW,y2=tabY2},station={x1=x1+m.pad(16)+tabW,y1=tabY1,x2=x2-m.pad(8),y2=tabY2}}
-    self:DrawButton(self.PanelTabRects.production,"PRODUCTION",true,not stationTab); self:DrawButton(self.PanelTabRects.station,"STATION",true,stationTab)
+    self.PanelTabRects={production={x1=x1+m.pad(8),y1=tabY1,x2=x1+m.pad(8)+tabW,y2=tabY2},station={x1=x1+m.pad(12)+tabW,y1=tabY1,x2=x1+m.pad(12)+2*tabW,y2=tabY2},history={x1=x1+m.pad(16)+2*tabW,y1=tabY1,x2=x2-m.pad(8),y2=tabY2}}
+    self:DrawButton(self.PanelTabRects.production,"BUILD",true,not stationTab); self:DrawButton(self.PanelTabRects.station,"BASE",true,stationTab); self:DrawButton(self.PanelTabRects.history,'CREWS',true,false)
     local now=mn.getMissionTime()
     if stationTab then
         self.BuildButtonRects={}; self.BuildNavRects={}; self.QuickGroupRects={}; self.PolicyButtonRects={}; self.FormationButtonRect=nil; self.MusicButtonRect=nil

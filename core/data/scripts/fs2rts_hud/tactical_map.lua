@@ -87,6 +87,7 @@ function RTS:DrawTacticalMap(sw)
             px=clamp(px,x1+radius+2,x2-radius-2); py=clamp(py,chromeTop+radius,contentBottom-radius-2)
             self:DrawShipTypeIcon(ship,px-radius,py-radius,2*radius)
             local ring=radius+6
+            self:DrawFleetHistoryBadge(ship,px+radius+3,py+radius+2,math.max(1,x2-px-radius-5))
             if faction=='BLUE' and self.FleetServices and self.FleetServices[ship:getSignature()] then
                 local sx,sy=px+radius+3,py-radius-3
                 if sx+3<x2 and sy-3>y1 then
@@ -135,7 +136,7 @@ function RTS:DrawMapWindowChrome(rect,v)
     local m=self:GetUIMetrics(); local lh=m.lineHeight
     local b={}; local bh=m.mapButtonHeight; local bgap=m.mapButtonGap; local bx=rect.x2-m.pad(4)
     local widths=m.mapButtonWidths
-    local function button(key,label,w) local r={x1=bx-w,y1=rect.y1+m.pad(4),x2=bx,y2=rect.y1+m.pad(4)+bh}; b[key]=r; self:DrawButton(r,label,true,false); bx=bx-w-bgap end
+    local function button(key,label,w) local r={x1=bx-w,y1=rect.y1+m.pad(4),x2=bx,y2=rect.y1+m.pad(4)+bh}; b[key]=r; self:DrawButton(r,label,true,false,false); bx=bx-w-bgap end
     button("pop",v.popped and "DOCK" or "POP OUT",widths.pop); button("fit","FIT",widths.fit); button("zoomOut","-",widths.zoomOut); button("zoomIn","+",widths.zoomIn)
     gr.setColor(200,225,235,255); gr.drawString(string.format("x%.1f",v.zoom),rect.x1+m.pad(6),rect.y1+m.pad(6))
     if v.popped then

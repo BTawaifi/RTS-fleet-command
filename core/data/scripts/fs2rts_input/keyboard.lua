@@ -18,6 +18,13 @@ function RTS:OnKeyPressed(key,rawKey)
         self.HotkeyHintsHeld=true
         return
     end
+    if key==(self.Config.FleetCostToggleKey or 'F9') or rawKey==(self.Config.FleetCostToggleKey or 'F9') then
+        if not self.FleetCostKeyHeld then
+            self.ShowFleetCost=self.ShowFleetCost~=true
+            self:SetStatus('Crew cost overlay '..(self.ShowFleetCost and 'shown' or 'hidden')..' // '..(self.Config.FleetCostToggleKey or 'F9'),2)
+        end
+        self.FleetCostKeyHeld=true; return
+    end
     local rawEarly=rawKey or key; rawEarly=string.gsub(rawEarly,"^Shift%-",""); rawEarly=string.gsub(rawEarly,"^Ctrl%-",""); rawEarly=string.gsub(rawEarly,"^Alt%-","")
     local pauseControl=(type(controls)=="table" and controls.Pause) or "__no_pause_control__"
     if (rawEarly=="Pause" or rawEarly=="Break" or rawEarly==pauseControl)
@@ -133,6 +140,7 @@ function RTS:OnKeyReleased(key,rawKey)
     -- The modifier may be released before F10, and pilot mode normally exits
     -- this handler early. Release the physical-key latch before either gate.
     local hintKey=(self.Config.HotkeyHintsKey or 'F10'):match('([^%-]+)$')
+    if tostring(rawKey or key):match('([^%-]+)$')==(self.Config.FleetCostToggleKey or 'F9') then self.FleetCostKeyHeld=false end
     if tostring(rawKey or key):match('([^%-]+)$')==hintKey then self.HotkeyHintsHeld=false end
     if self.PossessedSignature~=nil then return end
     local raw=rawKey or key; raw=string.gsub(raw,"^Shift%-",""); raw=string.gsub(raw,"^Ctrl%-",""); raw=string.gsub(raw,"^Alt%-",""); self.KeyDown[raw]=nil; self.FastKeyDown[raw]=nil
@@ -149,6 +157,7 @@ function RTS:ShouldOverrideKey(key,rawKey)
     if self.Enabled~=true or key==nil then return false end
     if self.ExitMenuActive then return true end
     if key==(self.Config.HotkeyHintsKey or 'F10') or rawKey==(self.Config.HotkeyHintsKey or 'F10') then return true end
+    if key==(self.Config.FleetCostToggleKey or 'F9') or rawKey==(self.Config.FleetCostToggleKey or 'F9') then return true end
     local raw=rawKey or key; raw=string.gsub(raw,"^Shift%-",""); raw=string.gsub(raw,"^Ctrl%-",""); raw=string.gsub(raw,"^Alt%-","")
     local pauseControl=(type(controls)=="table" and controls.Pause) or "__no_pause_control__"
     if (raw=="Pause" or raw=="Break" or raw==pauseControl) then return not string.find(key,"Alt",1,true) end

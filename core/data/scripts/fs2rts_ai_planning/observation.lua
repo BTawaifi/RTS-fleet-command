@@ -172,6 +172,7 @@ function RTS:ObserveAIExecution(now)
 end
 
 function RTS:RecordAIHit(source,target,sourceKind)
+    if sourceKind=='PROJECTILE' and hv and hv.Weapon then source=self:GetWeaponCombatSource(hv.Weapon) end
     if not self.Enabled or self.SetupActive or self.PostBattleActive or not valid(source) or not valid(target) then return end
     if source:getBreedName()~='Ship' or target:getBreedName()~='Ship' then return end
     if not self.AIStats then self:ResetCoordinatedAI() end
