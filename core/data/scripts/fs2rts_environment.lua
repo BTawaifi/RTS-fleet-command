@@ -55,19 +55,14 @@ function RTS:SetNebulaBackdrop(choice, silent)
     if type(index) ~= "number" or index ~= math.floor(index) or not names[index] then return false end
     if mn == nil or type(mn.addBackgroundBitmapNew) ~= "function" then return false end
 
-    -- Retail missions build a nebula from ~30 overlapping patches of two or
-    -- three related textures at scale 3-5, each shown at its natural proportions.
+    -- Retail missions build a nebula from ~30 overlapping patches of
+    -- one texture at scale 3-5, each shown at its natural proportions.
     -- Do the same: patches centred on an even spiral over the sphere, each with a
     -- random bank. One bitmap stretched over a big area looks smeared and a few
-    -- large faces repeat the whole picture. ScaleX 5 x ScaleY 4.7 is about 47 degrees
+    -- large faces repeat the whole picture. ScaleX 10 x ScaleY 9.5 is about 95 degrees
     -- square (FSO widens X by 1.88 internally).
     local env=self.Config.Environment
-    local family=string.match(names[index],"^d?neb")
-    local pool={names[index],names[index]}
-    for _,name in ipairs(names) do
-        if name~=names[index] and string.match(name,"^d?neb")==family and math.random()<.2 and #pool<4 then pool[#pool+1]=name end
-    end
-    local count=env.BackdropPatches or 32
+    local count=env.BackdropPatches or 14
     local golden=math.pi*(3-math.sqrt(5)); local spin=math.random()*math.pi*2
     local created={}
     for n=0,count-1 do
@@ -75,9 +70,9 @@ function RTS:SetNebulaBackdrop(choice, silent)
         local angle=spin+golden*n
         local x,z=math.sqrt(1-y*y)*math.cos(angle),math.sqrt(1-y*y)*math.sin(angle)
         local orientation=ba.createOrientation(-math.asin(y),math.random()*math.pi*2,math.atan2(x,z))
-        local texture=pool[n%#pool+1]
+        local texture=names[index]
         local ok,element=pcall(function()
-            return mn.addBackgroundBitmapNew(texture,orientation,env.BackdropScaleX or 5,env.BackdropScaleY or 4.7,1,1)
+            return mn.addBackgroundBitmapNew(texture,orientation,env.BackdropScaleX or 10,env.BackdropScaleY or 9.5,1,1)
         end)
         if not ok or not validElement(element) then
             for _,fresh in ipairs(created) do

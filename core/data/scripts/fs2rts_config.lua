@@ -324,7 +324,7 @@ return {
         -- The mission's own nebula (+Nebula in FS2_RTS_Escalation.fs2) is the default look.
         -- These 2D sky sprites are an optional pick, so they do not start on top of it.
         RandomBackdropOnStart = false,
-        BackdropPatches = 32, BackdropScaleX = 5, BackdropScaleY = 4.7,
+        BackdropPatches = 14, BackdropScaleX = 10, BackdropScaleY = 9.5,
     },
 
     Selection = {
