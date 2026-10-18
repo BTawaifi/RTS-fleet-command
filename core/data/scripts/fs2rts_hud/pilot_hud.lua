@@ -159,6 +159,7 @@ function RTS:DrawPilotHUD(sw, sh)
     end
     hint((self.Config.HotkeyHintsKey or 'F10')..(self.ShowHotkeyHints==false and ' SHOW CONTROL HINTS' or ' HIDE CONTROL HINTS'))
     hint((self.Config.FleetCostToggleKey or 'F9')..' CREW ESTIMATES')
+    hint('SHIFT+'..((self.Config.HomeworldControls or {}).Cinematic or 'C')..' HIDE HUD')
     if self.PendingPilotEject then
         add('CRAFT DESTROYED',{255,135,95})
         add(string.format('RETURNING TO RTS IN %.1fs',math.max(0,self.PendingPilotEjectRemaining or 0)),yellow)

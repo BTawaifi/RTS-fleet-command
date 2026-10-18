@@ -713,7 +713,7 @@ function R:HandleFleetLifeClick(x,y)
                     else list,selected=self.Config.Environment.NebulaBackdrops,self.EnvironmentBackdropIndex end
                     local choice=action=='random' and 'RANDOM' or (((selected or 1)-1+(action=='prev' and -1 or 1))%#list+1)
                     if music then self.SetupMusicChoice=choice; if ad and ad.playMusic then self:SetEnvironmentMusic(choice) end
-                    else self.SetupBackdropChoice=choice; self:SetNebulaBackdrop(choice) end
+                    else self:SetNebulaBackdrop(choice); self.SetupBackdropChoice=self.EnvironmentBackdropIndex or choice end
                 end
                 return true
             end

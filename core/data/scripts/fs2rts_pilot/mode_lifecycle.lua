@@ -157,7 +157,7 @@ function RTS:ExitPilotMode(message, lost)
         -- axes just resets the override flags) so the AI can fly it again.
         ship:doManeuver(1,0,0,0,false,0,0,0,false,0)
     end
-    self.PossessedSignature=nil; self.PilotCamera=nil; self.PilotButtons={0,0,0,0}; self.KeyDown={}; self.CtrlDown=false; self.ShiftDown=false; self.AltDown=false
+    self.PossessedSignature=nil; self.FreeCamActive=false; self.PilotCamera=nil; self.PilotButtons={0,0,0,0}; self.KeyDown={}; self.CtrlDown=false; self.ShiftDown=false; self.AltDown=false
     self:OnPilotCommMenuClosed()
     self.PilotShieldMirrorSnapshot=nil
     self.PilotWeaponEnergyMirrorSnapshot=nil

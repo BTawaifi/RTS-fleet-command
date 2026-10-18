@@ -79,6 +79,8 @@ function RTS:OnKeyPressed(key,rawKey)
     if self.BattleCamActive then if rawEarly==((self.Config.HomeworldControls or {}).Cinematic or "C") then if string.find(key,"Shift",1,true) then self:ToggleFreeCam() else self:StopBattleCam() end end; return end
     if key==self.Config.Pilot.ToggleKey then self:TogglePilotMode(); return end
     if self.PossessedSignature~=nil then
+        -- Plain C is the native comm menu, so piloting uses Shift+C to hide the RTS HUD.
+        if rawEarly==((self.Config.HomeworldControls or {}).Cinematic or "C") and string.find(key,"Shift",1,true) then self:ToggleFreeCam(); return end
         if self.PilotTurretGroups and #self.PilotTurretGroups>1 and rawEarly==self.Config.Pilot.TurretGroupPreviousKey then self:CyclePilotTurretGroup(-1)
         elseif self.PilotTurretGroups and #self.PilotTurretGroups>1 and rawEarly==self.Config.Pilot.TurretGroupNextKey then self:CyclePilotTurretGroup(1)
         elseif self.PilotTurretGroups and #self.PilotTurretGroups>1 and rawEarly==self.Config.Pilot.TurretGroupToggleKey then self:TogglePilotTurretGroup()
@@ -179,6 +181,7 @@ function RTS:ShouldOverrideKey(key,rawKey)
     if string.find(key,'Alt',1,true) and ({['0']=true,['1']=true,['2']=true,['3']=true,['4']=true})[raw] then return true end
     if self.PossessedSignature~=nil then
         local groups=self.PilotTurretGroups
+        if raw==((self.Config.HomeworldControls or {}).Cinematic or "C") and string.find(key,"Shift",1,true) then return true end
         return key==self.Config.Pilot.ToggleKey or (groups and #groups>0 and
             (raw==self.Config.Pilot.TurretGroupPreviousKey or raw==self.Config.Pilot.TurretGroupNextKey
              or raw==self.Config.Pilot.TurretGroupToggleKey or raw==self.Config.Pilot.TurretSubsystemKey
