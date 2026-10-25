@@ -11,7 +11,8 @@ STATIC_FILES = set('''test_lua_scope_order test_parse_check test_script_structur
 test_table_references test_fighter_blast_weapons'''.split())
 TOOLS_FILES = set('''test_ai_invariants test_ai_matchmap test_ai_tactics test_ai_timeline
 test_analyze_batch test_compare_batches test_killcheck test_prepare_headless_batch
-test_staged_diff test_verification_workflow test_run_evidence test_audit_fighter_weapon_overrides'''.split())
+test_staged_diff test_verification_workflow test_run_evidence test_audit_fighter_weapon_overrides
+test_stage_release'''.split())
 
 
 def pytest_addoption(parser):

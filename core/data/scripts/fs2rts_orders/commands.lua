@@ -14,8 +14,7 @@ function RTS:ReissueUserOrder(ship, order)
         self:EngageShip(ship, 0.95)
         return true
     elseif order.kind == "move" and order.destination ~= nil then
-        self:MoveShipTo(ship, order.destination, 0.95)
-        return true
+        return self:MoveShipTo(ship, order.destination, 0.95)
     elseif order.kind == 'wing' then
         local pilot=self:FindShipBySignature(self.PossessedSignature)
         if shipAlive(pilot) then

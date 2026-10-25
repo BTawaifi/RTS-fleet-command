@@ -5,7 +5,7 @@
   "title": "FreeSpace RTS: Fleet Command",
   "type": "mod",
   "parent": "FS2",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "private": false,
   "stability": null,
   "description": "Command up to twelve independent fleets from FreeSpace 1, Silent Threat and FreeSpace 2. Choose GTA, PVN, GTVA, the Vasudan Empire, NTF, loyal or rogue GTI, Hammer of Light or Shivans, with faction rosters, command abilities, insignias and unique selectable colors. Build and direct fighters, bombers, escorts and capital ships from an RTS camera, or pilot them with native FSO controls. Includes the FS2 RTS - Escalation campaign. Requires retail FreeSpace 2 assets and upstream FreeSpace Open; MediaVPs are optional.",
@@ -18,7 +18,7 @@
   "screenshots": null,
   "attachments": [],
   "first_release": "2026-09-23",
-  "last_update": "2026-10-08",
+  "last_update": "2026-10-18",
   "cmdline": "-window -render_res 1280x720 -nomovies -no_unfocused_pause -campaign FS2_RTS_Escalation -start_mission FS2_RTS_Escalation",
   "mod_flag": [
     "RTS-fleet-command",
@@ -48,9 +48,9 @@
           "dest": "",
           "checksum": [
             "sha256",
-            "0f5addef0d9641dd87f80be7ea5071aca56ffb008ea1868726ee24586708450a"
+            "59c30408dc3743a249f252ede6bd8f740d33c32d91fc3fa0609234e564db2f56"
           ],
-          "filesize": 11706882
+          "filesize": 12998839
         }
       ],
       "filelist": [
@@ -60,7 +60,7 @@
           "orig_name": "core.vp",
           "checksum": [
             "sha256",
-            "f0fb649ff3aaea3cc85d9573d74c3339752dd77c7fefa2dcd5d79b324dba772b"
+            "7990c105e3cb3a73c157307a58fd3793a5519405b151c1312eadb0e93b802452"
           ]
         }
       ],
@@ -88,9 +88,9 @@
           "dest": "",
           "checksum": [
             "sha256",
-            "5746c4384b307547d266f9c0bc4def2c1c90bfc188b211c5b76d92376350ce1f"
+            "fc60eb78bec11be8ef77d89d761b99b478152298b7e4a265e446e03c7a8ef231"
           ],
-          "filesize": 336
+          "filesize": 5140
         }
       ],
       "filelist": [
@@ -100,7 +100,34 @@
           "orig_name": "README.txt",
           "checksum": [
             "sha256",
-            "3ae52d6b084f7bf911dcb76a7b267c74f1ecae3e8d9b190949ee4b038e10dd2e"
+            "8cf82385e7a79c959a3a7ae207e6f3542ec39f0abab340b08e40059a603f5855"
+          ]
+        },
+        {
+          "filename": "data/tables/z-rtsf-mv_assets-wep.tbm",
+          "archive": "mediavps.7z",
+          "orig_name": "data/tables/z-rtsf-mv_assets-wep.tbm",
+          "checksum": [
+            "sha256",
+            "cf8f67bc4b75c2bf3d7aca6b4e3d8ed7462a0b4e7437f1a0280502e83d7750a0"
+          ]
+        },
+        {
+          "filename": "data/tables/z-rtsf-mv_effects-wep.tbm",
+          "archive": "mediavps.7z",
+          "orig_name": "data/tables/z-rtsf-mv_effects-wep.tbm",
+          "checksum": [
+            "sha256",
+            "17e6c35895c1d93b7df0546953a79399b85d90e2aec1e0c9968dfd0b0bffc6f0"
+          ]
+        },
+        {
+          "filename": "data/tables/z-rtsf-mv_root-wep.tbm",
+          "archive": "mediavps.7z",
+          "orig_name": "data/tables/z-rtsf-mv_root-wep.tbm",
+          "checksum": [
+            "sha256",
+            "833f8d3b5578a26193c060d913e49d8d2130b6cbb7f76acf23ccc91e6542508d"
           ]
         }
       ],

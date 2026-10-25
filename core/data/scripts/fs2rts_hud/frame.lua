@@ -40,7 +40,7 @@ local function drawHUDContents(self)
     end
     if self.BattleCamActive then self:DrawBattleCamOverlay(sw,sh); return end
     if self.FreeCamActive then
-        if self:UINow()<(self.FreeCamHintUntil or 0) then gr.setColor(150,175,185,220); self:DrawCenteredTextClipped("UI HIDDEN  //  WASD / MOUSE TO FRAME SHOTS  //  SHIFT+"..tostring((self.Config.HomeworldControls or {}).Cinematic or "C").." TO RETURN",m.margin,sw-m.margin,m.pad(20)) end
+        if self:UINow()<(self.FreeCamHintUntil or 0) then gr.setColor(150,175,185,220); self:DrawCenteredTextClipped("UI HIDDEN  //  "..(self.PossessedSignature~=nil and "" or "WASD / MOUSE TO FRAME SHOTS  //  ").."SHIFT+"..tostring((self.Config.HomeworldControls or {}).Cinematic or "C").." TO RETURN",m.margin,sw-m.margin,m.pad(20)) end
         return
     end
     if self.PostBattleActive then self:DrawWorldOverlays(); self:DrawTopBar(sw); self:DrawTacticalMap(sw); self:DrawPostBattleOverlay(sw,sh); return end

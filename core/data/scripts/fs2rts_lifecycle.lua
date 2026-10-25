@@ -457,7 +457,9 @@ function RTS:StartScenario()
     self:InitializeAIStates(self.ScenarioStartTime); self:InitializeUnitOrders(); self:SetTimeScale(1)
     self.BattleSummary=nil; self.MusicMuted=false; self:SetMusicMuted(false,true)
     if ad and ad.playMusic then self:SetEnvironmentMusic(self.SetupMusicChoice or 'RANDOM',true) end
-    if mn.addBackgroundBitmapNew then self:SetNebulaBackdrop(self.SetupBackdropChoice or 'RANDOM',true) end
+    -- The mission's own nebula is the default sky; 2D backdrops are an explicit pick.
+    local sky=self.SetupBackdropChoice or 'RANDOM'
+    if mn.addBackgroundBitmapNew and (sky~='RANDOM' or self.Config.Environment.RandomBackdropOnStart) then self:SetNebulaBackdrop(sky,true) end
     self:ShowAnnouncement("TIER 1 // ESCALATION BEGINS",4,"BLUE")
 end
 
@@ -664,7 +666,7 @@ function RTS:ReleaseObjectHandles()
     end
     for _,name in ipairs({"StrategicThreatSnapshot","AISpatialGrid","AILocalCache","AISpatialCellSize",
         "AIShipIndex","AIProfileIndex","AITargetedBy","AIStrategicPlanQueue","RTSWings","WingBySignature",
-        "PilotTurretGroups","PilotBatteryCandidates","PilotFlakCandidates","PilotFlakPendingShots","PilotNativeWing","PilotPreviousUserOrder","PilotAIObjective","PilotSuggestedTarget","PilotSuggestedAt","PilotCommOrders","PilotCommWarningUntil","ControlInfo",
+        "PilotPrimaryWeapons","PilotTurretGroups","PilotBatteryCandidates","PilotFlakCandidates","PilotFlakPendingShots","PilotNativeWing","PilotPreviousUserOrder","PilotAIObjective","PilotSuggestedTarget","PilotSuggestedAt","PilotCommOrders","PilotCommWarningUntil","ControlInfo",
         "Camera","FollowCamera","PilotCamera"}) do self[name]=nil end
 end
 
@@ -718,6 +720,7 @@ function RTS:OnFrame()
     self:UpdateAIProduction(now)
     if not self.SetupActive and self.ScenarioStartTime ~= nil then self:UpdateStations(now) end
     if not self.SetupActive and self.ScenarioStartTime ~= nil then self:UpdateFleetServices(now) end
+    if not self.SetupActive and self.ScenarioStartTime ~= nil then self:UpdateSubsystemRegen(now) end
     self:UpdateMoveFacings()
     self:ReconcileMoveOrders(now)
     self:UpdateAttackFormations(now)

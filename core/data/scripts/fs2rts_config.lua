@@ -324,6 +324,7 @@ return {
         -- The mission's own nebula (+Nebula in FS2_RTS_Escalation.fs2) is the default look.
         -- These 2D sky sprites are an optional pick, so they do not start on top of it.
         RandomBackdropOnStart = false,
+        BackdropPatches = 14, BackdropScaleX = 10, BackdropScaleY = 9.5,
     },
 
     Selection = {
@@ -688,6 +689,8 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             HullPerSecond = .004, AmmoPerSecond = .04,
             HullCostFraction = .35, AmmoCostFraction = .12,
             SubsystemPerSecond = .01, SubsystemCostFraction = .15,
+            -- Free field repair of destroyed subsystems: slow, only after this long untouched.
+            RegenQuietSeconds = 20, RegenPerSecond = .005,
             ReturnHull = .40, ReturnAmmo = .15, ReadyHull = .90, ReadyAmmo = 1,
     -- Floor a committed strike presses to while inside its own reach. Must stay
     -- BELOW CriticalHull (0.22) so self-preservation, not this, is the floor

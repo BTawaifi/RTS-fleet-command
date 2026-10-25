@@ -1,10 +1,12 @@
 # FreeSpace RTS: Fleet Command
 
-Single-player fleet command with optional direct ship control. Retail FS2 assets are required; MediaVPs are optional. The October 8 rendered probes use upstream FSO 26.1.0 at HEAD `242eb19ef5516f704febf4fdb5867b4ed5ed3ef7`; gameplay does not require a modified engine.
+Single-player fleet command with optional direct ship control. Requires retail FreeSpace 2 assets and upstream FreeSpace Open 26.0.1 or a tested newer build. MediaVPs are optional.
 
 ## Launch
 
 Select **FreeSpace RTS: Fleet Command** in Knossos. The included campaign/mission is **FS2 RTS - Escalation**. Setup lets you choose 2–12 total teams (including yours), each independently choosing GTA, GTVA, PVN, Vasudan Empire, NTF, loyal GTI, rogue GTI, Hammer of Light, Shivans or **RANDOM**, plus difficulty, economy, station spacing and layout. Mirror factions remain separate hostile teams. The default Circle layout puts six stations on a hexagon and other counts on a regular polygon. Twelve is the practical ceiling based on early-fleet experiments; sustained late-game performance at that count is not established. Click **START ESCALATION** when ready. Fully exit and relaunch after installing script or mission updates.
+
+For a manual GitHub ZIP install, extract the player package into a new folder named `RTS-fleet-command-1.4.6` alongside FS2's retail assets. From the FS2 asset directory, launch your upstream FSO executable with `-mod RTS-fleet-command-1.4.6 -campaign FS2_RTS_Escalation -start_mission FS2_RTS_Escalation`. For optional MediaVPs, install the matching external pack first, then use `-mod RTS-fleet-command-1.4.6/mediavps,RTS-fleet-command-1.4.6,MediaVPs-directory`, replacing the last name with the actual pack folder. The optional patches must load before the core mod and MediaVPs. Configure resolution and window mode in your launcher.
 
 **START LAYOUT** cycles Circle, Star and Multiple Circles. Circle keeps the existing ring; Star alternates outer and inner stations; Multiple Circles creates two clusters, or three with nine or more teams. Small faction counts produce small clusters or pairs. **BASE DISTANCE** is the minimum separation for every layout; the map expands to fit. Layouts apply when you start, never during combat. Star and clustered starts offer different tactical positions; equal faction win rates on these layouts are not established.
 
@@ -14,7 +16,7 @@ Each faction has a curated roster and paid command ability: GTA orbital strike, 
 
 Classic destroyers cost 9,200 CP for Orion and 7,800 CP for Typhon. Auto production commits completed savings to the needed role even when that faction has no latest-tier hull. Paid AI abilities respect the bounded fleet-saving window; emergency production can release it for defense.
 
-Setup, station and pilot panels show faction insignias. Six PCX badges are attributed FSPort squad insignias; the custom Shivan badge is three red dots in a triangle, inspired by markings on some Shivan hulls. It is not a canon insignia. A static 24/30/32-pixel preview was reviewed after applying the PCX green key; this is not an in-engine screenshot or full contrast audit. Asset attribution and provenance are in `data/maps/README-insignias.txt` and `data/FSPORT-ASSET-CREDITS.txt`.
+Setup, station and pilot panels show faction insignias. Six PCX badges are attributed FSPort squad insignias; the custom Shivan badge is three red dots in a triangle, inspired by markings on some Shivan hulls. It is not a canon insignia. Asset attribution and provenance are in `data/maps/README-insignias.txt` and `data/FSPORT-ASSET-CREDITS.txt`.
 
 The battle starts with command stations only. Production creates combat units after starting. Losing your station records player defeat while stations remain; other factions continue their normal economies if you resume. The strategic result is recorded when at most one command station remains (or none, for a draw). There are no match-duration presets or timed outcomes. One fixed escalation schedule unlocks later ships; income grows with escalation.
 
@@ -50,11 +52,12 @@ When an AI station falls, a healthy armed cover wing or ship stays to retaliate 
 | C; Shift+C | Battle director; hide/show UI |
 | N | Toggle mission music |
 | P | Pilot the primary selected friendly movable ship; return to RTS |
+| F9 | Show/hide the labeled crew-cost estimates; hidden by default |
 | F10 | Toggle control hints on both RTS and pilot screens; off by default |
 
 The minimap supports ship selection, double-click wing selection and box selection. RMB on it focuses the camera. Production, station upgrades, fleet service, sentry placement and speed controls are clickable. Focus, base focus and chase remain available while paused. Arm a sentry from the station panel, then click its position in the 3D view or minimap; the station boundary ring and valid/invalid hover readout show placement limits and clearance.
 
-The **SCENE** picker is available in setup and from the top bar. Choose a loop from 21 retail FS2 combat cues or **RANDOM**, and one of 36 retail `neb##`/`dneb##` sky backdrops or **RANDOM**. Backdrops are 2D sky art only: they do not enable full-nebula fog, volumetric rendering, reduced visibility, or sensor effects. For the 14 selected tracks with a MediaVP OGG replacement, the VFS chooses it when that asset is installed; otherwise the retail WAV is used. The native probe checked stock WAVs, all backdrop assets and staged optional OGG lookup, not audible output.
+The **SCENE** picker is available in setup and from the top bar. Choose retail FS2 combat music and a sky backdrop, or select **RANDOM**. Setup starts with a random complete six-face skybox. Backdrops do not add full-nebula fog, reduced visibility or sensor effects. Installed MediaVP OGG replacements take priority over retail WAV tracks.
 
 Choose a formation in the options strip. A ground RMB drag places that formation perpendicular to the requested heading: a line runs across the ships' bows. Ships travel to their slots, then turn to parallel headings and hold them. Attack approaches loosely retain the selected formation, then release steering for close combat. Hull clearance is local to each pair; one capital does not spread the entire fighter screen. Oversized formations use packed ranks or ask for a smaller selection when they cannot fit safely.
 
@@ -116,8 +119,14 @@ The cannon has 11 km native range with slow, unguided shells and retail capital-
 
 Command level 3 grants the chosen political faction's ability. The modern Vasudan Empire's Sobek jump costs at least **6,000 CP** with a **300-second cooldown**; failed creations refund their share of the purchase. Strikes can damage friendly ships. Surge abilities consume CP and affect only their stated roles; no eligible nearby hulls means no charge or cooldown.
 
-## Configuration and verification
+## Crew records and raids
 
-Gameplay settings are in `data/scripts/fs2rts_config.lua`; weapon and station definitions are in `data/tables`. [Development notes](../docs/DEVELOPMENT.md) explain module ownership and verification. [Headless instructions](../../RTS-fleet-command-artifacts/README.md) provide the supported launcher, probes, result paths and verdict rules.
+**CREWS** lists live, lost and personally flown hulls with match-local histories and citations. Use ALL, FLOWN, LOST and LIVE filters, then select a row for details; **FOCUS** is a separate action for a present ship. Crew complements and casualty totals are disclosed role-based estimates, not canonical head counts or exact simulated deaths. **F9** reveals their live strip. Named losses and factual honors remain visible without it; awards grant no resources or stat bonuses.
 
-[The acceptance contract](../docs/AI_ACCEPTANCE_AND_INVARIANTS.md) defines what tests and metrics can establish. From the mod root, `python -m pytest --suite lua -q` runs Lua-backed checks; `--suite static`, `tools`, or `all` select the other evidence groups. These checks do not establish gameplay balance. Accounting alarms and tuning diagnostics are reported separately; comparisons have no implicit quality goals or historical baseline.
+Rare announced splinter raids warp in hostile ships or wings associated with any active faction. They arrive as new combatants; existing ships keep their allegiance. Warnings identify their origin, and the arrivals display TRAITOR labels.
+
+## Configuration
+
+Gameplay settings are in `data/scripts/fs2rts_config.lua`; weapon and station definitions are in `data/tables`. The source repository includes maintainer checks and acceptance criteria. Large late-game fleets, twelve-team matches and high time compression can be expensive; sustained performance and every optional asset/loadout combination still need wider playtesting.
+
+Third-party assets retain their owners' terms. Credits and provenance are in `data/ASSET-CREDITS.txt`, `data/FSPORT-ASSET-CREDITS.txt` and `data/maps/README-insignias.txt`.

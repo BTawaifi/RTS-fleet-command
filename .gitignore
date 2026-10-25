@@ -24,3 +24,15 @@ desktop.ini
 *.swp
 
 data/fs2_open.log
+
+# Per-install launcher settings, portable pilot data and probe output
+mod_settings.json
+data/probe_settings.ini
+data/players/
+core/data/*.hdp
+core/data/*.plr
+core/data/players/
+
+# Local development material
+docs/
+core/tools/

@@ -1,0 +1,46 @@
+RTS Fleet Command asset credits
+==============================
+
+Original Lua/Python code, mission content and table definitions:
+Boutros, 2026.
+Third-party assets and copied game materials retain their owners' terms.
+
+FreeSpace Port ships, textures and insignias:
+See FSPORT-ASSET-CREDITS.txt and maps/README-insignias.txt for their
+authors, provenance and attributed non-commercial reuse terms.
+The custom triangular Shivan insignia's origin is recorded there too.
+
+Cairo station:
+Bundled htl_cairo.pof and cairo_1, cairo_2, CairoTurrets, CairoLods and
+matching debris PNGs were supplied by the owner, who identifies them as
+public FreeSpace community assets.
+The original low-poly Cairo is credited to Mike (Bobboau) Abegg; its later
+lights texture is credited to Galemp by the FSMods archive:
+https://www.freespacemods.net/download_476.html
+That archived low-poly model is not the bundled HTL file. The exact HTL
+author and redistribution terms have not been verified. Its embedded
+metadata contains a PCS compiler stamp, not a license.
+
+Arachnas station:
+Bundled Arachnas.pof and sscv3b.pcx were supplied by the owner, who identifies
+them as public FreeSpace community assets. Other referenced textures resolve
+from retail FS2.
+The exact bundled model's creator and redistribution terms are unverified.
+The Cerberus Lost Years release credits a FreeSpaceFreak remake and grants
+CC BY 3.0 for that pack, but its model differs from the bundled file; that
+grant has not been assigned to this variant:
+https://www.hard-light.net/forums/index.php?topic=91842.0
+
+Promotional artwork:
+artwork/logo.jpg, tile.jpg and banner.jpg were identified by the owner as
+public FreeSpace community assets. No creator or redistribution terms were
+recovered from repository records or embedded attribution metadata.
+
+FreeSpace 2 and optional MediaVPs:
+Retail game archives and MediaVP packages are external runtime dependencies,
+not distributed in these payloads. Their respective owners retain their
+rights. Optional MediaVP compatibility tables are not a grant over the
+external package's models, textures or effects.
+
+Public availability alone is not a recorded redistribution grant. The
+unverified station/artwork provenance above remains a publication check.

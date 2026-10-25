@@ -55,16 +55,24 @@ function RTS:SetNebulaBackdrop(choice, silent)
     if type(index) ~= "number" or index ~= math.floor(index) or not names[index] then return false end
     if mn == nil or type(mn.addBackgroundBitmapNew) ~= "function" then return false end
 
-    local heading=math.random()*math.pi*2
-    local faces={{0,0},{0,math.pi*.5},{0,math.pi},{0,math.pi*1.5},{math.pi*.5,0},{-math.pi*.5,0}}
+    -- Retail missions build a nebula from ~30 overlapping patches of
+    -- one texture at scale 3-5, each shown at its natural proportions.
+    -- Do the same: patches centred on an even spiral over the sphere, each with a
+    -- random bank. One bitmap stretched over a big area looks smeared and a few
+    -- large faces repeat the whole picture. ScaleX 10 x ScaleY 9.5 is about 95 degrees
+    -- square (FSO widens X by 1.88 internally).
+    local env=self.Config.Environment
+    local count=env.BackdropPatches or 14
+    local golden=math.pi*(3-math.sqrt(5)); local spin=math.random()*math.pi*2
     local created={}
-    for _,face in ipairs(faces) do
-        local orientation=ba.createOrientation(face[1],0,heading+face[2])
+    for n=0,count-1 do
+        local y=1-2*(n+.5)/count
+        local angle=spin+golden*n
+        local x,z=math.sqrt(1-y*y)*math.cos(angle),math.sqrt(1-y*y)*math.sin(angle)
+        local orientation=ba.createOrientation(-math.asin(y),math.random()*math.pi*2,math.atan2(x,z))
+        local texture=names[index]
         local ok,element=pcall(function()
-            -- FSO expands horizontal scale by 1.8833 and uses one horizontal
-            -- quad. Scale 18 wraps it to 339 degrees; six 94x95-degree faces
-            -- cover the sky without collapsing the texture across that seam.
-            return mn.addBackgroundBitmapNew(names[index],orientation,5,9.5,1,4)
+            return mn.addBackgroundBitmapNew(texture,orientation,env.BackdropScaleX or 10,env.BackdropScaleY or 9.5,1,1)
         end)
         if not ok or not validElement(element) then
             for _,fresh in ipairs(created) do

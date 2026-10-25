@@ -72,6 +72,12 @@ function RTS:GetAISpatialCandidates(point,radius)
     local minZ=math.floor((point.z-radius)/cellSize); local maxZ=math.floor((point.z+radius)/cellSize)
     local cellCount=(maxX-minX+1)*(maxY-minY+1)*(maxZ-minZ+1)
     if cellCount>#snapshot*2 then return snapshot end
+    -- Every consumer applies its own exact sphere test to these read-only rows.
+    -- Reuse the same ordered superset until BuildAIContext replaces the grid.
+    local cache=grid.candidates
+    if not cache then cache={}; grid.candidates=cache end
+    local key=table.concat({minX,maxX,minY,maxY,minZ,maxZ},':')
+    if cache[key] then return cache[key] end
     local candidates={}
     for x=minX,maxX do
         for y=minY,maxY do
@@ -82,6 +88,7 @@ function RTS:GetAISpatialCandidates(point,radius)
         end
     end
     table.sort(candidates,function(a,b) return a.index<b.index end)
+    cache[key]=candidates
     return candidates
 end
 

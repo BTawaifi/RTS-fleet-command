@@ -73,19 +73,6 @@ function RTS:UpdateMjolnirRange(now)
     -- O(beams x ships) in closure invocations as well as distance checks; a
     -- full Mjolnir ring on a crowded board is thousands of iterations per
     -- interval. The per-sentry lock state below is unchanged.
-    --
-    -- This throttle is on MISSION time, so time compression multiplies how often
-    -- it runs per wall second: at 16x an interval of 1 mission second is 16
-    -- scans per real second. The cadence has to stay on mission time (the scan
-    -- is what decides turret locks, and a wall clock would make lock behaviour
-    -- depend on frame rate), so the cost per scan is what gets bounded instead:
-    --  * an explicit work budget, so one scan cannot walk an unbounded ship
-    --    list no matter how the board grows, and
-    --  * an early exit as soon as every beam has found its target, which is the
-    --    common case the moment an attacker is anywhere near the ring.
-    -- Both bounds are correctness-neutral: a beam that does not resolve inside
-    -- its budget simply keeps whatever lock state it had, which is what the
-    -- pre-budget code did for any enemy the scan never reached.
     local beams = {}
     for signature in pairs(self.StaticDefenseSignatures or {}) do
         local sentry=self:FindShipBySignature(signature)
@@ -97,38 +84,33 @@ function RTS:UpdateMjolnirRange(now)
     end
     if #beams==0 then return end
     local unresolved=#beams
-    local scanBudget=(cfg(self).Sentries.RangeScanMaxShips or 512)
-    local visited=0
     -- Per-beam constants are read once here instead of per (beam, enemy) pair.
     -- Reach is NOT hoisted: it depends on the enemy's radius, so it stays in
     -- the inner loop, but it is squared there rather than passed through sqrt.
     for i=1,#beams do
         local beam=beams[i]
-        beam.x=beam.ship.Position.x; beam.z=beam.ship.Position.z
+        local position=beam.ship.Position
+        beam.x=position.x; beam.y=position.y; beam.z=position.z
     end
-    self:EachShip(function(enemy)
-        if unresolved==0 or visited>=scanBudget then return end
-        visited=visited+1
+    -- A missing contact is evidence only after the whole list was examined.
+    for _,enemy in ipairs(self:GetShipList()) do
+        if unresolved==0 then break end
         if shipAlive(enemy) then
             local enemyRadius=enemy.Radius or 0
-            local ex,ez=enemy.Position.x,enemy.Position.z
+            local position=enemy.Position
+            local ex,ey,ez=position.x,position.y,position.z
             for i=1,#beams do
                 local beam=beams[i]
-                -- Squared XZ distance against a pre-squared reach: no sqrt, no
-                -- l_Vector method call, no per-pair table. The beams are base
-                -- turrets on the station's plane, so this is the same distance
-                -- the previous getDistance() call measured for every hull that
-                -- mattered, at a fraction of the cost.
                 if not beam.inRange then
                     local reach=enemyRadius+beam.range
-                    local dx=ex-beam.x; local dz=ez-beam.z
-                    if dx*dx+dz*dz<=reach*reach and canAutoEngage(self,beam.ship,enemy) then
+                    local dx=ex-beam.x; local dy=ey-beam.y; local dz=ez-beam.z
+                    if dx*dx+dy*dy+dz*dz<=reach*reach and canAutoEngage(self,beam.ship,enemy) then
                         beam.inRange=true; unresolved=unresolved-1
                     end
                 end
             end
         end
-    end)
+    end
     for i=1,#beams do
         local beam=beams[i]; local sentry=beam.ship
         local locks=self.MjolnirRangeLocks[beam.signature] or {}; self.MjolnirRangeLocks[beam.signature]=locks

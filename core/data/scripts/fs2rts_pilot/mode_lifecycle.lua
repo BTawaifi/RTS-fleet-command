@@ -15,6 +15,7 @@ function RTS:StartPilotMode(ship)
         self:SetStatus("PILOT: cannot take control after extraction begins",3)
         return false
     end
+    self.FreeCamActive=false
     if self.FleetProtection then self.FleetProtection[signature]=nil end
 
     if self.FollowSignature ~= nil then self:ExitFollowMode() end
@@ -29,12 +30,15 @@ function RTS:StartPilotMode(ship)
     if self.NewUnitPopup then self.NewUnitPopup.expiresAt=nil end
     -- Possession supersedes service without restoring its parked order now.
     -- Otherwise service keeps consuming slots and CP during direct control.
+    local previousOrder=self.UserOrders[signature]
+    local service=self.FleetServices and self.FleetServices[signature]
+    if previousOrder and previousOrder.kind=='service' then previousOrder=service and service.pendingOrder end
     if self.FleetServices then self.FleetServices[signature]=nil end
     self:SetShipCommandDiscipline(ship,false)
     self:SetShipTurretLock(ship,withdrawal~=nil)
     self:InitializePilotTurretGroups(ship)
     self.Selected = { signature }
-    self.PilotPreviousUserOrder = self.UserOrders[signature]
+    self.PilotPreviousUserOrder = previousOrder
     local objective=self.AIOrderState[signature]
     self.PilotAIObjective=objective and {label=objective.label,mission=objective.mission,reason=objective.reason,
         group=objective.group,targetSignature=objective.targetSignature,destination=objective.destination,
@@ -153,7 +157,7 @@ function RTS:ExitPilotMode(message, lost)
         -- axes just resets the override flags) so the AI can fly it again.
         ship:doManeuver(1,0,0,0,false,0,0,0,false,0)
     end
-    self.PossessedSignature=nil; self.PilotCamera=nil; self.PilotButtons={0,0,0,0}; self.KeyDown={}; self.CtrlDown=false; self.ShiftDown=false; self.AltDown=false
+    self.PossessedSignature=nil; self.FreeCamActive=false; self.PilotCamera=nil; self.PilotButtons={0,0,0,0}; self.KeyDown={}; self.CtrlDown=false; self.ShiftDown=false; self.AltDown=false
     self:OnPilotCommMenuClosed()
     self.PilotShieldMirrorSnapshot=nil
     self.PilotWeaponEnergyMirrorSnapshot=nil

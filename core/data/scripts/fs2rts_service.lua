@@ -520,6 +520,46 @@ function RTS:ServiceFleetShip(ship,s,station,now,slots,threat)
     return weight
 end
 
+-- Destroyed subsystems slowly repair themselves once the ship has taken no
+-- hull, shield or subsystem damage for RegenQuietSeconds. Ships docked for paid
+-- service are left to ServiceFleetShip.
+function RTS:UpdateSubsystemRegen(now)
+    if self.AftermathActive or now<(self.NextSubsystemRegen or 0) then return end
+    local c=config(self); local dt=math.min(now-(self.LastSubsystemRegen or now),2)
+    self.NextSubsystemRegen=now+1; self.LastSubsystemRegen=now
+    local state=self.SubsystemRegen or {}; self.SubsystemRegen=state
+    local seen={}
+    for _,ship in ipairs(self:GetShipList()) do
+        if self:IsFleetServiceShip(ship) then
+            local id=ship:getSignature(); seen[id]=true
+            local s=state[id]; if not s then s={quietAt=now,dead={}}; state[id]=s end
+            local shields=ship.Shields and ship.Shields.CombinedLeft or 0
+            local sum,hit=0,ship.HitpointsLeft<(s.hull or ship.HitpointsLeft)-.01 or shields<(s.shields or shields)-.01
+            for i=1,#ship do
+                local sub=ship[i]
+                if sub:isValid() and sub.HitpointsMax>0 then
+                    sum=sum+sub.HitpointsLeft
+                    if sub.HitpointsLeft<=0 then s.dead[i]=true end
+                end
+            end
+            if hit or sum<(s.sub or sum)-.01 then s.quietAt=now end
+            if now-s.quietAt>=c.RegenQuietSeconds and not (self.FleetServices or {})[id] then
+                for i in pairs(s.dead) do
+                    local sub=ship[i]
+                    if sub:isValid() then
+                        sub.HitpointsLeft=math.min(sub.HitpointsMax,sub.HitpointsLeft+sub.HitpointsMax*c.RegenPerSecond*dt)
+                        if sub.HitpointsLeft>=sub.HitpointsMax then s.dead[i]=nil end
+                    else s.dead[i]=nil end
+                end
+                sum=0
+                for i=1,#ship do if ship[i]:isValid() and ship[i].HitpointsMax>0 then sum=sum+ship[i].HitpointsLeft end end
+            end
+            s.hull=ship.HitpointsLeft; s.shields=shields; s.sub=sum
+        end
+    end
+    for id in pairs(state) do if not seen[id] then state[id]=nil end end
+end
+
 function RTS:UpdateFleetServices(now)
     if self.AftermathActive then return end
     local c=config(self)

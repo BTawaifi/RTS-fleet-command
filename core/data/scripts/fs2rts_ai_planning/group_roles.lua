@@ -10,18 +10,33 @@ function RTS:ChooseAILocalThreat(g,coverage)
         spread=0
         for i=2,#g.units do spread=math.max(spread,distance(lead,g.units[i])) end
     end
+    -- Geometry is fixed during this synchronous planning pass. Read each
+    -- member once and reuse the target coordinates already in the context.
+    local positions={}
+    for i,member in ipairs(g.units) do
+        local p=member.Position; positions[i]={x=p.x,y=p.y,z=p.z}
+    end
+    local function localDistance(index,row)
+        local p=positions[index]
+        local d=self:GetAIContextDistance(row,p.x,p.y,p.z)
+        -- Native vectors use floats; retain their decision at the range edge.
+        if row.coordinates and math.abs(d-radius)<=math.max(1,radius)*1e-6 then
+            return distance(g.units[index],row.ship)
+        end
+        return d
+    end
     if spread<=radius*.25 then
         -- Tight wings can use one superset query. The radius+spread bound
         -- includes every contact within radius of any member; exact member
         -- distances below preserve the old target set. Rows are already in
         -- snapshot order, so no merge map or candidate sort is needed.
-        for _,row in ipairs(self:GetAISpatialCandidates(lead.Position,radius+spread+0.01)) do
+        for _,row in ipairs(self:GetAISpatialCandidates(positions[1],radius+spread+0.01)) do
             local t=row.ship
             if valid(t) then
-                local inRange=distance(lead,t)<=radius
+                local inRange=localDistance(1,row)<=radius
                 if not inRange then
                     for i=2,#g.units do
-                        if distance(g.units[i],t)<=radius then inRange=true; break end
+                        if localDistance(i,row)<=radius then inRange=true; break end
                     end
                 end
                 if inRange and canAutoEngage(self,lead,t) and not self:IsCommandStation(t) then
@@ -35,11 +50,11 @@ function RTS:ChooseAILocalThreat(g,coverage)
         local bySignature={}; local candidates={}
         -- Widely spread wings retain member-local queries so the enclosing
         -- superset does not pull in a much larger part of the battlefield.
-        for _,member in ipairs(g.units) do
-            for _,row in ipairs(self:GetAISpatialCandidates(member.Position,radius)) do
+        for index in ipairs(g.units) do
+            for _,row in ipairs(self:GetAISpatialCandidates(positions[index],radius)) do
                 local t=row.ship
                 if valid(t) then
-                    local id=row.signature or sig(t); local d=distance(member,t)
+                    local id=row.signature or sig(t); local d=localDistance(index,row)
                     local candidate=bySignature[id]
                     if candidate==nil then
                         candidate={row=row,distance=d}; bySignature[id]=candidate; candidates[#candidates+1]=candidate

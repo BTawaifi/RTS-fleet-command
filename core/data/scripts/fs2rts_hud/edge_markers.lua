@@ -90,6 +90,23 @@ function RTS:ResolveEdgeMarkerPoint(dx,dy,sw,sh,margin,m,view)
     local placed=self.EdgeMarkerPoints
     if placed==nil then return ex,ey end
     local size=math.max(7,math.floor(7*((m and m.scale) or 1)))
+    local gap=size*1.8
+    -- The frame's point list owns its index, so recycling the list also drops
+    -- its cells. A size change rebuilds the exact overlap neighborhoods.
+    local grid=placed.grid
+    if not grid or grid.gap~=gap or grid.count>#placed then
+        grid={gap=gap,count=0,cells={}}; placed.grid=grid
+    end
+    for i=grid.count+1,#placed do
+        local point=placed[i]
+        local x,y=math.floor(point.x/gap),math.floor(point.y/gap)
+        local column=grid.cells[x]
+        if not column then column={}; grid.cells[x]=column end
+        local cell=column[y]
+        if not cell then cell={}; column[y]=cell end
+        cell[#cell+1]=point
+    end
+    grid.count=#placed
     -- Try progressively larger offsets perpendicular to the border until a free
     -- slot is found. Bounded so a dense contact list cannot spin.
     for attempt=0,8 do
@@ -104,8 +121,21 @@ function RTS:ResolveEdgeMarkerPoint(dx,dy,sw,sh,margin,m,view)
             px=clamp(px,view.x1+margin,view.x2-margin)
         end
         local free=true
-        for _,other in ipairs(placed) do
-            if math.abs(other.x-px)<size*1.8 and math.abs(other.y-py)<size*1.8 then free=false; break end
+        local cellX,cellY=math.floor(px/gap),math.floor(py/gap)
+        for x=cellX-1,cellX+1 do
+            local column=grid.cells[x]
+            if column then
+                for y=cellY-1,cellY+1 do
+                    local cell=column[y]
+                    if cell then
+                        for _,other in ipairs(cell) do
+                            if math.abs(other.x-px)<gap and math.abs(other.y-py)<gap then free=false; break end
+                        end
+                    end
+                    if not free then break end
+                end
+            end
+            if not free then break end
         end
         if free then self:AddMarkerPoint(placed,px,py); return px,py end
     end
