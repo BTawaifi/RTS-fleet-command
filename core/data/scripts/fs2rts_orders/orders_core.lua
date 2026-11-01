@@ -136,6 +136,7 @@ function RTS:GetShipCommandLabel(ship)
         elseif order.kind=="attack_wing" then return "PLAYER ORDER: ATTACK WING"
         elseif order.kind=="guard" then return "PLAYER ORDER: GUARD"
         elseif order.kind=="move" then return "PLAYER ORDER: MOVE"
+        elseif order.kind=="supply" then return "PLAYER ORDER: SUPPLY"
         elseif order.kind=="hold" then return "PLAYER ORDER: HOLD"
         elseif order.kind=="engage" then return "PLAYER ORDER: ENGAGE"
         elseif order.kind=="pilot" then return "PLAYER ORDER: PILOT CONTROL"

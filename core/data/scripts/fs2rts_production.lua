@@ -5,6 +5,7 @@ local sortedNumericKeys = U.sortedNumericKeys
 local RTS = require "fs2rts_state"
 require "fs2rts_production_rules"
 require "fs2rts_loadouts"
+require "fs2rts_logistics"
 local clamp, lower, vec, copyVec, distance2, objectValid, shipValid, shipAlive, teamName, tableContainsSignature
     = U.clamp, U.lower, U.vec, U.copyVec, U.distance2, U.objectValid, U.shipValid, U.shipAlive, U.teamName, U.tableContainsSignature
 
@@ -66,6 +67,7 @@ function RTS:BuildShipCostMap()
     registerRoles(self.Config.ProductionClasses)
     local ai=self.Config.AI or {}
     registerRoles(ai.BlueRoster); registerRoles(ai.RedRoster); registerRoles(ai.GoldRoster)
+    for _,name in pairs((self.Config.FieldSupport or {}).Classes or {}) do self.ShipCostRoleMap[name]='support' end
     local wanted={}
     for name in pairs(self.ShipCostRoleMap) do wanted[name]=true end
     for _,entries in pairs(self.Config.Station.Sentries.Classes) do for _,entry in ipairs(entries) do wanted[entry.class]=true end end
@@ -101,6 +103,7 @@ function RTS:PrimeRosterCostMap()
     registerRoles(self.Config.ProductionClasses)
     local ai=self.Config.AI or {}
     registerRoles(ai.BlueRoster); registerRoles(ai.RedRoster); registerRoles(ai.GoldRoster)
+    for _,name in pairs((self.Config.FieldSupport or {}).Classes or {}) do self.ShipCostRoleMap[name]='support' end
     local wanted={}
     for name in pairs(self.ShipCostRoleMap) do wanted[name]=true end
     for _,entries in pairs(self.Config.Station.Sentries.Classes or {}) do
@@ -146,6 +149,8 @@ function RTS:BuildProductionCatalog()
             self.BuildCatalog[#self.BuildCatalog+1]={key=configured.key,label=configured.label or configured.class,class=configured.class,cost=configured.cost or estimate.cost,time=configured.time or estimate.time,tier=configured.tier or 1,role=configured.role or "combat",count=count}
         end
     end
+    local tender=self:GetFieldTenderOption('BLUE')
+    if tender then self.BuildCatalog[#self.BuildCatalog+1]=tender end
     table.sort(self.BuildCatalog,function(a,b) if a.tier~=b.tier then return a.tier<b.tier end; if a.cost~=b.cost then return a.cost<b.cost end; return a.label<b.label end)
     self.BuildPage=1
 end
@@ -163,12 +168,17 @@ function RTS:QueueBuildOption(option)
     local count=option.count or 1
     if self:CountCommittedCombatants("BLUE")+count>self:GetFleetCap("BLUE") then self:SetStatus("Fleet cap reached",2); reject("FLEET_CAP"); return end
     if self.CommandPoints<option.cost then self:SetStatus("Insufficient command points",2); reject("INSUFFICIENT_CP"); return end
-    if not self:CanProduceClass("BLUE",option.class,count,true) then self:SetStatus("Team limit reached (including queued ships)",3); reject("SUPERCAP_LIMIT"); return end
+    if not self:CanProduceClass("BLUE",option.class,count,true) then self:SetStatus("Team limit reached (including queued ships)",3); reject(option.role=="support" and "TENDER_LIMIT" or "SUPERCAP_LIMIT"); return end
+    local delivery
+    if option.role=="support" then
+        local selected=self:GetSelectedFriendlyShips()
+        delivery=selected[1] and selected[1]:getSignature() or nil
+    end
     local before=self.CommandPoints
     self.CommandPoints=self.CommandPoints-option.cost
     self:RecordAIEconomyFlow("BLUE","productionSpend",option.cost)
     local jobId=self:NextProductionJobId()
-    self.BuildQueue[#self.BuildQueue+1]={id=jobId,option=option,started=false,startTime=0,finishTime=0,queuedAt=now}
+    self.BuildQueue[#self.BuildQueue+1]={id=jobId,option=option,started=false,startTime=0,finishTime=0,queuedAt=now,deliverySignature=delivery}
     self:EmitAIEvent("PRODUCTION",{action="QUEUE_ACCEPTED",producer="PLAYER",faction="BLUE",
         jobId=jobId,class=option.class,role=option.role,tier=option.tier,count=count,cost=option.cost,
         buildSeconds=option.time,cpBefore=before,cpAfter=self.CommandPoints,queuedAt=now},now)
@@ -181,7 +191,7 @@ function RTS:NextProductionJobId()
 end
 
 function RTS:SpawnFriendly(option, spawned, job)
-    local carrier=self:GetCarrier(); if not shipAlive(carrier) then return false,spawned end
+    local carrier=self:GetJobProductionAnchor(job) or self:GetCarrier(); if not shipAlive(carrier) then return false,spawned end
     local class=tb.ShipClasses[option.class]; if class==nil or not class:isValid() then self:Log("Invalid build class: "..option.class); return false end
     local count=option.count or 1; spawned=spawned or {}; local failed=false; local wingLabel=count>1 and self:GetNextWingCallsign("BLUE") or nil
     local batch=job and job.spawnBatch
@@ -199,7 +209,9 @@ function RTS:SpawnFriendly(option, spawned, job)
             spawned[#spawned+1]=ship
             if self.RecordShipCreated then self:RecordShipCreated(ship,true) end
             self:ApplyFactionVisual(ship,"BLUE")
-            ship:warpIn(); self:EnableFullArsenal(ship); if self.AutoPlayerMode then self:AssignAIStrategicOrder(ship,"BLUE",true) else self:ApplyPolicyToShip(ship,true) end
+            ship:warpIn(); self:EnableFullArsenal(ship); if self.AutoPlayerMode then self:AssignAIStrategicOrder(ship,"BLUE",true)
+            elseif option.role=="support" then self:HoldFieldTender(ship)
+            else self:ApplyPolicyToShip(ship,true) end
             self:ApplySpawnLoadout(ship)
         else
             -- mn.createShip hands back an invalid handle when ship_create refuses
@@ -264,7 +276,7 @@ function RTS:GetBuildSignatures(now)
         if shipAlive(carrier) then
             for _,job in ipairs(self.BuildQueue or {}) do
                 if job.started==true and job.option and job.option.class then
-                    append(job,'BLUE',carrier,job.option,job.option.count or 1,job.spawnBatch or (self.BuildBatchSerial or 0)+1)
+                    append(job,'BLUE',self:GetJobProductionAnchor(job) or carrier,job.option,job.option.count or 1,job.spawnBatch or (self.BuildBatchSerial or 0)+1)
                 end
             end
         end

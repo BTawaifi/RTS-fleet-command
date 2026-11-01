@@ -137,7 +137,9 @@ function RTS:SetFleetServicePhase(ship,s,phase,now)
         phase=phase,reason=s.reason,visit=s.visit,hull=hull(ship),ammo=self:GetFleetAmmo(ship)},now)
 end
 
-function RTS:BeginFleetService(ship,reason,now,manual)
+-- anchorOverride names the station or tender that must serve this visit; without
+-- it the nearest anchor is chosen.
+function RTS:BeginFleetService(ship,reason,now,manual,anchorOverride)
     if self.AftermathActive then return false end
     if not self:IsFleetServiceShip(ship) or self.PossessedSignature==ship:getSignature() then return false end
     if self.IsShipWithdrawing and self:IsShipWithdrawing(ship) then return false end
@@ -146,21 +148,25 @@ function RTS:BeginFleetService(ship,reason,now,manual)
     if self.FleetServices[id] then
         local current=self.FleetServices[id]
         current.manual=current.manual or manual==true
+        if self:IsServiceAnchorFor(ship,anchorOverride) and current.serviceAnchor~=anchorOverride:getSignature() then
+            current.serviceAnchor=anchorOverride:getSignature(); self:ResetServicePad(current)
+        end
         if manual then
-            local station=self:GetFactionCommandShip(self:GetFactionKey(ship))
+            local station=self:GetFleetServiceAnchor(ship,current)
             if alive(station) and not current.arrived then
                 self:MoveFleetServiceShip(ship,current,self:GetFleetServicePoint(ship,station,nil,current.padApproachX,current.padApproachZ),now,station:getSignature())
             end
         end
         return true
     end
-    local station=self:GetFactionCommandShip(self:GetFactionKey(ship))
+    local station=self:IsServiceAnchorFor(ship,anchorOverride) and anchorOverride or self:GetFleetServiceAnchor(ship)
     if not alive(station) then return false end
     -- Release any prior move lock: FSO needs dynamic AI enabled to evade a
     -- locked missile, and its hit reactions preserve the assigned service goal.
     self:SetShipCommandDiscipline(ship,false)
     local s={reason=reason,started=now,lastUpdate=now,lastHull=ship.HitpointsLeft,
-        quietAt=now,lastShields=ship.Shields and ship.Shields.CombinedLeft or 0,ammoCredit={},manual=manual==true,spent=0}
+        quietAt=now,lastShields=ship.Shields and ship.Shields.CombinedLeft or 0,ammoCredit={},manual=manual==true,spent=0,
+        serviceAnchor=station:getSignature()}
     self.FleetServiceSerial=(self.FleetServiceSerial or 0)+1; s.visit=self.FleetServiceSerial
     if s.manual then
         local hit=self.AIStats and self.AIStats.hits and self.AIStats.hits[id]
@@ -266,6 +272,9 @@ function RTS:GetFleetServicePoint(ship,station,threat,approachX,approachZ)
     local separation=stationRadius+shipRadius+c.StandOff
     if approachX==nil then approachX,approachZ=self:GetServiceApproach(ship,station,threat) end
     local kind=self:GetFactionKey(ship); local record=self.FleetServices and self.FleetServices[ship:getSignature()]
+    if record and record.padAnchorPosition and record.padAnchorPosition:getDistance(station.Position)>c.ArrivalRadius*.5 then
+        record.padPoint=nil; record.arrived=false; record.holdSince=nil
+    end
     if record and record.padPoint and record.padStation==station:getSignature() then return record.padPoint end
     local slot=(ship:getSignature()%5)-2; local widest=shipRadius
     if record then
@@ -288,7 +297,7 @@ function RTS:GetFleetServicePoint(ship,station,threat,approachX,approachZ)
             if other~=record and other.faction==kind and other.padPoint
                 and candidate:getDistance(other.padPoint)<shipRadius+(other.padRadius or 50)+120 then return nil end
         end
-        record.padPoint=copyVec(candidate); record.padStation=station:getSignature()
+        record.padPoint=copyVec(candidate); record.padStation=station:getSignature(); record.padAnchorPosition=copyVec(station.Position)
         return record.padPoint
     end
     local reserved=reserve(point)
@@ -686,9 +695,11 @@ local assaultHold={}
             end
         end
     end
+    self:UpdateFieldSupport(now,localThreat)
     table.sort(ships,function(a,b)
         local sa,sb=self.FleetServices[a:getSignature()],self.FleetServices[b:getSignature()]
         if (sa~=nil)~=(sb~=nil) then return sa~=nil end
+        if sa and sb and (sa.prioritized==true)~=(sb.prioritized==true) then return sa.prioritized==true end
         if sa and sb and sa.started~=sb.started then return sa.started<sb.started end
         if sa and sb then
             local pa,pb=self:GetFleetServiceCrewPriority(a,sa),self:GetFleetServiceCrewPriority(b,sb)
@@ -697,12 +708,14 @@ local assaultHold={}
         return a:getSignature()<b:getSignature()
     end)
     local slots={}
-    for _,kind in ipairs(self:GetFactionKeys()) do slots[kind]=c.Slots end
     for _,ship in ipairs(ships) do
         local id=ship:getSignature(); local s=self.FleetServices[id]
         if s and self.PossessedSignature~=id then
             local kind=self:GetFactionKey(ship)
-            slots[kind]=slots[kind]-self:ServiceFleetShip(ship,s,self:GetFactionCommandShip(kind),now,slots[kind],threats[id])
+            local anchor=self:GetFleetServiceAnchor(ship,s)
+            local key=anchor and anchor:getSignature() or kind
+            if slots[key]==nil then slots[key]=anchor and self:IsFieldTender(anchor) and self.Config.FieldSupport.Slots or c.Slots end
+            slots[key]=slots[key]-self:ServiceFleetShip(ship,s,anchor,now,slots[key],threats[id])
         end
     end
     for id in pairs(self.FleetServices) do if not present[id] then self.FleetServices[id]=nil; self.SurvivalDangerSince[id]=nil; self.FleetServiceCooldown[id]=nil end end

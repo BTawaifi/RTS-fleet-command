@@ -19,6 +19,9 @@ function RTS:DrawBuildTooltip(sw,sh,panel)
     -- Equipment first (it decides what to build), then the tech description in
     -- whatever room the window leaves.
     local lines={}
+    if option.role=='support' then
+        for _,line in ipairs(self:WrapTextLinesToWidth('Select a friendly ship before buying to call the tender to it. Right-click a ship with the tender selected to supply it; right-click the tender with ships selected to send them for repair and rearm (CP).',descW,3)) do lines[#lines+1]=line end
+    end
     for _,text in ipairs(self:GetBuildLoadoutLines(option.class)) do
         for _,line in ipairs(self:WrapTextLinesToWidth(text,descW,2)) do lines[#lines+1]=line end
     end

@@ -11,6 +11,10 @@ end
 -- is the worst possible moment to page a POF, and a pricing failure there must
 -- not abort the rest of the $On Ship Death handler.
 function RTS:GetPurchaseEstimate(className, tier, count, allowModelLoad)
+    if self.IsFieldTenderClass and self:IsFieldTenderClass(className) then
+        local c = self.Config.FieldSupport
+        return { cost = c.Cost * (count or 1), time = c.BuildSeconds, count = count or 1, radius = 50 }
+    end
     if allowModelLoad == nil then allowModelLoad = true end
     local base = self.ShipCostMap[className]
     if base == nil then

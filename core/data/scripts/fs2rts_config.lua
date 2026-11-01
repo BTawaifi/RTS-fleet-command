@@ -465,6 +465,19 @@ return {
         CorvetteClasses = { "GTCv Deimos", "GVCv Sobek", "SCv Moloch" },
     },
 
+    -- Field tenders (fs2rts_logistics.lua): unarmed workshops that serve as
+    -- mobile fleet-service anchors beside the command station. Cost is CP;
+    -- MaxPerTeam counts live plus queued tenders; Slots is simultaneous visitors.
+    -- An idle tender services friendly ships inside AutoSupply.Radius that have
+    -- fallen below the Hull, Ammo or Systems fraction (Radius 0 disables it).
+    -- The AI buys one tender once it fields AI.MinFleet ships (0 disables).
+    FieldSupport = {
+        Cost = 1800, BuildSeconds = 30, MaxPerTeam = 2, Slots = 2,
+        Classes = { TERRAN = "RTS Terran Tender", VASUDAN = "RTS Vasudan Tender", SHIVAN = "RTS Shivan Tender" },
+        AutoSupply = { Radius = 3500, Hull = .75, Ammo = .5, Systems = .75 },
+        AI = { MinFleet = 10, MaxPerTeam = 1 },
+    },
+
     -- Player production tiers unlock on the shared escalation schedule.
     ProductionClasses = {
         { class = "GTF Myrmidon", tier = 1, role = "fighter", count = 4 },

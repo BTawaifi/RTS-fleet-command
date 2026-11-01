@@ -40,8 +40,9 @@ Update the folder name in your `-mod` command line (see the README).
 - **AI defenders chased one attacker per wing.** A screening wing used to get a
   named attack on a single attacker and was re-aimed about every half minute, so all
   four fighters followed the same target and 18 raiders were barely touched. Screening
-  fighters now guard their station and each picks its own nearest attacker. Capitals,
-  bombers and other missions are unchanged. Test, 18 AI-controlled fighters against the
+  fighters now guard their station and each picks its own nearest attacker. Attacking
+  bombers, escorts and capitals still draw a named attack, and bombers on screen duty
+  and other missions are unchanged. Test, 18 AI-controlled fighters against the
   Shivan base at 4x speed for five minutes: with the change 18 and 11 of 18 attackers
   were destroyed and the station lost about 11.5% hull; without it 1 of 18 and about
   17%. A raid of 6: all 6 destroyed and 1.9% hull lost, against 2 destroyed and 5.9%.
@@ -110,6 +111,14 @@ and Vasudan stations are unchanged.
   profiles.
 - **Loadout preview.** Hover a build icon to see the ship's role, guns, missile
   banks and ammunition before you buy it.
+- **Field tender, for every faction.** An unarmed mobile workshop (1,800 CP, 30 s, two
+  per team) that repairs and rearms ships in the field. Buy it with a ship selected to
+  call it to that ship. **Right-click a ship with the tender selected** and the tender
+  goes and services it; **right-click the tender with ships selected** and they go to it,
+  ahead of ships it picked up by itself. An idle tender also services nearby damaged
+  ships on its own. The AI buys one tender once it has 10 ships. Right-click on a tender
+  with a combat ship selected no longer guards it. Based on the 1.5.0 tender, with the
+  right-click order and auto supply added.
 - **One supercap per team.** A team may hold one active or queued supercap
   (Colossus, Hades, Sathanas, Lucifer) at a time, for the player and for the AI.
   Losing it allows a replacement. A rejected purchase says "Team limit reached
@@ -117,7 +126,7 @@ and Vasudan stations are unchanged.
 
 ### Not in this release
 
-- Support ships and limited hangar wings (ideas from the thread) are deferred.
+- Limited hangar wings (an idea from the thread) are deferred.
 - Frame rate with eight teams is not addressed.
 - Station gun turrets stay locked until the DEFENSES upgrade, and the AI does not buy
   it. Unlocking them in tests at 16x speed killed 0 to 6 of 18 raiders in five minutes,

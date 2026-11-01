@@ -147,12 +147,17 @@ function RTS:IssueGuard(target)
     local ships = self:GetSelectedFriendlyShips()
     if #ships == 0 or not self:IsFriendly(target) then return end
     local targetSig = target:getSignature()
+    local now, supplied = mn.getMissionTime(), 0
     for _, ship in ipairs(ships) do
         if ship ~= target then
-            self:SetUserOrder(ship, { kind = "guard", targetSignature = targetSig })
-            ship:clearOrders()
-            ship:giveOrder(ORDER_GUARD, target, nil, 0.95)
+            if self:TrySupply(ship, target, now) then
+                supplied = supplied + 1
+            else
+                self:SetUserOrder(ship, { kind = "guard", targetSignature = targetSig })
+                ship:clearOrders()
+                ship:giveOrder(ORDER_GUARD, target, nil, 0.95)
+            end
         end
     end
-    self:SetStatus("Guard: " .. target.Name, 2)
+    self:SetStatus((supplied > 0 and "Supply: " or "Guard: ") .. target.Name, 2)
 end

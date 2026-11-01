@@ -17,6 +17,7 @@ local function countLiveRoleShips(self,kind,role)
 end
 
 function RTS:GetProductionRole(className)
+    if self:IsFieldTenderClass(className) then return 'support' end
     local known=self.ShipCostRoleMap and self.ShipCostRoleMap[className]
     if known then return known end
     for _,key in ipairs({'BlueRoster','RedRoster','GoldRoster'}) do
@@ -43,10 +44,13 @@ function RTS:GetCapitalCategory(className)
     if role=='capital' or role=='heavy' then return 'destroyer' end
 end
 
--- True when the team may add `count` more of `className`. Only supercaps are
--- limited; liveCounts (from CountAIRoleUnits) avoids rescanning the fleet.
+-- True when the team may add `count` more of `className`. Only supercaps and field
+-- tenders are limited; liveCounts (from CountAIRoleUnits) avoids rescanning the fleet.
 function RTS:CanProduceClass(kind,className,count,includeQueued,liveCounts)
     local role=self:GetProductionRole(className)
+    if role=='support' then
+        return self:CountFieldTenders(kind,includeQueued)+(count or 1)<=((self.Config.FieldSupport or {}).MaxPerTeam or 2)
+    end
     if role~='juggernaut' then return true end
     local limit=limits(self).SupercapsPerTeam or 1
     local committed=liveCounts and (liveCounts.juggernaut or 0) or 0

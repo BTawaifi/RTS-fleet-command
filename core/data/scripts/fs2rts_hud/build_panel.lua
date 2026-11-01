@@ -82,7 +82,8 @@ function RTS:DrawBuildPanel(sw,sh)
     if y+m.buildRowHeight>rowLimit then break end
     local rb={x1=x1+pad,y1=y,x2=x2-pad,y2=y+m.buildRowHeight}; self.BuildButtonRects[i]=rb
     local unlocked=self:IsBuildOptionUnlocked(option,now)
-    local enabled=unlocked and self.CommandPoints>=option.cost and self:GetCarrier()~=nil
+    local withinRoleCap=self:CanProduceClass('BLUE',option.class,option.count or 1,true)
+    local enabled=unlocked and withinRoleCap and self.CommandPoints>=option.cost and self:GetCarrier()~=nil
     local units=(option.count or 1)>1 and (' x'..option.count) or ''
     self:DrawButton(rb,'',enabled,false)
     local thumbSide=math.min(thumbW,m.buildRowHeight-8); local thumbY=rb.y1+(m.buildRowHeight-thumbSide)/2
@@ -91,7 +92,7 @@ function RTS:DrawBuildPanel(sw,sh)
     self:DrawRoleBadge(option.role,badgeX,rb.y1+math.floor((m.buildRowHeight-badge)/2),badge)
     local textX=rb.x1+thumbW+m.buttonPadding
     local textRight=badgeX-m.sectionGap
-    if self.AutoPlayerMode then
+    if self.AutoPlayerMode and option.role~='support' then
         local autoWidth=m.pad(32); local buttonHeight=m.pad(28)
         local ar={x1=badgeX-m.sectionGap-autoWidth,x2=badgeX-m.sectionGap,
             y1=rb.y1+(m.buildRowHeight-buttonHeight)/2,y2=rb.y1+(m.buildRowHeight+buttonHeight)/2}
@@ -102,6 +103,7 @@ function RTS:DrawBuildPanel(sw,sh)
     local title='T'..option.tier..' '..option.label..units
     local details=unlocked and (option.cost..' CP | '..string.format('%.0fs',option.time*(self:GetEscalationProfile().buildTimeScale or 1)*self:GetBuildTimeMultiplier('BLUE')))
         or ('UNLOCKS IN '..self:FormatTime(self:GetTierUnlockRemaining(option.tier,now)))
+    if not withinRoleCap then details=option.role=='support' and 'TENDER LIMIT: 2 ACTIVE OR QUEUED' or 'SUPERCAP LIMIT: 1 ACTIVE OR QUEUED' end
     local textHeight=self:TextHeight(title); local pitch=textHeight+m.pad(4)
     local textY=rb.y1+math.floor((m.buildRowHeight-textHeight-pitch)/2)
     self:DrawTextLine(title,textX,textY,textRight-textX)

@@ -126,6 +126,7 @@ function RTS:CountAIRoleUnits(kind)
         if shipAlive(ship) and self:GetFactionKey(ship)==kind then
             if ship:getSignature()~=stationSig and not self:IsStaticDefense(ship) then
                 local entry=self:GetAIRosterEntry(kind,ship.Class.Name); local role=entry and entry.role or self:GetShipRole(ship)
+                if role=='support' then counts.support=(counts.support or 0)+1; return end
                 local cat=(role=="heavy" or role=="juggernaut" or role=="capital") and "capital" or role
                 if counts[cat]==nil then cat="fighter" end
                 counts[cat]=counts[cat]+1; counts.total=counts.total+1
@@ -164,6 +165,11 @@ function RTS:ChooseAIBuild(kind,state,now)
     local tier=self:GetCurrentEscalationTier(now); local roster=self:GetAIRoster(kind); local counts,values=self:CountAIRoleUnits(kind)
     local cap=self:GetFleetCap(kind)
     local slots=cap-self:CountCommittedCombatants(kind)
+    local tender=self:ChooseAITender(kind,state,counts,slots)
+    if tender then
+        return tender,{faction=kind,tier=tier,commandPoints=state.cp,reason="FIELD_TENDER_PURCHASE",
+            selectedClass=tender.entry.class,selectedCost=tender.estimate.cost,selectedCount=1,options={}}
+    end
     local demand=self.AIProductionNeeds and self.AIProductionNeeds[kind] or {}
     local availableRoles={}; local availableCapitals={}
     for _,entry in ipairs(roster) do
