@@ -456,6 +456,15 @@ return {
         WingBuildTimeMultiplier = 1.65,
     },
 
+    -- Per-team purchase rules (fs2rts_production_rules.lua). A team may hold one
+    -- active or queued supercap; the AI buys CorvettesPerDestroyer corvettes per
+    -- destroyer. CorvetteClasses are the only capital hulls counted as corvettes.
+    FleetLimits = {
+        SupercapsPerTeam = 1,
+        CorvettesPerDestroyer = 2,
+        CorvetteClasses = { "GTCv Deimos", "GVCv Sobek", "SCv Moloch" },
+    },
+
     -- Player production tiers unlock on the shared escalation schedule.
     ProductionClasses = {
         { class = "GTF Myrmidon", tier = 1, role = "fighter", count = 4 },
@@ -517,6 +526,10 @@ return {
             -- premium on their first heavy hull. Shared class pricing also
             -- applies to modern rosters, replacement value and bounties.
             ["GTD Orion"] = 0.60, ["GVD Typhon"] = 0.60,
+            -- Unscaled, Demon and Ravana cost 13.9k and 16.4k CP; the other
+            -- factions' cheapest destroyers cost 7.8k-9.2k. At 0.75 they cost
+            -- about 10.4k and 12.3k.
+            ["SD Demon"] = 0.75, ["SD Ravana"] = 0.75,
         },
         -- A tier-5 Sathanas must cost more than a destroyer. Retail pricing
         -- otherwise discounts it to 12,675 CP through the juggernaut formula.
@@ -1032,9 +1045,17 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             -- Matches the PURSUIT_REFRESH_SECONDS fallback those sites carry.
             PursuitRefreshInterval = 1.5,
             NativeTargetRepairInterval = 6,
+            -- Screening fighters guard their station instead of chasing one named attacker.
+            ScreenGuardsStation = true,
             LocalTargetRetentionSeconds = 8,
             RetargetImprovementRatio = 0.25,
             CriticalStationHullFraction = 0.35,
+            -- Share of maximum hull the command station must lose within the window
+            -- to count as under pressure from any attacker, fighters included.
+            -- Measured rushes on a 51,000 HP station: 6 fighters peaked at 4.1% per
+            -- 60 s, 18 fighters at 10.8%, 48 fighters at 12.7%. 0 disables it.
+            StationPressureLossFraction = 0.05,
+            StationPressureWindowSeconds = 60,
             MinimumCommitmentSeconds = 8,
             ObjectiveSwitchCost = 25,
             LocalStrengthRadius = 4500,

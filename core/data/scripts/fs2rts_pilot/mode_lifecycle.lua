@@ -147,12 +147,14 @@ function RTS:ExitPilotMode(message, lost)
     local observer=self:GetObserver()
     -- Native fire can run after the last Lua mirror and before this exit.
     if shipValid(ship) and shipValid(observer) then ship.SecondaryBanks=observer.SecondaryBanks end
+    -- The observer is the player ship, so its afterburner loop outlives possession.
+    self:StopPilotAfterburner(observer)
     if self.RecordPilotTime then self:RecordPilotTime(ship,mn.getMissionTime(),false) end
     self:RestorePilotTurretGroups()
     local lastPosition=self.PendingPilotEjectPosition
     if shipValid(ship) then
         if not self.PendingPilotEject then lastPosition=copyVec(ship.Position) end
-        ship.PrimaryTriggerDown=false; ship.Physics.AfterburnerActive=false
+        ship.PrimaryTriggerDown=false; self:StopPilotAfterburner(ship)
         -- Release the never-expiring maneuver override (a call that applies no
         -- axes just resets the override flags) so the AI can fly it again.
         ship:doManeuver(1,0,0,0,false,0,0,0,false,0)

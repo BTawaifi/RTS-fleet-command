@@ -2,6 +2,19 @@
 local _shared = require "fs2rts_pilot.common"
 local RTS, copyVec, shipValid, clamp, vec, objectValid = _shared.RTS, _shared.copyVec, _shared.shipValid, _shared.clamp, _shared.vec, _shared.objectValid
 
+-- Physics.AfterburnerActive=false only clears the physics bit. The engine's
+-- looping afterburner sound for the player ship (the observer camera) is faded
+-- out by afterburners_stop, which the afterburners-locked SEXP flag calls when
+-- it is set. Toggle it so the loop ends, and keep a lock gameplay already set.
+function RTS:StopPilotAfterburner(ship)
+    if not shipValid(ship) or not ship.Physics.AfterburnerActive then return end
+    local locked=ship:getFlag('afterburners-locked')
+    ship:setFlag(true,'afterburners-locked')
+    if not locked then ship:setFlag(false,'afterburners-locked') end
+    -- afterburners_stop declines to clear the bit for hulls that must burn a minimum fuel amount.
+    ship.Physics.AfterburnerActive=false
+end
+
 function RTS:BeginPilotEject(ship)
     if self.PendingPilotEject then return end
     local delay=math.max(0,self.Config.Pilot.DeathViewSeconds or 5)
@@ -43,7 +56,7 @@ function RTS:UpdatePilotDeathView()
     if self.PendingPilotEjectPosition~=nil then observer.Position=copyVec(self.PendingPilotEjectPosition) end
     if self.PendingPilotEjectOrientation~=nil then observer.Orientation=self.PendingPilotEjectOrientation:copy() end
     observer.Physics.Velocity=vec(0,0,0)
-    observer.Physics.AfterburnerActive=false
+    self:StopPilotAfterburner(observer)
     observer.Target=nil
     self:DisarmObserverWeapons()
 
@@ -110,9 +123,9 @@ function RTS:UpdatePilotMode(dt)
     if self.Paused then
         -- Native frame hooks still run at zero time compression. Direct fire
         -- calls mutate the world, so pause must gate them as well as RTS AI.
-        ship.PrimaryTriggerDown=false; ship.Physics.AfterburnerActive=false
+        ship.PrimaryTriggerDown=false; self:StopPilotAfterburner(ship)
         local observer=self:GetObserver()
-        if shipValid(observer) then observer:setFlag(true,"secondaries-locked") end
+        if shipValid(observer) then self:StopPilotAfterburner(observer); observer:setFlag(true,"secondaries-locked") end
         return
     end
     gr.setCamera()
@@ -178,7 +191,7 @@ function RTS:UpdatePilotMode(dt)
     if not afterburner then
         afterburner = self:IsPilotControlDown(buttons, "AFTERBURNER") and ship.AfterburnerFuelLeft > 0
     end
-    ship.Physics.AfterburnerActive = afterburner
+    if afterburner then ship.Physics.AfterburnerActive=true else self:StopPilotAfterburner(ship) end
     if afterburner then forward = 1 end
 
     -- Duration 1 = never expire (released in ExitPilotMode). A finite hold is a

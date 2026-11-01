@@ -171,8 +171,8 @@ $Power Output: 1.0
 $Max Oclk Speed: 0.0
 $Max Weapon Eng: 100.0
 $Hitpoints: 110000
-$Armor Type: RTS Command Hull
-$Shield Armor Type: RTS Command Hull
+$Armor Type: RTS Command Hull Large
+$Shield Armor Type: RTS Command Hull Large
 $Flags: ( "capital" "big damage" "in tech database" )
 $AI Class: Captain
 $Afterburner: NO
@@ -272,11 +272,10 @@ $Name: SSG Belial
 $Detail distance: (0, 100, 800)
 
 ; -----------------------------------------------------------------------------
-; Capital beams carry $Damage Type: RTS Capital Beam, and RTS Base Hull scales
-; that type to 10% for capital ships. Command stations use RTS Command Hull at
-; 25%, so a newly built Sathanas or Colossus cannot delete one in a single volley.
-; Zeroed collision physics matches the station entries so a huge hull that clips
-; a base does not roll away from its own attack run.
+; Mobile fleet hulls take full weapon damage; only command stations carry the
+; RTS Command Hull damage multipliers. Zeroed collision physics matches the
+; station entries so a huge hull that clips a base does not roll away from its
+; own attack run.
 ; -----------------------------------------------------------------------------
 $Name: GTCv Deimos
 +nocreate
@@ -285,8 +284,6 @@ $Collision Physics:
     +Both Small Bounce: 0.0
     +Rotation Factor: 0.0
     +Rotation Magnitude Maximum: 0.0
-$Armor Type: RTS Base Hull
-$Shield Armor Type: RTS Base Hull
 $Name: GTC Leviathan
 +nocreate
 $Collision Physics:
@@ -294,8 +291,6 @@ $Collision Physics:
     +Both Small Bounce: 0.0
     +Rotation Factor: 0.0
     +Rotation Magnitude Maximum: 0.0
-$Armor Type: RTS Base Hull
-$Shield Armor Type: RTS Base Hull
 $Name: GVCv Sobek
 +nocreate
 $Collision Physics:
@@ -303,8 +298,6 @@ $Collision Physics:
     +Both Small Bounce: 0.0
     +Rotation Factor: 0.0
     +Rotation Magnitude Maximum: 0.0
-$Armor Type: RTS Base Hull
-$Shield Armor Type: RTS Base Hull
 $Name: GTD Hecate
 +nocreate
 $Collision Physics:
@@ -312,8 +305,6 @@ $Collision Physics:
     +Both Small Bounce: 0.0
     +Rotation Factor: 0.0
     +Rotation Magnitude Maximum: 0.0
-$Armor Type: RTS Base Hull
-$Shield Armor Type: RTS Base Hull
 $Name: GTD Orion
 +nocreate
 $Collision Physics:
@@ -321,8 +312,6 @@ $Collision Physics:
     +Both Small Bounce: 0.0
     +Rotation Factor: 0.0
     +Rotation Magnitude Maximum: 0.0
-$Armor Type: RTS Base Hull
-$Shield Armor Type: RTS Base Hull
 $Name: GVD Hatshepsut
 +nocreate
 $Collision Physics:
@@ -330,8 +319,6 @@ $Collision Physics:
     +Both Small Bounce: 0.0
     +Rotation Factor: 0.0
     +Rotation Magnitude Maximum: 0.0
-$Armor Type: RTS Base Hull
-$Shield Armor Type: RTS Base Hull
 $Name: GTVA Colossus
 +nocreate
 $Collision Physics:
@@ -339,8 +326,6 @@ $Collision Physics:
     +Both Small Bounce: 0.0
     +Rotation Factor: 0.0
     +Rotation Magnitude Maximum: 0.0
-$Armor Type: RTS Base Hull
-$Shield Armor Type: RTS Base Hull
 $Name: SD Ravana
 +nocreate
 $Collision Physics:
@@ -348,8 +333,6 @@ $Collision Physics:
     +Both Small Bounce: 0.0
     +Rotation Factor: 0.0
     +Rotation Magnitude Maximum: 0.0
-$Armor Type: RTS Base Hull
-$Shield Armor Type: RTS Base Hull
 $Name: SD Lucifer
 +nocreate
 $Collision Physics:
@@ -357,8 +340,6 @@ $Collision Physics:
     +Both Small Bounce: 0.0
     +Rotation Factor: 0.0
     +Rotation Magnitude Maximum: 0.0
-$Armor Type: RTS Base Hull
-$Shield Armor Type: RTS Base Hull
 $Name: SJ Sathanas
 +nocreate
 $Collision Physics:
@@ -366,7 +347,5 @@ $Collision Physics:
     +Both Small Bounce: 0.0
     +Rotation Factor: 0.0
     +Rotation Magnitude Maximum: 0.0
-$Armor Type: RTS Base Hull
-$Shield Armor Type: RTS Base Hull
 
 #End

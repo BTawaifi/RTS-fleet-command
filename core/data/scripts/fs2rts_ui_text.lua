@@ -12,7 +12,7 @@ end
 
 local WEAPON_DISPLAY_NAMES={BGreen='Green heavy beam',BBlue='Blue heavy beam',BRed='Red heavy beam',
     TerSlash='Terran slash beam',LTerSlash='Light Terran slash beam',AAAf='Terran anti-fighter beam',
-    SAAA='Shivan anti-fighter beam',BVas='Vasudan heavy beam',LRed='Light Shivan beam',
+    SAAA='Shivan anti-fighter beam',BVas='Vasudan heavy beam',LRed='Light Shivan beam',['RTS Shivan Torpedo']='Shivan siege torpedo',
     ['Terran Huge Turret']='Heavy laser',['Terran Turret']='Defense laser'}
 
 function RTS:GetWeaponDisplayName(weapon)

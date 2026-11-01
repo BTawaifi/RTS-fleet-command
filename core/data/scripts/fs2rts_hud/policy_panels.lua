@@ -16,7 +16,20 @@ function RTS:DrawBuildTooltip(sw,sh,panel)
     -- nor off the bottom on a short one.
     local w=clamp(m.pad(470),240,math.max(240,panel.x1-m.margin*2))
     local preview=math.max(110,m.pad(150)); local edge=m.panelPadding; local descW=w-2*edge
-    local lines=self:WrapTextLinesToWidth((desc:gsub("%s+"," ")),descW,12)
+    -- Equipment first (it decides what to build), then the tech description in
+    -- whatever room the window leaves.
+    local lines={}
+    for _,text in ipairs(self:GetBuildLoadoutLines(option.class)) do
+        for _,line in ipairs(self:WrapTextLinesToWidth(text,descW,2)) do lines[#lines+1]=line end
+    end
+    preview=math.max(0,math.min(preview,sh-m.topBarHeight-m.margin*2-m.pad(60)-#lines*lh))
+    local maxLines=math.max(1,math.floor((sh-m.topBarHeight-m.margin*2-preview-m.pad(60))/lh))
+    if #lines>maxLines then
+        while #lines>maxLines do table.remove(lines) end
+        lines[maxLines]='...'
+    end
+    local description=self:WrapTextLinesToWidth((desc:gsub("%s+"," ")),descW,math.max(1,maxLines-#lines))
+    for _,line in ipairs(description) do if #lines<maxLines then lines[#lines+1]=line end end
     local boxHeight=m.pad(48)+#lines*lh+preview+m.pad(8)
     local x2=panel.x1-m.pad(10); local x1=x2-w
     local y1=clamp(my-m.pad(20),m.topBarHeight+m.pad(4),math.max(m.topBarHeight+m.pad(4),sh-boxHeight-m.margin))
@@ -25,7 +38,7 @@ function RTS:DrawBuildTooltip(sw,sh,panel)
     gr.setColor(235,245,250,255); self:DrawCenteredTextClipped(option.class..((option.count or 1)>1 and (" x"..option.count) or ""),x1+edge,x2-edge,y1+edge)
     gr.setColor(255,220,110,255); self:DrawCenteredTextClipped(stats,x1+edge,x2-edge,y1+edge+lh)
     local side=preview-m.pad(8); local cx=math.floor((x1+x2)/2)
-    self:DrawRotatingModel(option.class,cx-side/2,y1+m.pad(48),cx+side/2,y1+m.pad(48)+side)
+    if side>0 then self:DrawRotatingModel(option.class,cx-side/2,y1+m.pad(48),cx+side/2,y1+m.pad(48)+side) end
     gr.setColor(160,200,215,255)
     for i,line in ipairs(lines) do self:DrawCenteredTextClipped(line,x1+edge,x2-edge,y1+m.pad(52)+preview+(i-1)*lh) end
 end

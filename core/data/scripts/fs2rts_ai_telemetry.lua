@@ -24,7 +24,7 @@ function RTS:ResetCoordinatedAI()
     self.AIPushHistory={}
     self.AIAssaultTargets={}; self.AIProductionNeeds={}
     self.AIOpponentDemand={}
-    self.AIProductionEmergency={}
+    self.AIProductionEmergency={}; self.StationHullPressure={}
     self.AIOperations={}; self.AIHomeThreatHistory={}
     self.AIHomeQuietSince={}; self.AIHomeQuietBaseline={}
     self.AITauntNextAt={}

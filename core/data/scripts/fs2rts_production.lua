@@ -3,6 +3,8 @@ local Config = require "fs2rts_config"
 local U = require "fs2rts_util"
 local sortedNumericKeys = U.sortedNumericKeys
 local RTS = require "fs2rts_state"
+require "fs2rts_production_rules"
+require "fs2rts_loadouts"
 local clamp, lower, vec, copyVec, distance2, objectValid, shipValid, shipAlive, teamName, tableContainsSignature
     = U.clamp, U.lower, U.vec, U.copyVec, U.distance2, U.objectValid, U.shipValid, U.shipAlive, U.teamName, U.tableContainsSignature
 
@@ -161,6 +163,7 @@ function RTS:QueueBuildOption(option)
     local count=option.count or 1
     if self:CountCommittedCombatants("BLUE")+count>self:GetFleetCap("BLUE") then self:SetStatus("Fleet cap reached",2); reject("FLEET_CAP"); return end
     if self.CommandPoints<option.cost then self:SetStatus("Insufficient command points",2); reject("INSUFFICIENT_CP"); return end
+    if not self:CanProduceClass("BLUE",option.class,count,true) then self:SetStatus("Team limit reached (including queued ships)",3); reject("SUPERCAP_LIMIT"); return end
     local before=self.CommandPoints
     self.CommandPoints=self.CommandPoints-option.cost
     self:RecordAIEconomyFlow("BLUE","productionSpend",option.cost)
@@ -197,6 +200,7 @@ function RTS:SpawnFriendly(option, spawned, job)
             if self.RecordShipCreated then self:RecordShipCreated(ship,true) end
             self:ApplyFactionVisual(ship,"BLUE")
             ship:warpIn(); self:EnableFullArsenal(ship); if self.AutoPlayerMode then self:AssignAIStrategicOrder(ship,"BLUE",true) else self:ApplyPolicyToShip(ship,true) end
+            self:ApplySpawnLoadout(ship)
         else
             -- mn.createShip hands back an invalid handle when ship_create refuses
             -- the class, so this used to drop the hull with nothing in the log and
@@ -379,6 +383,12 @@ function RTS:UpdateBuildQueue(now)
     end
 end
 
+local function initializeSpawnedShip(self,ship)
+    ship:warpIn()
+    self:EnableFullArsenal(ship)
+    self:ApplySpawnLoadout(ship)
+end
+
 function RTS:SpawnFactionUnit(className,anchor,team,prefix,waveNumber,unitIndex,offsetIndex,slot,total,nameOverride,batch,spawned,preferred)
     if not shipAlive(anchor) or team==nil or not team:isValid() then return nil end
     local class=tb.ShipClasses[className]; if class==nil or not class:isValid() then self:Log("Invalid faction class: "..className); return nil end
@@ -390,7 +400,7 @@ function RTS:SpawnFactionUnit(className,anchor,team,prefix,waveNumber,unitIndex,
         if spawned then spawned[#spawned+1]=ship end
         if self.RecordShipCreated then self:RecordShipCreated(ship,true) end
         self:ApplyFactionVisual(ship,self.FactionKeyByTeam and self.FactionKeyByTeam[lower(team.Name)])
-        local ok,err=pcall(function() ship:warpIn(); self:EnableFullArsenal(ship) end)
+        local ok,err=pcall(initializeSpawnedShip,self,ship)
         if not ok then self:Log("SPAWN INITIALIZATION FAILED: "..name..": "..tostring(err)) end
         return ship
     end

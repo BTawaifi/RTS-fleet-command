@@ -94,12 +94,26 @@ function RTS:DropPursuit(sig)
     if self.AIPursuit then self.AIPursuit[sig]=nil end
 end
 
+-- A screening fighter guards its own station and lets the engine pick each ship's nearest
+-- attacker. A named attack sends every ship in the wing after the same fighter.
+-- Returns the station to guard, or nil to keep the planner's named target.
+function RTS:GetScreenGuardStation(ship,target,options)
+    if (self.Config.AI.Doctrine or {}).ScreenGuardsStation==false then return nil end
+    if options and (options.destination or options.subsystem) then return nil end
+    if self:CanDamageBase(ship) or self:IsHeavyAttackHull(ship) or self:IsHeavyAttackHull(target) or self:CanDamageBase(target) or self:IsCommandStation(target) then return nil end
+    local station=self:GetFactionCommandShip(self:GetFactionKey(ship))
+    if not shipAlive(station) or station:getSignature()==ship:getSignature() then return nil end
+    return station
+end
+
 function RTS:IssueStrategicOrder(ship,target,label,mission,now,force,options)
     if not shipAlive(ship) or not shipAlive(target) or (self.IsShipWithdrawing and self:IsShipWithdrawing(ship)) then return false end
     if self.FleetServices and self.FleetServices[ship:getSignature()] then return false end
     local sig=ship:getSignature(); local tsig=target:getSignature(); local previous=self.AIOrderState[sig]; local kind=self:GetFactionKey(ship)
     if self.FleetProtection and self.FleetProtection[sig] and previous and previous.protectionHistory then return false end
     local enemies=canAutoEngage(self,ship,target)
+    local guardStation=enemies and mission=="SCREEN" and self:GetScreenGuardStation(ship,target,options) or nil
+    if guardStation then target=guardStation; tsig=target:getSignature(); enemies=false end
     -- Fighter chip damage permits player pressure, not a committed AI siege force.
     if enemies and self:IsCommandStation(target) and not self:CanDamageBase(ship) then
         self:RecordAIOrderTelemetry(kind,mission,"rejected",false)

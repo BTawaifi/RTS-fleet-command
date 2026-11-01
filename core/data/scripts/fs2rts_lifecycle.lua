@@ -21,8 +21,10 @@ function RTS:ScaleCommandStationsForEscalation()
                 station.HitpointsMax=base*scale
                 station.HitpointsLeft=station.HitpointsMax
                 -- Hull armor alone leaves gun mounts vulnerable to full light
-                -- weapon/debris damage. Protect the whole fixed installation.
-                for i=1,#station do station[i].ArmorClass='RTS Command Hull' end
+                -- weapon/debris damage. Give every mount its station's own armor.
+                local armor=station.ArmorClass
+                if type(armor)~='string' or armor=='' then armor='RTS Command Hull' end
+                for i=1,#station do station[i].ArmorClass=armor end
             end
         end
     end
@@ -429,6 +431,7 @@ function RTS:StartScenario()
     -- Mission paging invalidates native weapon resources even when the Lua
     -- module and registered hooks survive a restart.
     self.FighterBlastVariantsLoaded={}
+    self.SpawnLoadoutWeaponsLoaded={}
     self:FinishRosterModelWarmup()
     self:ResolveRandomFactionSpecies()
     self:BuildProductionCatalog()

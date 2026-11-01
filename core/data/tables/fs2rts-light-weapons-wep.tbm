@@ -105,4 +105,12 @@ $Damage Type: RTS Light Weapons
 $Shockwave damage type: RTS Light Weapons
 $Dinky shockwave:
 +Shockwave damage type: RTS Light Weapons
+; Piranha's cluster children take the parent's damage type so that station
+; armor scales the whole missile, not just its launch body.
+$Name: Cluster Baby
++nocreate
+$Damage Type: RTS Light Weapons
+$Shockwave damage type: RTS Light Weapons
+$Dinky shockwave:
++Shockwave damage type: RTS Light Weapons
 #End

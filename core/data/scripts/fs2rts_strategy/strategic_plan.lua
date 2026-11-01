@@ -89,14 +89,14 @@ function RTS:UpdateFactionStrategicPlan(kind,now,force)
     -- Range capability deserves a response, but is not evidence that the
     -- entire fleet must abandon its offensive objective. Reserve full recall
     -- for active station attacks, close heavy threats, or critical base hull.
-    local emergency=critical and #threats>0
+    local pressured=self:UpdateStationHullPressure(kind,station,now); local emergency=(critical or pressured) and #threats>0
     for _,threat in ipairs(threats) do
         if threat.attacking or (threat.urgent and threat.distance<=(station.Radius or 0)+(doctrine.HardEngageRadius or 1800)) then
             emergency=true; break
         end
     end
     local overwhelmed=emergency and threatValue*(doctrine.DefenseResponseRatio or 1.15)>totalValue*(doctrine.EmergencyDefenseFleetFraction or .7)
-    local posture=critical and #threats>0 and "CRITICAL_DEFENSE" or overwhelmed and "BASE_UNDER_ASSAULT" or urgent and "DEFENSIVE" or "BALANCED"
+    local posture=critical and #threats>0 and "CRITICAL_DEFENSE" or overwhelmed and "BASE_UNDER_ASSAULT" or (urgent or pressured and #threats>0) and "DEFENSIVE" or "BALANCED"
     local cap=((critical or overwhelmed) and emergency and 1 or emergency and (doctrine.EmergencyDefenseFleetFraction or .7) or (doctrine.MaxDefenseFleetFraction or .5))*totalValue
     local reserve=math.min((doctrine.ScreenReserveFraction or .38)*screenEligibleValue,cap)
     -- Do not let routine local contacts consume the entire faction. Reserve
@@ -235,7 +235,7 @@ function RTS:UpdateFactionStrategicPlan(kind,now,force)
         end
     end
     -- A defended skirmish needs orders, not perpetual replacement purchases from the capital bank.
-    local needsReinforcements=critical and emergency
+    local needsReinforcements=(critical or pressured) and emergency
     if emergency and not needsReinforcements then
         for _,threat in ipairs(threats) do
             if threat.urgent then

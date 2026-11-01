@@ -1,0 +1,44 @@
+#Secondary Weapons
+; Retail bomb-class torpedoes (every secondary flagged "Bomb") share one damage
+; type so RTS Command Hull can cut their station damage. Ship damage is
+; unchanged. Blast damage has its own type; setting only the impact type leaves
+; the shockwave, which carries most of a torpedo's damage, uncapped.
+; THIS LIST IS MACHINE-AUDITED against the retail "Bomb" set by
+; core/tools/test_table_references.py.
+$Name: Cyclops
++nocreate
+$Damage Type: RTS Siege Torpedo
+$Shockwave damage type: RTS Siege Torpedo
+$Dinky shockwave:
++Shockwave damage type: RTS Siege Torpedo
+$Name: Cyclops#short
++nocreate
+$Damage Type: RTS Siege Torpedo
+$Shockwave damage type: RTS Siege Torpedo
+$Dinky shockwave:
++Shockwave damage type: RTS Siege Torpedo
+$Name: Rebel Bomb
++nocreate
+$Damage Type: RTS Siege Torpedo
+$Shockwave damage type: RTS Siege Torpedo
+$Dinky shockwave:
++Shockwave damage type: RTS Siege Torpedo
+$Name: Helios
++nocreate
+$Damage Type: RTS Siege Torpedo
+$Shockwave damage type: RTS Siege Torpedo
+$Dinky shockwave:
++Shockwave damage type: RTS Siege Torpedo
+$Name: Unknown Bomb
++nocreate
+$Damage Type: RTS Siege Torpedo
+$Shockwave damage type: RTS Siege Torpedo
+$Dinky shockwave:
++Shockwave damage type: RTS Siege Torpedo
+$Name: Unknown Megabomb
++nocreate
+$Damage Type: RTS Siege Torpedo
+$Shockwave damage type: RTS Siege Torpedo
+$Dinky shockwave:
++Shockwave damage type: RTS Siege Torpedo
+#End

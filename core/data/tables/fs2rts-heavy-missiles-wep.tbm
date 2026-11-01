@@ -1,0 +1,12 @@
+#Secondary Weapons
+; Trebuchet is the one bomber-carried missile that is not a retail "Bomb" torpedo
+; yet hits a command station for more than a Cyclops. It shares the siege-torpedo
+; damage type so RTS Command Hull scales it the same way; ship damage is unchanged.
+; core/tools/test_table_references.py audits this list.
+$Name: Trebuchet
++nocreate
+$Damage Type: RTS Siege Torpedo
+$Shockwave damage type: RTS Siege Torpedo
+$Dinky shockwave:
++Shockwave damage type: RTS Siege Torpedo
+#End
