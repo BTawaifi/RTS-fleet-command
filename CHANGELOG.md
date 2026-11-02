@@ -102,6 +102,11 @@ and Vasudan stations are unchanged.
 
 ### Added
 
+- **Battle map log (diagnostics, off by default).** Set `Diagnostics.BattleMapLog = true`
+  in `fs2rts_config.lua` and the game writes `battle-map.tsv` to its data folder: every
+  ship's position, order, hull, shield and targets every 30 seconds, plus the hits each
+  command station took, by attacker and weapon, for diagnosing fleet behaviour.
+  `Diagnostics.BattleMapVolleys = true` also counts each ship's primary-weapon volleys.
 - **Shivan siege torpedo.** Shaitan, Nephilim, Taurvi, Nahema and Seraphim now
   carry dedicated anti-ship torpedoes. They are slow and aspect-locking, so
   escort the bomber through its approach.

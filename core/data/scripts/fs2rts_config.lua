@@ -203,6 +203,16 @@ return {
         MuteMusic = "N",
     },
 
+    -- Diagnostics only; none of these change play. BattleMapLog writes battle-map.tsv
+    -- (every ship's position, order and hull) to the mod's data folder every
+    -- BattleMapSeconds, for tools/battle_map_report.py. With it on, hits on each command
+    -- station are also counted by attacker and weapon. BattleMapVolleys additionally
+    -- counts every ship's primary-weapon volleys, which costs one script call per volley.
+    Diagnostics = {
+        BattleMapLog = false,
+        BattleMapSeconds = 30,
+        BattleMapVolleys = false,
+    },
     Cinematic = {
         Enabled = true,
         AllowSkip = true,

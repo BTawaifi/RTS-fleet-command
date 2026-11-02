@@ -723,6 +723,7 @@ function RTS:OnFrame()
     self:UpdateAIProduction(now)
     if not self.SetupActive and self.ScenarioStartTime ~= nil then self:UpdateStations(now) end
     if not self.SetupActive and self.ScenarioStartTime ~= nil then self:UpdateFleetServices(now) end
+    self:UpdateBattleMapLog(now)
     if not self.SetupActive and self.ScenarioStartTime ~= nil then self:UpdateSubsystemRegen(now) end
     self:UpdateMoveFacings()
     self:ReconcileMoveOrders(now)

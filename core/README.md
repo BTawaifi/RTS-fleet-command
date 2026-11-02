@@ -137,6 +137,6 @@ Rare announced splinter raids warp in hostile ships or wings associated with any
 
 ## Configuration
 
-Gameplay settings are in `data/scripts/fs2rts_config.lua`; weapon and station definitions are in `data/tables`. The source repository includes maintainer checks and acceptance criteria. Large late-game fleets, twelve-team matches and high time compression can be expensive; sustained performance and every optional asset/loadout combination still need wider playtesting.
+Gameplay settings are in `data/scripts/fs2rts_config.lua`; set `Diagnostics.BattleMapLog = true` there to write `battle-map.tsv` (every ship's position, order, hull, shield and targets every 30 seconds, and the hits each command station took by attacker and weapon; `Diagnostics.BattleMapVolleys = true` also counts primary-weapon volleys) to the mod's data folder; attach it to a report about fleet behaviour. It changes nothing in play, and the file is replaced each match; weapon and station definitions are in `data/tables`. The source repository includes maintainer checks and acceptance criteria. Large late-game fleets, twelve-team matches and high time compression can be expensive; sustained performance and every optional asset/loadout combination still need wider playtesting.
 
 Third-party assets retain their owners' terms. Credits and provenance are in `data/ASSET-CREDITS.txt`, `data/FSPORT-ASSET-CREDITS.txt` and `data/maps/README-insignias.txt`.
