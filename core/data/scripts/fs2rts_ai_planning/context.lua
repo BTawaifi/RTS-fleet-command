@@ -6,6 +6,7 @@ function RTS:IsAutomaticAIUnit(ship)
     local kind=self:GetFactionKey(ship); local id=sig(ship)
     return shipAlive(ship) and kind~=nil and not self:IsCommandStation(ship) and ship.Name~=self.Config.ObserverShip and not self:IsStaticDefense(ship)
         and not (self.FleetServices and self.FleetServices[id])
+        and not self:IsFieldTenderBusy(ship)
         and not (self.IsShipWithdrawing and self:IsShipWithdrawing(ship))
         and not (kind=='BLUE' and (not self.AutoPlayerMode or self.PossessedSignature==id or self.UserOrders[id]~=nil))
 end

@@ -210,7 +210,6 @@ function RTS:SpawnFriendly(option, spawned, job)
             if self.RecordShipCreated then self:RecordShipCreated(ship,true) end
             self:ApplyFactionVisual(ship,"BLUE")
             ship:warpIn(); self:EnableFullArsenal(ship); if self.AutoPlayerMode then self:AssignAIStrategicOrder(ship,"BLUE",true)
-            elseif option.role=="support" then self:HoldFieldTender(ship)
             else self:ApplyPolicyToShip(ship,true) end
             self:ApplySpawnLoadout(ship)
         else
