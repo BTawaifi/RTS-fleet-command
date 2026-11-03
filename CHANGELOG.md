@@ -100,6 +100,37 @@ and Vasudan stations are unchanged.
   against 37% to 40% before. Single
   runs; test speed changes the numbers, and real-time speed has not been measured.
 
+### Capitals appear behind their own station
+
+A capital used to appear on the first free bearing of a ring around its station, scanning
+from the enemy side. In an empty field that put a Sathanas 7.0 km from the enemy base,
+inside its own beam reach; with a crowd around the base the ring was blocked at those
+bearings and the same ship landed 17.5 to 18.7 km away, so the distance depended on where
+fighters happened to hover.
+
+- **Rule.** Hulls with the production role capital, heavy or juggernaut (Deimos, Sobek,
+  Moloch, Ravana, Boadicea, Hecate, Orion, Typhon, Hatshepsut, Demon, Iceni, Colossus, Hades,
+  Sathanas, Lucifer) appear 120 degrees from the battle-facing direction, at own-station
+  radius plus hull radius plus 1,100 m. At 12 km base spacing, in an empty field, that is
+  16.5 km from the enemy base for a Sathanas, 15.2 km for a Lucifer, 18.3 km for a Colossus
+  and 15.5 km for a Hades. The slot does not depend on the batch.
+- **Never closer than the stations are.** A slot must be at least as far from every hostile
+  station as the own station is, and at least 12 km. Never overlapping: the slot must clear
+  every ship, turrets included, by the usual margin. A taken slot moves along the bearings
+  120, 240, 135, 225 ... 180 and then outward by 1,000 m, three rings. All values are in
+  `CapitalSpawn` in `fs2rts_config.lua`.
+- **A blocked capital waits.** A paid single-hull capital job with no legal slot stays
+  queued and paid, retries every second, emits one `BUILD_BLOCKED` event with reason
+  `SPAWN_CONGESTED`, and after 120 s fails and is refunded once through the existing path.
+  It counts against the fleet cap and the supercap limit while it waits. Before, a capital
+  with no slot was refunded at once.
+- **Unchanged.** Fighters, bombers, escorts, support hulls and any hull that only matched by
+  size keep their old placement. Capitals that arrive in waves are placed by the new rule
+  and are dropped, as any wave unit with no slot, if none is free.
+- **What it does not do.** It does not make the AI respond sooner. A Sathanas that appears
+  16.5 to 18.7 km from the enemy base needs about 1,400 to 1,900 s at its speed to reach
+  firing range, and the fleet does not engage it until it is in weapon range of the base.
+
 ### Added
 
 - **Shivan siege torpedo.** Shaitan, Nephilim, Taurvi, Nahema and Seraphim now
