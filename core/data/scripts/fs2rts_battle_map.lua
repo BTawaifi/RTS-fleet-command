@@ -8,6 +8,10 @@
 --           distance to that target in meters (-1 when none), the strategic planner's target
 --           signature ('-' when it has none), primary-weapon volleys since the last sample
 --           (-1 unless Diagnostics.BattleMapVolleys is on)
+--   S rows: one per bomber and per ship in fleet service, written with the P rows: time, faction,
+--           signature, service reason ('-' when not in service), service phase ('-'), hull,
+--           emptiest ammunition bank (0-1, -1 when the ship has none), torpedo-class ordnance
+--           left over all banks (0-1, -1 when it has none)
 --   B rows: time, faction, x, z, hull
 --   D rows: time, struck faction, attacker faction, attacker class, weapon class, hits on that
 --           faction's command station since the last sample (beam hits count once per
@@ -196,6 +200,30 @@ local function writeShips(self,elapsed,ships)
     end
 end
 
+local function ordnanceFraction(self,ship)
+    local ok,value=pcall(self.GetBomberOrdnanceAmmo,self,ship)
+    if ok and value~=nil then return string.format('%.2f',value) end
+    return string.format('%.2f',-1)
+end
+
+local function ammoFraction(self,ship)
+    local ok,value=pcall(self.GetFleetAmmo,self,ship)
+    if ok and value~=nil then return string.format('%.2f',value) end
+    return string.format('%.2f',-1)
+end
+
+local function writeServiceDetail(self,elapsed,ships)
+    for _,ship in ipairs(ships) do
+        local service=self.FleetServices and self.FleetServices[ship:getSignature()]
+        if not self:IsCommandStation(ship) and (service or self:GetShipRole(ship)=='bomber') then
+            self:BattleMapRow('S',number(elapsed),self:GetFactionKey(ship),tostring(ship:getSignature()),
+                service and tostring(service.reason) or '-',service and tostring(service.phase) or '-',
+                string.format('%.3f',ship.HitpointsLeft/math.max(1,ship.HitpointsMax)),
+                ammoFraction(self,ship),ordnanceFraction(self,ship))
+        end
+    end
+end
+
 local function writeHits(self,elapsed)
     local keys={}
     for key in pairs(self.BattleMapHits) do keys[#keys+1]=key end
@@ -237,6 +265,7 @@ function RTS:UpdateBattleMapLog(now)
     end
     writeStations(self,elapsed,ships)
     writeShips(self,elapsed,ships)
+    writeServiceDetail(self,elapsed,ships)
     self.BattleMapVolleys={}
     writeHits(self,elapsed)
     self.BattleMapFile:flush()
