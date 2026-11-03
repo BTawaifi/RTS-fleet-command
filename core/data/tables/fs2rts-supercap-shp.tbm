@@ -13,8 +13,16 @@
 ; Lucifer's class), "big damage" as retail has it, and the "generate icon" that
 ; fs2rts-pilot-icons-shp.tbm adds, so the result does not depend on which table loads first.
 ; The Colossus and Hades are not named and keep their flags.
+;
+; Hull is 300,000 (retail 1,000,000). Fleet groups sent at a Sathanas in
+; core/tools/supercap_hunt_probe.lua took 394 (8 bombers) to 876 (8 bombers and 12 fighters)
+; hull per second off the retail hull. Once the Sathanas reaches a station's guns the station
+; has about 450 s, and a fleet needs about 150 s to answer, so a committed group of 16 bombers
+; (758/s) has to finish it inside about 600 s: 300,000 / 758 = 396 s. The engine reads
+; $Hitpoints before $Flags in a ship entry, so it has to stay in this order.
 $Name: SJ Sathanas
 +nocreate
+$Hitpoints: 300000
 $Flags: ("capital" "big damage" "generate icon")
 
 #End

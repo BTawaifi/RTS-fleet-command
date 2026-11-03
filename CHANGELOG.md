@@ -116,6 +116,21 @@ would do, and none once its hull is at or below 75%, unless the weapon is itself
   rule and are unchanged. Hull, speed and weapons are unchanged.
 - **The Colossus keeps the flag**, so its fleets still cannot bring it below 75% hull.
   The Hades and Lucifer never had it.
+- **Hull 300,000 (was 1,000,000).** Groups sent at a Sathanas in the hunt probe
+  (`supercap_hunt_probe.lua`, no station, no screen) took 400 to 880 hull per second off the
+  retail hull: 8 bombers 394, 16 bombers 758, 8 bombers with 12 fighters 876. A Sathanas
+  that reaches a station's guns kills it in about 450 s and a fleet needs about 150 s to
+  answer, so a committed group of 16 bombers has to finish it in about 600 s; 300,000 hull
+  is 396 s at 758 per second. At 300,000, 16 bombers took the hull to 73% lost in 300 s and,
+  with orders re-issued every 15 s, to 99% in 700 s. Its turrets keep their 20,000 hull each,
+  so they are a larger share of it. The price stays 46,000 CP.
+- **What the games showed.** One game on the same seed killed a 1,000,000 hull Sathanas in
+  about 12,900 s and a 300,000 hull one in about 1,900 s. In the same 300,000 hull game a
+  second Sathanas lost only 30% of its hull in 12,500 s (about 7 per second) before it
+  killed the base: how hard the fleet presses a Sathanas varies by 10 times or more between
+  games, and this change does not touch that. Two of the three games fielded only a Lucifer.
+- **Not shown:** that fleets land enough hits. In the logged games BLUE landed 2 to 28 hits
+  on a Sathanas per sample, mostly from 6 to 10 km out.
 - **Not shown:** that fleets land enough hits. In the logged games BLUE landed 2 to 28 hits
   on a Sathanas per sample, mostly from 6 to 10 km out.
 
