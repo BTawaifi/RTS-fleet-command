@@ -107,6 +107,30 @@ function RTS:GetFleetServiceAnchor(ship,record)
     return best
 end
 
+local function ByDistance(a,b)
+    return a.distance<b.distance
+end
+
+-- For an automatic visit: the nearest station or tender with no armed hostile near it
+-- and, for a station, not being shelled. When none is safe it returns the nearest one
+-- and false.
+function RTS:GetSaferServiceAnchor(ship,threatOf,baseAttacked)
+    local candidates={}
+    local station=self:GetFactionCommandShip(self:GetFactionKey(ship))
+    if self:IsServiceAnchorFor(ship,station) then candidates[#candidates+1]={anchor=station,distance=distanceBetween(ship,station)} end
+    for _,tender in ipairs(self:GetShipList()) do
+        if self:IsFieldTender(tender) and self:IsServiceAnchorFor(ship,tender) then
+            candidates[#candidates+1]={anchor=tender,distance=distanceBetween(ship,tender)}
+        end
+    end
+    table.sort(candidates,ByDistance)
+    for _,candidate in ipairs(candidates) do
+        local shelled=baseAttacked and self:IsCommandStation(candidate.anchor)
+        if not shelled and not threatOf(candidate.anchor) then return candidate.anchor,true end
+    end
+    return candidates[1] and candidates[1].anchor or nil,false
+end
+
 local function TenderIsMoving(tender)
     local velocity=tender.Physics and tender.Physics.Velocity
     if not velocity then return false end

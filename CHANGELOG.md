@@ -100,6 +100,21 @@ and Vasudan stations are unchanged.
   against 37% to 40% before. Single
   runs; test speed changes the numbers, and real-time speed has not been measured.
 
+### Balance: defending the base against servicing
+
+- **A shelled base outranks servicing.** A command station that loses hull or shield
+  counts as under attack for 20 seconds, whatever is shooting it. In that time no
+  automatic service starts at the station unless the ship's hull is critical, and ships
+  parked there with hull and systems at 60% or better go back to their orders. Player-ordered
+  service and tender visits are not touched.
+- **Automatic service picks the closest safe anchor.** A ship that needs service chooses
+  between the base and a tender by distance, skipping any with an armed hostile near it.
+  When none is safe, a routine visit waits; a critical hull goes to the nearest.
+- **Ammunition ranks last, and is optional except for bombers.** Automatic service checks
+  a damaged hull first, then damaged systems, then ammunition. A fighter or other ship
+  keeps its primary guns when its missiles run out, so it stays in a fight while an armed
+  hostile is near; a bomber, whose ordnance is its weapon, still rearms.
+
 ### Added
 
 - **Shivan siege torpedo.** Shaitan, Nephilim, Taurvi, Nahema and Seraphim now
