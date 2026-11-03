@@ -115,6 +115,18 @@ and Vasudan stations are unchanged.
   keeps its primary guns when its missiles run out, so it stays in a fight while an armed
   hostile is near; a bomber, whose ordnance is its weapon, still rearms.
 
+### Bombers rearm when their torpedoes run out
+
+A bomber went back to its station for ammunition when its emptiest weapon bank fell below
+15%, so a Medusa with one empty Cyclops bank left with its other Cyclops bank and its 40
+Hornets still loaded. The check now sums the rounds of weapons with a cargo size of 15 or
+more (torpedoes) over all banks (`BomberOrdnanceCargoSize` in the fleet-service config);
+a bomber with no such bank keeps the old check. Fighters, capitals and the finish-rearming
+rule are unchanged. In the hunt probe this did not change how often 16 bombers killed a
+300,000 hull Sathanas (22 of 30 before, 16 of 20 after) and eight full games on the same
+seeds gave no clear signal either; the measured effect is that bombers now leave
+with about 10% of their torpedoes rather than half.
+
 ### Added
 
 - **Shivan siege torpedo.** Shaitan, Nephilim, Taurvi, Nahema and Seraphim now

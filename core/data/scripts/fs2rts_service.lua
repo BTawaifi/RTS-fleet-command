@@ -103,6 +103,25 @@ function RTS:GetFleetAmmo(ship)
     return low,banks
 end
 
+-- Fraction of a bomber's heavy ordnance left, over all of its secondary banks that carry
+-- weapons of at least BomberOrdnanceCargoSize. GetFleetAmmo reports the emptiest bank, so a
+-- bomber that has fired one of two torpedo banks reads 0 with half its torpedoes still
+-- loaded; this sums rounds instead. Returns nil for a ship with no such bank.
+function RTS:GetBomberOrdnanceAmmo(ship)
+    local minimum=config(self).BomberOrdnanceCargoSize
+    local left,max=0,0
+    local banks=ship.SecondaryBanks
+    for i=1,#banks do
+        local bank=banks[i]
+        local weapon=bank.WeaponClass
+        if bank.AmmoMax>0 and weapon:isValid() and (weapon.CargoSize or 0)>=minimum then
+            left=left+bank.AmmoLeft; max=max+bank.AmmoMax
+        end
+    end
+    if max<=0 then return nil end
+    return left/max
+end
+
 function RTS:CanStartAmmoService(ship,role)
     -- Bombers and craft without a usable main battery need ordnance to fight.
     -- Otherwise book repair capacity before recalling a healthy ship merely
@@ -738,7 +757,9 @@ local assaultHold={}
                 -- Every ship but a bomber keeps its primary guns when its ordnance runs
                 -- out, so rearming is optional for it and never pulls it out of a fight.
                 -- A bomber's ordnance is its weapon, so it still goes.
-                local ammoLow=ammo<ammoThreshold and self:CanStartAmmoService(ship,role)
+                local ammoLevel=ammo
+                if role=='bomber' then ammoLevel=self:GetBomberOrdnanceAmmo(ship) or ammo end
+                local ammoLow=ammoLevel<ammoThreshold and self:CanStartAmmoService(ship,role)
                 if ammoLow and role~='bomber' and not threat then threat=localThreat(ship); threats[id]=threat end
                 local keepsFighting=ammoLow and role~='bomber' and alive(threat)
                 if hp<(holding and c.AssaultHullFloor or c.ReturnHull) then reason='HULL_LOW'
