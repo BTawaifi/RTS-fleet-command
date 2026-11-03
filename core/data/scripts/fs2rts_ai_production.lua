@@ -604,8 +604,9 @@ function RTS:UpdateAIProduction(now)
                         capacityWaitSeconds=queued.blockedAt and math.max(0,now-queued.blockedAt) or 0,
                         reason=failureReason},now)
                     if kind=="BLUE" and #signatures>0 then self:NotifyNewUnits(spawned) end
-                elseif queued.blockedAt==nil then
-                    queued.blockedAt=now
+                elseif not queued.fleetCapReported then
+                    queued.fleetCapReported=true
+                    if queued.blockedAt==nil then queued.blockedAt=now end
                     self:EmitAIEvent("PRODUCTION",{action="BUILD_BLOCKED",producer="AI",faction=kind,
                         jobId=queued.id,class=queued.entry.class,count=queued.count or 1,cost=queued.estimate.cost,
                         reason="FLEET_CAP",finishTime=queued.finishTime},now)

@@ -79,7 +79,14 @@ function RTS:HoldCapitalForSpawnSlot(job, anchor, className, count, now, kind, p
     if job.spawnNextAttempt ~= nil and now < job.spawnNextAttempt then return true end
     local class = tb.ShipClasses[className]
     if class == nil or not class:isValid() then return false end
-    local pos, _, reason = self:GetSpawnFrame(anchor, class, 1, 1, job.spawnBatch)
+    local ok, pos, _, reason = pcall(self.GetSpawnFrame, self, anchor, class, 1, 1, job.spawnBatch)
+    if not ok then
+        if not job.spawnCheckFailed then
+            job.spawnCheckFailed = true
+            self:Log(string.format("SPAWN SLOT CHECK FAILED: %s at %s: %s", className, tostring(anchor.Name), tostring(pos)))
+        end
+        return false
+    end
     if pos ~= nil or reason ~= 'SPAWN_BLOCKED' then
         if job.spawnBlockedAt ~= nil and not job.spawnLoggedClear then
             job.spawnLoggedClear = true
