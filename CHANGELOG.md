@@ -100,6 +100,25 @@ and Vasudan stations are unchanged.
   against 37% to 40% before. Single
   runs; test speed changes the numbers, and real-time speed has not been measured.
 
+### Balance: a Sathanas can be fought
+
+In the logged games a Sathanas never dropped below 0.92 hull while a fleet fought it, and
+the side that fielded one won every game it had time to finish. The cause is an engine rule:
+a ship with the `supercap` flag takes a quarter of the damage guns, missiles and torpedoes
+would do, and none once its hull is at or below 75%, unless the weapon is itself flagged
+`supercap`. Only two retail weapons are (`BFGreen`, `LRBGreen`) and no fleet carries them.
+
+- **The Sathanas is a plain capital hull.** `fs2rts-supercap-shp.tbm` replaces its flags
+  `supercap, big damage` with `capital, big damage` (and the `generate icon` flag another
+  table adds). Damage per hit to a Sathanas, measured in the damage matrix: Helios 1,700 to
+  8,600 (a Lucifer takes about 8,500), Cyclops 500 to 2,100, Piranha 124 to 1,240, Unknown
+  Megabomb 1,400 to 3,800, Vasudan Flux Cannon 133 to 1,000. Beams are not affected by the
+  rule and are unchanged. Hull, speed and weapons are unchanged.
+- **The Colossus keeps the flag**, so its fleets still cannot bring it below 75% hull.
+  The Hades and Lucifer never had it.
+- **Not shown:** that fleets land enough hits. In the logged games BLUE landed 2 to 28 hits
+  on a Sathanas per sample, mostly from 6 to 10 km out.
+
 ### Added
 
 - **Shivan siege torpedo.** Shaitan, Nephilim, Taurvi, Nahema and Seraphim now

@@ -1,0 +1,20 @@
+#Ship Classes
+; Sathanas counterplay. Only the SJ Sathanas is named here, and only its flags change.
+; core/tools/test_sathanas_counterplay.py audits this file.
+;
+; The engine gives a ship with the "supercap" flag a fixed share of the damage that guns,
+; missiles and torpedoes would do (a quarter), and none at all once its hull is at or below
+; 75%, unless the weapon itself carries the "supercap" flag. Only two retail weapons do, and
+; no fleet carries them, so a Sathanas could not be brought below 75% hull by any fleet in
+; play. Beams are not affected by that rule.
+;
+; Retail lists ("supercap" "big damage"). A $Flags line without +noreplace replaces the whole
+; set, so this one lists everything the Sathanas keeps: "capital" in place of "supercap" (the
+; Lucifer's class), "big damage" as retail has it, and the "generate icon" that
+; fs2rts-pilot-icons-shp.tbm adds, so the result does not depend on which table loads first.
+; The Colossus and Hades are not named and keep their flags.
+$Name: SJ Sathanas
++nocreate
+$Flags: ("capital" "big damage" "generate icon")
+
+#End
