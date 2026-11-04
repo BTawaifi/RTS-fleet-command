@@ -157,6 +157,38 @@ rule are unchanged. In the hunt probe this did not change how often 16 bombers k
 seeds gave no clear signal either; the measured effect is that bombers now leave
 with about 10% of their torpedoes rather than half.
 
+### Balance: a Sathanas can be fought
+
+In the logged games a Sathanas never dropped below 0.92 hull while a fleet fought it, and
+the side that fielded one won every game it had time to finish. The cause is an engine rule:
+a ship with the `supercap` flag takes a quarter of the damage guns, missiles and torpedoes
+would do, and none once its hull is at or below 75%, unless the weapon is itself flagged
+`supercap`. Only two retail weapons are (`BFGreen`, `LRBGreen`) and no fleet carries them.
+
+- **The Sathanas is a plain capital hull.** `fs2rts-supercap-shp.tbm` replaces its flags
+  `supercap, big damage` with `capital, big damage` (and the `generate icon` flag another
+  table adds). Damage per hit to a Sathanas, measured in the damage matrix: Helios 1,700 to
+  8,600 (a Lucifer takes about 8,500), Cyclops 500 to 2,100, Piranha 124 to 1,240, Unknown
+  Megabomb 1,400 to 3,800, Vasudan Flux Cannon 133 to 1,000. Beams are not affected by the
+  rule and are unchanged. Hull, speed and weapons are unchanged.
+- **The Colossus keeps the flag**, so its fleets still cannot bring it below 75% hull.
+  The Hades and Lucifer never had it.
+- **Hull 300,000 (was 1,000,000).** Groups sent at a Sathanas in the hunt probe
+  (`supercap_hunt_probe.lua`, no station, no screen) took 400 to 880 hull per second off the
+  retail hull: 8 bombers 394, 16 bombers 758, 8 bombers with 12 fighters 876. A Sathanas
+  that reaches a station's guns kills it in about 450 s and a fleet needs about 150 s to
+  answer, so a committed group of 16 bombers has to finish it in about 600 s; 300,000 hull
+  is 396 s at 758 per second. At 300,000, 16 bombers took the hull to 73% lost in 300 s and,
+  with orders re-issued every 15 s, to 99% in 700 s. Its turrets keep their 20,000 hull each,
+  so they are a larger share of it. The price is unchanged.
+- **What the games showed.** One game on the same seed killed a 1,000,000 hull Sathanas in
+  about 12,900 s and a 300,000 hull one in about 1,900 s. In the same 300,000 hull game a
+  second Sathanas lost only 30% of its hull in 12,500 s (about 7 per second) before it
+  killed the base: how hard the fleet presses a Sathanas varies by 10 times or more between
+  games, and this change does not touch that. Two of the three games fielded only a Lucifer.
+- **Not shown:** that fleets land enough hits. In the logged games BLUE landed 2 to 28 hits
+  on a Sathanas per sample, mostly from 6 to 10 km out.
+
 ### Added
 
 - **Battle map log (diagnostics, off by default).** Set `Diagnostics.BattleMapLog = true`
