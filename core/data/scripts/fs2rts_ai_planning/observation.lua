@@ -58,7 +58,9 @@ function RTS:GetNativeObjectiveStatus(ship,state)
             goalPresent=false
             for i=1,#orders do
                 local order=orders[i]
-                if order:isValid() and sig(order.Target)==state.targetSignature and order:getType()==expected then
+                -- The type is checked first: Order.Target dereferences the order's
+                -- target name, which is null for a hold order, and the engine crashes.
+                if order:isValid() and order:getType()==expected and sig(order.Target)==state.targetSignature then
                     if not state.subsystemIndex or (order.TargetSubsystem:isValid()
                         and order.TargetSubsystem.Name==target[state.subsystemIndex].Name) then goalPresent=true; break end
                 end
