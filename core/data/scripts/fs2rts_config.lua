@@ -766,6 +766,9 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             AvoidFightRatio = 4,
             DangerSeconds = 6,
             FighterReturnAmmo = .05, CommittedStrikeReturnAmmo = .02,
+            -- A bomber leaves for ammunition when its torpedo-class rounds (weapons of at least this
+            -- cargo size, summed over banks) fall below the return threshold, not when one bank empties.
+            BomberOrdnanceCargoSize = 15,
             -- Defending a shelled base outranks servicing. A command station that
             -- lost hull (HullDrop of its maximum) or shield (ShieldDrop of its
             -- maximum) between two service ticks is under attack for WindowSeconds,

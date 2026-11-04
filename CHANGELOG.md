@@ -145,6 +145,18 @@ fighters happened to hover.
 - **What it does not do.** It does not make the AI respond sooner: the fleet does not
   engage a Sathanas until it is in weapon range of the base.
 
+### Bombers rearm when their torpedoes run out
+
+A bomber went back to its station for ammunition when its emptiest weapon bank fell below
+15%, so a Medusa with one empty Cyclops bank left with its other Cyclops bank and its 40
+Hornets still loaded. The check now sums the rounds of weapons with a cargo size of 15 or
+more (torpedoes) over all banks (`BomberOrdnanceCargoSize` in the fleet-service config);
+a bomber with no such bank keeps the old check. Fighters, capitals and the finish-rearming
+rule are unchanged. In the hunt probe this did not change how often 16 bombers killed a
+300,000 hull Sathanas (22 of 30 before, 16 of 20 after) and eight full games on the same
+seeds gave no clear signal either; the measured effect is that bombers now leave
+with about 10% of their torpedoes rather than half.
+
 ### Added
 
 - **Battle map log (diagnostics, off by default).** Set `Diagnostics.BattleMapLog = true`
