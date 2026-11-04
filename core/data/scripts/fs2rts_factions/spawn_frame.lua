@@ -2,6 +2,82 @@
 local _shared = require "fs2rts_factions.common"
 local RTS, copyVec, shipValid, vec = _shared.RTS, _shared.copyVec, _shared.shipValid, _shared.vec
 
+-- Rear placement for registered combat capitals (production roles capital, heavy and
+-- juggernaut). The slot depends only on the station, the incoming hull, the ships already
+-- present and the hostile stations: the same inputs give the same slot, with no batch or
+-- slot scatter. Bearings are measured from the battle-facing direction.
+local function rearBearings(cap)
+    local first = cap.RearBearingDegrees or 120
+    local list, seen = {}, {}
+    local angle = first
+    while angle <= 180 do
+        for _, degrees in ipairs({angle, 360 - angle}) do
+            if not seen[degrees] then seen[degrees] = true; list[#list + 1] = degrees end
+        end
+        angle = angle + 15
+    end
+    return list
+end
+
+local function rotateHorizontal(x, z, degrees)
+    local radians = math.rad(degrees)
+    local c, s = math.cos(radians), math.sin(radians)
+    return x * c - z * s, x * s + z * c
+end
+
+local function insideArena(self, pos)
+    local bounded = self:ClampCommandPoint(pos, 0)
+    return bounded ~= nil and bounded:getDistance(pos) <= .01
+end
+
+-- A hostile station must be at least as far as the incoming ship's own station is from it,
+-- and never closer than `minimum`.
+local function farFromHostiles(pos, origin, hostiles, minimum)
+    for i = 1, #hostiles do
+        local h = hostiles[i]
+        local ox, oz = origin.x - h.x, origin.z - h.z
+        local required = math.max(math.sqrt(ox * ox + oz * oz), minimum)
+        local dx, dz = pos.x - h.x, pos.z - h.z
+        if dx * dx + dz * dz < required * required then return false end
+    end
+    return true
+end
+
+local function rearSlotLegal(self, pos, context)
+    return insideArena(self, pos) and context.clear(pos)
+        and farFromHostiles(pos, context.origin, context.hostiles, context.minimum)
+end
+
+-- Returns the slot, or nil when none is legal. Nothing here moves another ship or relaxes
+-- a clearance.
+local function findRearSlot(self, anchor, toBattle, anchorRadius, shipRadius, clear, hostiles, preferred)
+    local cap = self.Config.CapitalSpawn or {}
+    local origin = anchor.Position
+    local length = math.sqrt(toBattle.x * toBattle.x + toBattle.z * toBattle.z)
+    local fx, fz = 0, -1
+    if length > 1e-6 then fx, fz = toBattle.x / length, toBattle.z / length end
+    local first = anchorRadius + shipRadius + (self.Config.Formation.SpawnForwardClearance or 1100)
+    local step, rings = cap.RearRingStep or 1000, cap.RearRingCount or 3
+    local context = {clear = clear, origin = origin, hostiles = hostiles, minimum = cap.RearMinHostileDistance or 12000}
+    if preferred ~= nil and self:IsFiniteVector(preferred) then
+        local dx, dz = preferred.x - origin.x, preferred.z - origin.z
+        local away = math.sqrt(dx * dx + dz * dz)
+        if away >= first - 1 and away <= first + (rings - 1) * step + 1 and rearSlotLegal(self, preferred, context) then
+            return copyVec(preferred)
+        end
+    end
+    local bearings = rearBearings(cap)
+    for ring = 0, rings - 1 do
+        local radius = first + ring * step
+        for _, degrees in ipairs(bearings) do
+            local dx, dz = rotateHorizontal(fx, fz, degrees)
+            local pos = vec(origin.x + dx * radius, origin.y, origin.z + dz * radius)
+            if rearSlotLegal(self, pos, context) then return pos end
+        end
+    end
+    return nil
+end
+
 function RTS:GetSpawnFrame(anchor, class, slot, total, batch, preferred)
     slot = slot or 1; total = total or 1
     local cap = self.Config.CapitalSpawn or {}
@@ -98,6 +174,11 @@ function RTS:GetSpawnFrame(anchor, class, slot, total, batch, preferred)
     local function usable(pos)
         local bounded=self:ClampCommandPoint(pos,0)
         return bounded~=nil and bounded:getDistance(pos)<=.01 and clear(pos) and not tooClose(pos)
+    end
+    if self:IsCommandStation(anchor) and self:IsRearSpawnClass(class.Name) then
+        local rear = findRearSlot(self, anchor, toBattle, anchorRadius, shipRadius, clear, hostileStations, preferred)
+        if rear == nil then return nil, nil, 'SPAWN_BLOCKED' end
+        return rear, vec(toBattle.x, toBattle.y, toBattle.z):getOrientation()
     end
     local capital = self:IsCapitalSpawnClass(class.Name, shipRadius)
     local centre, reach, fan = nil, 0, 0

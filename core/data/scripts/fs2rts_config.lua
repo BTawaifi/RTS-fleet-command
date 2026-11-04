@@ -456,6 +456,20 @@ return {
         -- Arrival bearing: this fraction of the way toward the battlefield
         -- centre. 0 keeps the hull at the station, 1 aims at the midpoint.
         ForwardBias = 0.35,
+        -- Registered combat capitals (production roles capital, heavy, juggernaut) appear
+        -- behind their own station, at RearBearingDegrees from the battle-facing direction
+        -- (180 is straight back), on a ring of own-station radius + hull radius +
+        -- Formation.SpawnForwardClearance. A taken slot moves to the next bearing (120, 240,
+        -- 135, 225 ... 180) and then to the next of RearRingCount rings, RearRingStep metres
+        -- apart. A slot must be at least as far from every hostile station as the own station
+        -- is, and never under RearMinHostileDistance. With no legal slot the paid job waits,
+        -- retrying every BlockedRetrySeconds, and is refunded after BlockedTimeoutSeconds.
+        RearBearingDegrees = 120,
+        RearRingStep = 1000,
+        RearRingCount = 3,
+        RearMinHostileDistance = 12000,
+        BlockedRetrySeconds = 1,
+        BlockedTimeoutSeconds = 120,
     },
 
     Economy = {

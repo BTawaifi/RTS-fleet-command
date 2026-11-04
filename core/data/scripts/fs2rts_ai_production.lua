@@ -558,7 +558,10 @@ function RTS:UpdateAIProduction(now)
             local cap=self:GetFleetCap(kind)
             if state.queue and now>=state.queue.finishTime then
                 local queued=state.queue
-                if self:CountFactionCombatants(kind)+(queued.count or 1)<=cap then
+                local fitsCap=self:CountFactionCombatants(kind)+(queued.count or 1)<=cap
+                if fitsCap and self:HoldCapitalForSpawnSlot(queued,station,queued.entry.class,queued.count,now,kind,"AI") then
+                    -- A capital with no free rear slot stays queued and paid; see HoldCapitalForSpawnSlot.
+                elseif fitsCap then
                     state.queue=nil
                     local spawned={}
                     local ok,first,returned=pcall(function() return self:SpawnAIProduction(kind,queued,spawned) end)
@@ -601,8 +604,9 @@ function RTS:UpdateAIProduction(now)
                         capacityWaitSeconds=queued.blockedAt and math.max(0,now-queued.blockedAt) or 0,
                         reason=failureReason},now)
                     if kind=="BLUE" and #signatures>0 then self:NotifyNewUnits(spawned) end
-                elseif queued.blockedAt==nil then
-                    queued.blockedAt=now
+                elseif not queued.fleetCapReported then
+                    queued.fleetCapReported=true
+                    if queued.blockedAt==nil then queued.blockedAt=now end
                     self:EmitAIEvent("PRODUCTION",{action="BUILD_BLOCKED",producer="AI",faction=kind,
                         jobId=queued.id,class=queued.entry.class,count=queued.count or 1,cost=queued.estimate.cost,
                         reason="FLEET_CAP",finishTime=queued.finishTime},now)

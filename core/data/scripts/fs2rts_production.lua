@@ -353,8 +353,11 @@ function RTS:UpdateBuildQueue(now)
         local current=self.BuildQueue[i]
         if current.started and now>=current.finishTime then
             if self:CountFactionCombatants("BLUE")+(current.option.count or 1)>self:GetFleetCap("BLUE") then
-                if current.blockedAt==nil then current.blockedAt=now; self:EmitAIEvent("PRODUCTION",{action="BUILD_BLOCKED",producer="PLAYER",faction="BLUE",
+                if current.blockedAt==nil then current.blockedAt=now end
+                if not current.fleetCapReported then current.fleetCapReported=true; self:EmitAIEvent("PRODUCTION",{action="BUILD_BLOCKED",producer="PLAYER",faction="BLUE",
                     jobId=current.id,class=current.option.class,count=current.option.count or 1,cost=current.option.cost,reason="FLEET_CAP",finishTime=current.finishTime},now) end
+            elseif self:HoldCapitalForSpawnSlot(current,self:GetJobProductionAnchor(current) or carrier,current.option.class,current.option.count,now,"BLUE","PLAYER") then
+                -- A capital with no free rear slot stays queued and paid; see HoldCapitalForSpawnSlot.
             else
                 -- Retire first, and keep created hulls outside the protected call.
                 -- A failure cannot retry the job or refund a hull already spawned.
