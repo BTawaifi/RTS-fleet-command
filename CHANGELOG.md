@@ -119,11 +119,14 @@ and Vasudan stations are unchanged.
 - **Field tender, for every faction.** An unarmed mobile workshop (1,800 CP, 30 s, two
   per team) that repairs and rearms ships in the field. Buy it with a ship selected to
   call it to that ship. **Right-click a ship with the tender selected** and the tender
-  goes and services it; **right-click the tender with ships selected** and they go to it,
-  ahead of ships it picked up by itself. An idle tender also services nearby damaged
-  ships on its own. The AI buys one tender once it has 10 ships. Right-click on a tender
-  with a combat ship selected no longer guards it. Based on the 1.5.0 tender, with the
-  right-click order and auto supply added.
+  goes and services it and is then released, not left on hold; **right-click the tender
+  with ships selected** and they go to it, ahead of ships it picked up by itself. An idle
+  tender goes looking for work instead of waiting at the base: it heads for the ship that
+  needs it most (capitals first, damaged systems counting more than hull) and trails the
+  fleet when nobody needs help. Serviced ships park alongside the tender, about 120 m
+  between hulls, instead of the station's 1.1 km stand-off. The AI buys one tender once
+  it has 10 ships. Right-click on a tender with a combat ship selected no longer guards
+  it. Based on the 1.5.0 tender, with the right-click order, seeking and docking added.
 - **One supercap per team.** A team may hold one active or queued supercap
   (Colossus, Hades, Sathanas, Lucifer) at a time, for the player and for the AI.
   Losing it allows a replacement. A rejected purchase says "Team limit reached

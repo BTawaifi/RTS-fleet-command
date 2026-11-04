@@ -478,13 +478,29 @@ return {
     -- Field tenders (fs2rts_logistics.lua): unarmed workshops that serve as
     -- mobile fleet-service anchors beside the command station. Cost is CP;
     -- MaxPerTeam counts live plus queued tenders; Slots is simultaneous visitors.
-    -- An idle tender services friendly ships inside AutoSupply.Radius that have
-    -- fallen below the Hull, Ammo or Systems fraction (Radius 0 disables it).
+    -- A ship serviced by a tender parks alongside it: StandOff meters between the
+    -- two hulls, and ArrivalRadius is how close to its pad counts as arrived (a
+    -- station keeps FleetService.StandOff and ArrivalRadius).
+    -- A tender with no order looks for work on its own. A ship needs supply below
+    -- the AutoSupply Hull, Ammo or Systems fraction. Among those, the tender goes
+    -- to the highest score: need (hull + SystemsWeight x systems + AmmoWeight x
+    -- ammo missing) x size (1 + cost / SizeCost, at most SizeCap) / (1 + distance /
+    -- DistanceScale). It keeps a target for RepickSeconds, stops and takes the
+    -- ship once within JoinRange, and meanwhile takes any needy ship within
+    -- NearbyRange while it has a free slot. Ships with a hostile close by are
+    -- skipped (ThreatChecks best candidates are tested). With nobody to help it
+    -- trails the fleet FleetTrail meters behind the ship nearest the fleet's centre.
     -- The AI buys one tender once it fields AI.MinFleet ships (0 disables).
     FieldSupport = {
         Cost = 1800, BuildSeconds = 30, MaxPerTeam = 2, Slots = 2,
+        StandOff = 120, ArrivalRadius = 220,
         Classes = { TERRAN = "RTS Terran Tender", VASUDAN = "RTS Vasudan Tender", SHIVAN = "RTS Shivan Tender" },
-        AutoSupply = { Radius = 3500, Hull = .75, Ammo = .5, Systems = .75 },
+        AutoSupply = { Hull = .75, Ammo = .5, Systems = .75 },
+        Seek = {
+            JoinRange = 1500, NearbyRange = 3000, RepickSeconds = 10, ReissueSeconds = 5,
+            ThreatChecks = 4, MovePriority = .7, FleetTrail = 1200,
+            SizeCost = 2500, SizeCap = 4, SystemsWeight = 1.5, AmmoWeight = .5, DistanceScale = 6000,
+        },
         AI = { MinFleet = 10, MaxPerTeam = 1 },
     },
 

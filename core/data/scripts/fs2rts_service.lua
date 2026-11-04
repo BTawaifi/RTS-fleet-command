@@ -255,7 +255,7 @@ function RTS:GetServiceApproach(ship,station,threat)
     -- take the other side when its pad is inside the arena.
     local c=config(self)
     local radius=(station.Class.Model and station.Class.Model.Radius or 500)
-        +(ship.Class.Model and ship.Class.Model.Radius or 50)+c.StandOff
+        +(ship.Class.Model and ship.Class.Model.Radius or 50)+(self:GetServiceGeometry(station))
     local function padInside(x,z)
         local pad=vec(station.Position.x-x*radius,station.Position.y,station.Position.z-z*radius)
         local bounded=self:ClampCommandPoint(pad,0)
@@ -269,10 +269,11 @@ function RTS:GetFleetServicePoint(ship,station,threat,approachX,approachZ)
     local c=config(self)
     local shipRadius=ship.Class.Model and ship.Class.Model.Radius or 50
     local stationRadius=station.Class.Model and station.Class.Model.Radius or 500
-    local separation=stationRadius+shipRadius+c.StandOff
+    local standOff,arrivalRadius=self:GetServiceGeometry(station)
+    local separation=stationRadius+shipRadius+standOff
     if approachX==nil then approachX,approachZ=self:GetServiceApproach(ship,station,threat) end
     local kind=self:GetFactionKey(ship); local record=self.FleetServices and self.FleetServices[ship:getSignature()]
-    if record and record.padAnchorPosition and record.padAnchorPosition:getDistance(station.Position)>c.ArrivalRadius*.5 then
+    if record and record.padAnchorPosition and record.padAnchorPosition:getDistance(station.Position)>arrivalRadius*.5 then
         record.padPoint=nil; record.arrived=false; record.holdSince=nil
     end
     if record and record.padPoint and record.padStation==station:getSignature() then return record.padPoint end
@@ -381,7 +382,8 @@ function RTS:ServiceFleetShip(ship,s,station,now,slots,threat)
         end
     end
     local point=self:GetFleetServicePoint(ship,station,threat,s.padApproachX,s.padApproachZ)
-    if not point or ship.Position:getDistance(point)>c.ArrivalRadius then
+    local _,arrivalRadius=self:GetServiceGeometry(station)
+    if not point or ship.Position:getDistance(point)>arrivalRadius then
         s.arrived=false
         if not self.Paused then dampSpin(ship) end
         self:SetFleetServicePhase(ship,s,'RETURNING',now)

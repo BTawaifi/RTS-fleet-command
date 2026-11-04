@@ -638,7 +638,7 @@ function RTS:UpdateFactionStrategicPlan(kind,now,force)
             -- objective instead of being locked into RETREAT for the battle.
             target=station; mission="RETREAT"; context.locked=true; context.reason="WEAPONS_DISABLED"
         elseif not g.defending and (g.role=="support" or g.role=="transport") then
-            target=assaultAnchor and assaultAnchor.units[1] or station; mission="ESCORT"; context.locked=true; context.reason="ESCORT_HIGH_VALUE_UNIT"
+            target=(g.role=="support" and self:GetTenderEscortTarget(g.units[1])) or (assaultAnchor and assaultAnchor.units[1]) or station; mission="ESCORT"; context.locked=true; context.reason="ESCORT_HIGH_VALUE_UNIT"
         -- A weak front-wide ratio means the whole fleet lacks a push, not
         -- that every healthy wing at every position should retreat to its base.
         -- Regroup only this wing when its own local radius is overwhelmed.
