@@ -6,7 +6,7 @@ test_ai_observation test_ai_rebalance test_alt_focus_input test_battle_map test_
 test_faction_profiles test_feature_request test_field_tender test_fleet_life test_hud_layout
 test_hud_perf test_operations test_pilot_capital test_pilot_fire test_pilot_wing
 test_player_feedback test_release_147 test_review_regressions test_scenario_start test_service test_service_priority test_setup_backdrop test_station
-test_telemetry_contracts test_user_orders'''.split())
+test_telemetry_contracts test_user_orders test_capital_rear_spawn test_bomber_ordnance_trigger eval_spawn_fuzz'''.split())
 STATIC_FILES = set('''test_lua_scope_order test_parse_check test_script_structure
 test_table_references test_fighter_blast_weapons test_sathanas_counterplay'''.split())
 TOOLS_FILES = set('''test_ai_invariants test_ai_matchmap test_ai_tactics test_ai_timeline
