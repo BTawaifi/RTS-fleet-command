@@ -752,6 +752,15 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             AvoidFightRatio = 4,
             DangerSeconds = 6,
             FighterReturnAmmo = .05, CommittedStrikeReturnAmmo = .02,
+            -- Defending a shelled base outranks servicing. A command station that
+            -- lost hull (HullDrop of its maximum) or shield (ShieldDrop of its
+            -- maximum) between two service ticks is under attack for WindowSeconds,
+            -- whatever is shooting it. While it is: no automatic service starts at
+            -- the station unless the hull is at CriticalHull or below, and a visitor
+            -- parked at the station with hull and systems at ReleaseHull or better
+            -- (any ammo) goes back to its orders. Player-ordered service and visits
+            -- at a tender are left alone.
+            BaseAttack = { WindowSeconds = 20, HullDrop = .002, ShieldDrop = .02, ReleaseHull = .6, ReleaseSystems = .6 },
         },
         IncomeMultiplier = { 1.0, 1.15, 1.15, 1.30 },
         BuildTimeMultiplier = { 1.0, 1.0, 0.8, 0.8 },

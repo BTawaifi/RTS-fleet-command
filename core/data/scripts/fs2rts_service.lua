@@ -27,6 +27,65 @@ local function dampSpin(ship)
     end)
 end
 
+local function baseAttackRules(self) return config(self).BaseAttack or {} end
+
+-- Remembers when a faction's command station last lost hull or shield between two
+-- service ticks. Absolute amounts are compared, so a larger maximum after an upgrade
+-- does not read as damage and regeneration never does.
+local function watchStation(self,kind,now)
+    local station=self:GetFactionCommandShip(kind)
+    if not alive(station) then self.BaseAttackWatch[kind]=nil; return end
+    local rules=baseAttackRules(self)
+    local watch=self.BaseAttackWatch[kind] or {}
+    self.BaseAttackWatch[kind]=watch
+    local shields=station.Shields
+    local shieldLeft=shields and shields.CombinedLeft or 0
+    local shieldMax=shields and shields.CombinedMax or 0
+    local hullLost=watch.hull~=nil and watch.hull-station.HitpointsLeft>=station.HitpointsMax*(rules.HullDrop or .002)
+    local shieldLost=watch.shield~=nil and shieldMax>0 and watch.shield-shieldLeft>=shieldMax*(rules.ShieldDrop or .02)
+    if hullLost or shieldLost then watch.hitAt=now end
+    watch.hull=station.HitpointsLeft; watch.shield=shieldLeft
+end
+
+function RTS:IsBaseUnderAttack(kind,now)
+    local watch=self.BaseAttackWatch and self.BaseAttackWatch[kind]
+    return watch~=nil and watch.hitAt~=nil and now-watch.hitAt<=(baseAttackRules(self).WindowSeconds or 20)
+end
+
+-- Ends a visit early and hands the ship back to its parked player order or to the
+-- planner. The retry delay keeps it from walking straight back to the pad.
+local function InterruptFleetService(self,ship,s,now,reason,threat)
+    local sid=ship:getSignature(); local kind=self:GetFactionKey(ship)
+    local parked=self.UserOrders and self.UserOrders[sid]
+    self.FleetServices[sid]=nil
+    self:SetShipCommandDiscipline(ship,false); self:SetShipTurretLock(ship,false)
+    self.AIOrderState[sid]=nil; self.PolicyApplied[sid]=nil
+    s.destination=nil; s.destinationAnchor=nil; s.holdSince=nil
+    self:EmitAIEvent('FLEET_SERVICE_INTERRUPTED',{ship=sid,faction=kind,
+        phase=s.phase,reason=reason,
+        threat=alive(threat) and threat:getSignature() or nil,
+        spent=s.spent,hull=hull(ship)},now)
+    self.FleetServiceCooldown[sid]=now+(config(self).RetrySeconds or 30)
+    ship:clearOrders()
+    local resume=parked~=nil and parked.kind~='service' and parked or nil
+    if resume~=nil then self.UserOrders[sid]=resume end
+    if kind=='BLUE' then
+        if resume~=nil then self:ReissueUserOrder(ship,resume) else self:ReturnToDefaultControl(ship) end
+    else self:AssignAIStrategicOrder(ship,kind,true) end
+end
+
+-- While the base is shelled, an automatic visitor at the station that is fit to
+-- fight goes back to its orders. Ammunition does not matter: it ranks last.
+local function ReleaseForBaseDefence(self,ship,rec,now)
+    if rec.manual then return false end
+    local anchor=rec.serviceAnchor and self:FindShipBySignature(rec.serviceAnchor)
+    if not (alive(anchor) and self:IsCommandStation(anchor)) then return false end
+    local rules=baseAttackRules(self)
+    if hull(ship)<(rules.ReleaseHull or .6) or self:GetFleetSubsystems(ship)<(rules.ReleaseSystems or .6) then return false end
+    InterruptFleetService(self,ship,rec,now,'BASE_UNDER_ATTACK',nil)
+    return true
+end
+
 function RTS:IsFleetServiceShip(ship)
     return alive(ship) and ship.Name~=self.Config.ObserverShip
         and not self:IsCommandStation(ship) and not self:IsStaticDefense(ship)
@@ -463,23 +522,7 @@ function RTS:ServiceFleetShip(ship,s,station,now,slots,threat)
         if serviceBlocked then s.underFireSince=s.underFireSince or now else s.underFireSince=nil end
         if not s.manual and serviceBlocked and now-s.underFireSince>=(c.MaxUnderFireSeconds or 240) then
             self:SetFleetServicePhase(ship,s,'UNDER_FIRE',now)
-            local sid=ship:getSignature(); local kind=self:GetFactionKey(ship)
-            local parked=self.UserOrders and self.UserOrders[sid]
-            self.FleetServices[sid]=nil
-            self:SetShipCommandDiscipline(ship,false); self:SetShipTurretLock(ship,false)
-            self.AIOrderState[sid]=nil; self.PolicyApplied[sid]=nil
-            s.destination=nil; s.destinationAnchor=nil; s.holdSince=nil
-            self:EmitAIEvent('FLEET_SERVICE_INTERRUPTED',{ship=sid,faction=kind,
-                phase='UNDER_FIRE',reason='UNDER_FIRE_TIMEOUT',
-                threat=alive(threat) and threat:getSignature() or nil,
-                spent=s.spent,hull=hull(ship)},now)
-            self.FleetServiceCooldown[sid]=now+(c.RetrySeconds or 30)
-            ship:clearOrders()
-            local resume=parked~=nil and parked.kind~='service' and parked or nil
-            if resume~=nil then self.UserOrders[sid]=resume end
-            if kind=='BLUE' then
-                if resume~=nil then self:ReissueUserOrder(ship,resume) else self:ReturnToDefaultControl(ship) end
-            else self:AssignAIStrategicOrder(ship,kind,true) end
+            InterruptFleetService(self,ship,s,now,'UNDER_FIRE_TIMEOUT',threat)
             return 0
         end
         self:SetFleetServicePhase(ship,s,'UNDER_FIRE',now); return 0
@@ -578,6 +621,8 @@ function RTS:UpdateFleetServices(now)
     self.NextFleetServiceThink=now+c.TickSeconds
     self.FleetServices=self.FleetServices or {}; self.FleetServiceCooldown=self.FleetServiceCooldown or {}
     self.SurvivalDangerSince=self.SurvivalDangerSince or {}
+    self.BaseAttackWatch=self.BaseAttackWatch or {}
+    for _,kind in ipairs(self:GetFactionKeys()) do watchStation(self,kind,now) end
     local ships={}; self:EachShip(function(ship) if self:IsFleetServiceShip(ship) then ships[#ships+1]=ship end end)
     -- One spatial context per service tick, shared with local strength queries.
     local owned=self.StrategicThreatSnapshot==nil
@@ -604,6 +649,8 @@ local assaultHold={}
         -- Keep the pad latched, but danger must describe the visitor's current
         -- location; a living attacker elsewhere cannot hold a ready crew here.
         local rec=self.FleetServices[id]
+        local baseAttacked=self:IsBaseUnderAttack(self:GetFactionKey(ship),now)
+        if rec and baseAttacked and self.PossessedSignature~=id and ReleaseForBaseDefence(self,ship,rec,now) then rec=nil end
         local hp=hull(ship)
         -- Outmatched recovery requires hull below ReturnHull. Healthy focus
         -- cannot use a strength result; ammo/subsystem admission still samples
@@ -620,6 +667,7 @@ local assaultHold={}
         if self.PossessedSignature~=id and not rec then
             local ammo=self:GetFleetAmmo(ship)
             local reason
+            local routine=false
             local pressured=alive(threat)
             local friend,enemy=0,0
             if pressured then friend,enemy=self:AILocalStrength(ship,ship.Position,c.DangerRadius,false,threat) end
@@ -686,12 +734,25 @@ local assaultHold={}
                 local committedBase=aiOrder and (aiOrder.mission=='PRIMARY' or aiOrder.mission=='ESCORT')
                     and alive(objective) and self:IsCommandStation(objective)
                 local ammoThreshold=committedBase and c.CommittedStrikeReturnAmmo or role=='fighter' and c.FighterReturnAmmo or c.ReturnAmmo
+                -- Order of priority: a damaged hull, damaged systems, then ammunition.
+                -- Every ship but a bomber keeps its primary guns when its ordnance runs
+                -- out, so rearming is optional for it and never pulls it out of a fight.
+                -- A bomber's ordnance is its weapon, so it still goes.
+                local ammoLow=ammo<ammoThreshold and self:CanStartAmmoService(ship,role)
+                if ammoLow and role~='bomber' and not threat then threat=localThreat(ship); threats[id]=threat end
+                local keepsFighting=ammoLow and role~='bomber' and alive(threat)
                 if hp<(holding and c.AssaultHullFloor or c.ReturnHull) then reason='HULL_LOW'
-                elseif ammo<ammoThreshold and self:CanStartAmmoService(ship,role) then reason='AMMO_LOW'
-                elseif self:GetFleetSubsystems(ship)<c.ReturnHull then reason='SYSTEMS_DAMAGED' end
+                elseif self:GetFleetSubsystems(ship)<c.ReturnHull then reason='SYSTEMS_DAMAGED'
+                elseif ammoLow and not keepsFighting then reason='AMMO_LOW' end
+                routine=reason~=nil
             end
             if reason and not threat then threat=localThreat(ship); threats[id]=threat end
-            if reason and self:BeginFleetService(ship,reason,now,false) then
+            -- Closest anchor that is also safe. A routine visit with no safe anchor waits
+            -- (defending the base outranks it) unless the hull is critical.
+            local anchor,safe
+            if reason then anchor,safe=self:GetSaferServiceAnchor(ship,localThreat,baseAttacked) end
+            if reason and routine and not safe and hp>c.CriticalHull then reason=nil end
+            if reason and self:BeginFleetService(ship,reason,now,false,anchor) then
                 local started=self.FleetServices[id]
                 if started then started.threatSignature=threat and threat:getSignature() or nil end
             end
