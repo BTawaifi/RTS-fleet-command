@@ -203,6 +203,16 @@ return {
         MuteMusic = "N",
     },
 
+    -- Diagnostics only; none of these change play. BattleMapLog writes battle-map.tsv
+    -- (every ship's position, order and hull) to the mod's data folder every
+    -- BattleMapSeconds, for tools/battle_map_report.py. With it on, hits on each command
+    -- station are also counted by attacker and weapon. BattleMapVolleys additionally
+    -- counts every ship's primary-weapon volleys, which costs one script call per volley.
+    Diagnostics = {
+        BattleMapLog = false,
+        BattleMapSeconds = 30,
+        BattleMapVolleys = false,
+    },
     Cinematic = {
         Enabled = true,
         AllowSkip = true,
@@ -321,9 +331,10 @@ return {
             "dneb07", "dneb08", "dneb09", "dneb10", "dneb11", "dneb12",
             "dneb13", "dneb14", "dneb15", "dneb16", "dneb17", "dneb18",
         },
-        -- The mission's own nebula (+Nebula in FS2_RTS_Escalation.fs2) is the default look.
-        -- These 2D sky sprites are an optional pick, so they do not start on top of it.
-        RandomBackdropOnStart = false,
+        -- A RANDOM backdrop choice is applied at battle start, over the mission's own
+        -- nebula (+Nebula in FS2_RTS_Escalation.fs2). False leaves the mission sky alone
+        -- unless a backdrop was picked explicitly.
+        RandomBackdropOnStart = true,
         BackdropPatches = 14, BackdropScaleX = 10, BackdropScaleY = 9.5,
     },
 
@@ -446,6 +457,20 @@ return {
         -- Arrival bearing: this fraction of the way toward the battlefield
         -- centre. 0 keeps the hull at the station, 1 aims at the midpoint.
         ForwardBias = 0.35,
+        -- Registered combat capitals (production roles capital, heavy, juggernaut) appear
+        -- behind their own station, at RearBearingDegrees from the battle-facing direction
+        -- (180 is straight back), on a ring of own-station radius + hull radius +
+        -- Formation.SpawnForwardClearance. A taken slot moves to the next bearing (120, 240,
+        -- 135, 225 ... 180) and then to the next of RearRingCount rings, RearRingStep metres
+        -- apart. A slot must be at least as far from every hostile station as the own station
+        -- is, and never under RearMinHostileDistance. With no legal slot the paid job waits,
+        -- retrying every BlockedRetrySeconds, and is refunded after BlockedTimeoutSeconds.
+        RearBearingDegrees = 120,
+        RearRingStep = 1000,
+        RearRingCount = 3,
+        RearMinHostileDistance = 12000,
+        BlockedRetrySeconds = 1,
+        BlockedTimeoutSeconds = 120,
     },
 
     Economy = {
@@ -454,6 +479,45 @@ return {
         FleetCap = 64,
         StrikeWingSize = 4,
         WingBuildTimeMultiplier = 1.65,
+    },
+
+    -- Per-team purchase rules (fs2rts_production_rules.lua). A team may hold one
+    -- active or queued supercap; the AI buys CorvettesPerDestroyer corvettes per
+    -- destroyer. CorvetteClasses are the only capital hulls counted as corvettes.
+    FleetLimits = {
+        SupercapsPerTeam = 1,
+        CorvettesPerDestroyer = 2,
+        CorvetteClasses = { "GTCv Deimos", "GVCv Sobek", "SCv Moloch" },
+    },
+
+    -- Field tenders answer a priority queue of service requests: player-issued
+    -- requests first, in the order they were issued, then automatic requests ranked by
+    -- need x size / distance (Seek.SystemsWeight, AmmoWeight, SizeCost, SizeCap,
+    -- DistanceScale). A tender keeps its target for Seek.RepickSeconds unless a
+    -- player-issued request arrives. StandOff and ArrivalRadius
+    -- determine when the tender is alongside the requesting hull; Slots is the
+    -- number of simultaneous visitors, with large hulls using two. Automatic
+    -- requests use AutoSupply thresholds and wait while threatened.
+    -- The AI buys a tender once it fields AI.MinFleet ships (0 disables).
+    FieldSupport = {
+        Cost = 1800, BuildSeconds = 30, MaxPerTeam = 2, Slots = 2,
+        StandOff = 120, ArrivalRadius = 220,
+        Classes = { TERRAN = "RTS Terran Tender", VASUDAN = "RTS Vasudan Tender", SHIVAN = "RTS Shivan Tender" },
+        -- A tender docks physically (ORDER_DOCK) with ships whose model has a rearm
+        -- docking bay; if it has not docked within Seek.DockSeconds of coming within
+        -- Seek.DockApproachRange of the ship, or either model has no bay, it serves from
+        -- alongside. False flies alongside only.
+        PhysicalDock = true,
+        AutoSupply = { Hull = .75, Ammo = .5, Systems = .75 },
+        Seek = {
+            JoinRange = 1500, NearbyRange = 3000, RepickSeconds = 10, ReissueSeconds = 5,
+            ThreatChecks = 4, MovePriority = .7, FleetTrail = 1200, DockSeconds = 90, DockApproachRange = 1500,
+            -- Automatic requests wait this long after a finished visit, so a hull that burns
+            -- ammo in the next fight is not tendered again within seconds. Manual SERVICE is not delayed.
+            ServiceDowntimeSeconds = 120,
+            SizeCost = 2500, SizeCap = 4, SystemsWeight = 1.5, AmmoWeight = .5, DistanceScale = 6000,
+        },
+        AI = { MinFleet = 10, MaxPerTeam = 1 },
     },
 
     -- Player production tiers unlock on the shared escalation schedule.
@@ -517,6 +581,10 @@ return {
             -- premium on their first heavy hull. Shared class pricing also
             -- applies to modern rosters, replacement value and bounties.
             ["GTD Orion"] = 0.60, ["GVD Typhon"] = 0.60,
+            -- Unscaled, Demon and Ravana cost 13.9k and 16.4k CP; the other
+            -- factions' cheapest destroyers cost 7.8k-9.2k. At 0.75 they cost
+            -- about 10.4k and 12.3k.
+            ["SD Demon"] = 0.75, ["SD Ravana"] = 0.75,
         },
         -- A tier-5 Sathanas must cost more than a destroyer. Retail pricing
         -- otherwise discounts it to 12,675 CP through the juggernaut formula.
@@ -670,25 +738,28 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
         },
         ArmorHull = { 1.0, 1.2, 1.4, 1.6 },
         ArmorRepairPerSecond = 0.0005,  -- Armor L2+: 5%; below L2 stations repair at half rate
+        PointDefenseWeapon = "RTS Station Interceptor",  -- anti-fighter mount identified on station turrets
+        TurretRepairPerSecond = 0.01,   -- command-station turret repair while its armor repairs
+        -- A turret at 0 hull is destroyed: free repair skips it and the owner pays to rebuild
+        -- it, one at a time per station, separate from the upgrade slot. Cost and time scale
+        -- from Min (smallest turret) to Max (largest turret on that station). The turret
+        -- returns with RestoreFraction of its hull and then repairs normally. AI factions
+        -- rebuild when they hold AIReserveMultiple times the cost.
+        TurretRebuild = { MinCost = 40, MaxCost = 300, MinSeconds = 15, MaxSeconds = 60, RestoreFraction = .5,
+            AIReserveMultiple = 2, AIRetrySeconds = 8 },
         ArmorRepairDelay = 30,          -- follow-up attacks have time to exploit damage
         RecoverableDamageFraction = .60, -- remaining hull damage permanently lowers the station repair ceiling
         FleetService = {
             TickSeconds = 1, Slots = 4, StandOff = 1100, ArrivalRadius = 700,
-            QuietSeconds = 8, MinimumRecoverySeconds = 20, RetrySeconds = 30,
-    -- A docked hull whose pad stays inside a hostile's DangerRadius can never
-    -- satisfy the `not alive(threat)` finish test, so it sat in UNDER_FIRE for
-    -- the whole mission: never repaired, never released, and reported as
-    -- mode=IDLE the entire time because a ship in FleetServices holds no
-    -- AIOrderState. The station-under-attack abort only covers
-    -- REPAIR_REARM/WAIT_CP/QUEUED, so it never caught this case. Measured over
-    -- the sentryfix-20261001 batch: 216-254 service entries per match were
-    -- still open at run end, and 12-28% of all service ship-time was
-    -- UNDER_FIRE against 0.8-1.4% actually spent repairing. A hull that cannot
-    -- repair should return to the fight and try again, not park forever.
-    MaxUnderFireSeconds = 240,
-            HullPerSecond = .004, AmmoPerSecond = .04,
+            MinimumRecoverySeconds = 20, RetrySeconds = 30,
+            -- A visit is limited to VisitSeconds of actual repair while other ships wait
+            -- for the same tender; the ship then rejoins the queue with a lower rank.
+            -- Service continues under fire. Like a support ship, a visit breaks off when
+            -- the visitor is hit while its hull is below AbortHull.
+            VisitSeconds = 45, AbortHull = .30,
+            HullPerSecond = .008, AmmoPerSecond = .04,
             HullCostFraction = .35, AmmoCostFraction = .12,
-            SubsystemPerSecond = .01, SubsystemCostFraction = .15,
+            SubsystemPerSecond = .02, SubsystemCostFraction = .15,
             -- Free field repair of destroyed subsystems: slow, only after this long untouched.
             RegenQuietSeconds = 20, RegenPerSecond = .005,
             ReturnHull = .40, ReturnAmmo = .15, ReadyHull = .90, ReadyAmmo = 1,
@@ -700,6 +771,11 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             AvoidFightRatio = 4,
             DangerSeconds = 6,
             FighterReturnAmmo = .05, CommittedStrikeReturnAmmo = .02,
+            -- A bomber leaves for ammunition when its torpedo-class rounds (weapons of at least this
+            -- cargo size, summed over banks) fall below the return threshold, not when one bank empties.
+            BomberOrdnanceCargoSize = 15,
+            -- Track recent station damage for other tactical decisions.
+            BaseAttack = { WindowSeconds = 20, HullDrop = .002, ShieldDrop = .02, ReleaseHull = .6, ReleaseSystems = .6 },
         },
         IncomeMultiplier = { 1.0, 1.15, 1.15, 1.30 },
         BuildTimeMultiplier = { 1.0, 1.0, 0.8, 0.8 },
@@ -852,13 +928,19 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
         SampledHeavyDecisionSampleEvery = 40,
         -- Full JSONL AI event traces add serialization and periodic disk flushes.
         -- Keep disabled during normal play; enable for experiment collection.
-        TraceFileEnabled = false,
+        TraceFileEnabled = true,
         -- Move first-use ship model loads into setup to avoid combat-time hitches.
         PrewarmRosterModels = true,
         DisableMissionPause = true,
         UseLegacyWaves = false,
         ThinkInterval = 8.0,
-        Operations = { Enabled = true, AssembleSeconds = 45, RallyRadius = 2400, AttackSeconds = 480, RegroupSeconds = 35,
+        -- Fighters protecting a capital strike engage enemies within AnchorThreatRadius of it first,
+        -- then the enemy base turret that is firing on it, and otherwise escort it.
+        -- Fighters escorting a capital strike attack the enemy base turret that is firing on that
+        -- capital (Subsystem.Target). Each wing takes a different turret and keeps it for
+        -- ScreenTurretSeconds. ScreenTurretSuppression=false returns them to plain escort.
+        Operations = { Enabled = true, AssembleSeconds = 45,
+            ScreenTurretSuppression = true, ScreenTurretSeconds = 60, AnchorThreatRadius = 3500, AnchorTurretRange = 6500, RallyRadius = 2400, AttackSeconds = 480, RegroupSeconds = 35,
             -- How long home threat must stay low before an operation is released
             -- early as a counterattack. Without a dwell, a single 2 s tick in
             -- which a player wing left the threat bubble recalled every front in
@@ -1032,9 +1114,17 @@ desc = { "+15% CP income", "Builds 20% faster", "+30% CP income, second build la
             -- Matches the PURSUIT_REFRESH_SECONDS fallback those sites carry.
             PursuitRefreshInterval = 1.5,
             NativeTargetRepairInterval = 6,
+            -- Screening fighters guard their station instead of chasing one named attacker.
+            ScreenGuardsStation = true,
             LocalTargetRetentionSeconds = 8,
             RetargetImprovementRatio = 0.25,
             CriticalStationHullFraction = 0.35,
+            -- Share of maximum hull the command station must lose within the window
+            -- to count as under pressure from any attacker, fighters included.
+            -- Measured rushes on a 51,000 HP station: 6 fighters peaked at 4.1% per
+            -- 60 s, 18 fighters at 10.8%, 48 fighters at 12.7%. 0 disables it.
+            StationPressureLossFraction = 0.05,
+            StationPressureWindowSeconds = 60,
             MinimumCommitmentSeconds = 8,
             ObjectiveSwitchCost = 25,
             LocalStrengthRadius = 4500,

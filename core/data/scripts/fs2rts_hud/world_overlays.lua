@@ -245,7 +245,9 @@ function RTS:DrawWorldOverlays()
     -- this pick cone reaches 304px past the cursor, so being strict here made
     -- the mod re-project most of the visible fleet a second time every frame
     -- purely to draw an inspection tooltip.
-    local hovered=not self:IsPointOnRTSUI(mx,my) and self:GetShipAtScreen(mx,my,true,true,true,1) or nil
+    local overUI=self:IsPointOnRTSUI(mx,my)
+    local hovered=not overUI and self:GetShipAtScreen(mx,my,true,true,true,1) or nil
+    if not overUI then self:DrawHoveredSubsystems(self:GetSubsystemMarkerHull(hovered,mx,my),mx,my) end
     if shipValid(hovered) then
         -- The hover pick already projected this hull, and the reticle pass
         -- above drew its bracket from the same answer, so the readout and the

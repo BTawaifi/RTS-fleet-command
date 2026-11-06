@@ -44,7 +44,7 @@ local function drawHUDContents(self)
         return
     end
     if self.PostBattleActive then self:DrawWorldOverlays(); self:DrawTopBar(sw); self:DrawTacticalMap(sw); self:DrawPostBattleOverlay(sw,sh); return end
-    if self.PossessedSignature~=nil then self:DrawLiveFleetCost(sw,sh); self:DrawPilotHullHUD(); self:DrawPilotObjectiveMarker(sw,sh); self:DrawPilotHUD(sw,sh); self:DrawFleetCitationNotice(sw,sh); return end
+    if self.PossessedSignature~=nil then self:DrawPilotFeedbackFlash(); self:DrawLiveFleetCost(sw,sh); self:DrawPilotHullHUD(); self:DrawPilotObjectiveMarker(sw,sh); self:DrawPilotHUD(sw,sh); self:DrawFleetCitationNotice(sw,sh); return end
     if not self.SetupActive then self:RefreshSelectionListRects(sw,sh) end
     -- The tactical map is drawn with the world layer, BEFORE the panels and the
     -- transient text. It used to be redrawn after DrawAnnouncement when popped

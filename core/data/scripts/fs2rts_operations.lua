@@ -261,6 +261,68 @@ function R:GetAISuppressionSubsystem(op,target,now,attacker)
     end
 end
 
+local function turretUsable(turret)
+    return turret~=nil and turret:isValid() and turret:isTurret() and turret.Targetable~=false
+        and turret.HitpointsMax>0 and turret.HitpointsLeft>0 and not turret.TurretLocked
+end
+
+-- The station turret that is firing on this capital (its target when the engine reports one,
+-- otherwise the nearest free gun within AnchorTurretRange), claimed for this fighter wing for
+-- ScreenTurretSeconds so the wing keeps hitting the same gun. Returns the turret and its
+-- subsystem index, or nil.
+function R:GetCapitalGuardSubsystem(op,g,station,anchor,now)
+    local c=settings(self)
+    local screens=op.screenSuppression
+    if not screens then screens={}; op.screenSuppression=screens end
+    local entry=screens[g.id]
+    if entry and now<entry.untilTime and turretUsable(station[entry.index]) then
+        return station[entry.index],entry.index
+    end
+    local claimed={}
+    for id,other in pairs(screens) do
+        if id~=g.id and now<other.untilTime then claimed[other.index]=true end
+    end
+    for i=1,#station do
+        local turret=station[i]
+        if not claimed[i] and turretUsable(turret) and valid(turret.Target) and turret.Target:getSignature()==anchor:getSignature() then
+            screens[g.id]={index=i,untilTime=now+(c.ScreenTurretSeconds or 60)}
+            return turret,i
+        end
+    end
+    -- Station turrets do not always expose their target, so the nearest free gun inside beam
+    -- reach of the capital stands in for the one firing on it.
+    local reach=c.AnchorTurretRange or 6500
+    local best,bestIndex,bestDistance
+    for i=1,#station do
+        local turret=station[i]
+        if not claimed[i] and turretUsable(turret) and turret.WorldPosition~=nil then
+            local distance=turret.WorldPosition:getDistance(anchor.Position)
+            if distance<=reach and (bestDistance==nil or distance<bestDistance) then best,bestIndex,bestDistance=turret,i,distance end
+        end
+    end
+    if best then
+        screens[g.id]={index=bestIndex,untilTime=now+(c.ScreenTurretSeconds or 60)}
+        return best,bestIndex
+    end
+    screens[g.id]=nil
+    return nil
+end
+
+-- The enemy hull nearest a capital, within AnchorThreatRadius of it and engageable by this
+-- wing, or nil. Fighters defending a capital take these before anything else.
+local function nearestAnchorThreat(self,g,anchor)
+    local radius=settings(self).AnchorThreatRadius or 3500
+    local best,bestDistance
+    for _,row in ipairs(self.StrategicThreatSnapshot or {}) do
+        local ship=row.ship
+        if alive(ship) and canAutoEngage(self,g.units[1],ship) then
+            local distance=ship.Position:getDistance(anchor.Position)
+            if distance<=radius and (bestDistance==nil or distance<bestDistance) then best,bestDistance=ship,distance end
+        end
+    end
+    return best
+end
+
 function R:ApplyAIOperationOrder(g,target,mission,context,home,now,coverage)
     local op=g.operation
     if not op or g.defending or g.luring or g.feint or mission=='RETREAT' or not alive(op.target) then return target,mission end
@@ -293,12 +355,33 @@ function R:ApplyAIOperationOrder(g,target,mission,context,home,now,coverage)
         context.reason='COORDINATED_APPROACH'; return op.anchor.units[1],'ESCORT'
     end
     local chosen=self:ChooseAIOperationTarget(op,g,coverage)
-    if chosen==op.target and self:IsCommandStation(chosen) and g.role=='fighter' then
+    if g.role=='fighter' then
         local anchor=op.anchor and op.anchor.units[1]
-        if alive(anchor) and anchor~=g.units[1] then
+        local anchorHeavy=op.anchor and (op.anchor.role=='capital' or op.anchor.role=='heavy' or op.anchor.role=='juggernaut')
+        if anchorHeavy and alive(anchor) and anchor~=g.units[1] then
+            -- The wing protects the capital: an enemy closing on it is engaged first, then a
+            -- base turret that is firing on it, and otherwise the wing stays on the capital.
+            local threat=nearestAnchorThreat(self,g,anchor)
+            if threat then
+                context.reason='ESCORT_ANCHOR_THREAT'; context.protected=sig(anchor)
+                return threat,'PRIMARY'
+            end
+            if settings(self).ScreenTurretSuppression~=false and self:IsCommandStation(op.target) then
+                local turret,index=self:GetCapitalGuardSubsystem(op,g,op.target,anchor,now)
+                if turret then
+                    context.subsystem=turret; context.subsystemIndex=index; context.reason='CAPITAL_TURRET_SUPPRESSION'
+                    context.protected=sig(anchor)
+                    return op.target,'PRIMARY'
+                end
+            end
             context.reason='COVER_STRIKE'; context.protected=sig(anchor)
             return anchor,'ESCORT'
         end
+    end
+    if chosen==op.target and self:IsCommandStation(chosen) and g.role=='fighter' then
+        -- No capital to protect: the wing strikes the base hull directly (CanDamageCommandStation).
+        context.reason='FIGHTER_BASE_STRIKE'
+        return chosen,'PRIMARY'
     end
     context.reason=op.phase=='EXPLOIT' and 'BREAKTHROUGH_EXPLOIT' or 'OPERATION_ROLE_TARGET'
     if chosen==op.target and self:IsCommandStation(chosen) and strike(g)

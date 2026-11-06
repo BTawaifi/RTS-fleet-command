@@ -16,7 +16,7 @@ function RTS:UpdateFactionStrategicPlan(kind,now,force)
     local servicingCount=0; local playerControlledCount=0
     local ownedCount=0; local plannedCount=0
     self:EachShip(function(ship)
-        if shipAlive(ship) and self:GetFactionKey(ship)==kind and ship:getSignature()~=station:getSignature() and ship.Name~=self.Config.ObserverShip and not self:IsStaticDefense(ship) then
+        if shipAlive(ship) and self:GetFactionKey(ship)==kind and ship:getSignature()~=station:getSignature() and ship.Name~=self.Config.ObserverShip and not self:IsStaticDefense(ship) and not self:IsFieldTender(ship) then
             local sig=ship:getSignature()
             -- Ships in fleet service hold no strategic order by design, so they
             -- are counted apart from genuinely unordered ships. Both are tallied
@@ -89,14 +89,14 @@ function RTS:UpdateFactionStrategicPlan(kind,now,force)
     -- Range capability deserves a response, but is not evidence that the
     -- entire fleet must abandon its offensive objective. Reserve full recall
     -- for active station attacks, close heavy threats, or critical base hull.
-    local emergency=critical and #threats>0
+    local pressured=self:UpdateStationHullPressure(kind,station,now); local emergency=(critical or pressured) and #threats>0
     for _,threat in ipairs(threats) do
         if threat.attacking or (threat.urgent and threat.distance<=(station.Radius or 0)+(doctrine.HardEngageRadius or 1800)) then
             emergency=true; break
         end
     end
     local overwhelmed=emergency and threatValue*(doctrine.DefenseResponseRatio or 1.15)>totalValue*(doctrine.EmergencyDefenseFleetFraction or .7)
-    local posture=critical and #threats>0 and "CRITICAL_DEFENSE" or overwhelmed and "BASE_UNDER_ASSAULT" or urgent and "DEFENSIVE" or "BALANCED"
+    local posture=critical and #threats>0 and "CRITICAL_DEFENSE" or overwhelmed and "BASE_UNDER_ASSAULT" or (urgent or pressured and #threats>0) and "DEFENSIVE" or "BALANCED"
     local cap=((critical or overwhelmed) and emergency and 1 or emergency and (doctrine.EmergencyDefenseFleetFraction or .7) or (doctrine.MaxDefenseFleetFraction or .5))*totalValue
     local reserve=math.min((doctrine.ScreenReserveFraction or .38)*screenEligibleValue,cap)
     -- Do not let routine local contacts consume the entire faction. Reserve
@@ -235,7 +235,7 @@ function RTS:UpdateFactionStrategicPlan(kind,now,force)
         end
     end
     -- A defended skirmish needs orders, not perpetual replacement purchases from the capital bank.
-    local needsReinforcements=critical and emergency
+    local needsReinforcements=(critical or pressured) and emergency
     if emergency and not needsReinforcements then
         for _,threat in ipairs(threats) do
             if threat.urgent then
@@ -556,7 +556,14 @@ function RTS:UpdateFactionStrategicPlan(kind,now,force)
             g.target=bomberAnchor.units[1]; g.mission="ESCORT"; g.escortBomber=true
         end
         if g.target==nil and isScreen(g) and dv<reserve and (g.screen or not g.committed) then g.target=station; dv=dv+g.value end
-        if g.target==nil and not self:CanDamageBase(g.units[1]) then g.target=station; g.mission="SCREEN" end
+        if g.target==nil and not self:CanDamageBase(g.units[1]) then
+            -- Idle fighters beyond the home reserve go after the enemy command station
+            -- (chip damage, CanDamageCommandStation) instead of parking on their own base.
+            if g.role=="fighter" and not emergency and shipValid(primary) and self:IsCommandStation(primary)
+                and canAutoEngage(self,g.units[1],primary) then
+                g.target=primary; g.mission="PRIMARY"
+            else g.target=station; g.mission="SCREEN" end
+        end
         local target=g.target or primary or station
         local mission=g.mission or ((g.target~=nil or not shipValid(primary)) and "SCREEN" or "PRIMARY")
         local releasedDefense=g.defenseRetention and not g.defenseRetention.retained and not emergency
@@ -638,7 +645,7 @@ function RTS:UpdateFactionStrategicPlan(kind,now,force)
             -- objective instead of being locked into RETREAT for the battle.
             target=station; mission="RETREAT"; context.locked=true; context.reason="WEAPONS_DISABLED"
         elseif not g.defending and (g.role=="support" or g.role=="transport") then
-            target=assaultAnchor and assaultAnchor.units[1] or station; mission="ESCORT"; context.locked=true; context.reason="ESCORT_HIGH_VALUE_UNIT"
+            target=(g.role=="support" and self:GetTenderEscortTarget(g.units[1])) or (assaultAnchor and assaultAnchor.units[1]) or station; mission="ESCORT"; context.locked=true; context.reason="ESCORT_HIGH_VALUE_UNIT"
         -- A weak front-wide ratio means the whole fleet lacks a push, not
         -- that every healthy wing at every position should retreat to its base.
         -- Regroup only this wing when its own local radius is overwhelmed.
@@ -661,7 +668,7 @@ function RTS:UpdateFactionStrategicPlan(kind,now,force)
         end
         target,mission=self:ApplyAIOperationOrder(g,target,mission,context,station,now,coverage)
         target,mission=self:ApplyAssaultObjectiveLock(g,target,mission,context)
-        if self:IsCommandStation(target) and canAutoEngage(self,lead,target) and not self:CanDamageBase(lead) then
+        if self:IsCommandStation(target) and canAutoEngage(self,lead,target) and not self:CanDamageCommandStation(lead,target) then
             target=station; mission="SCREEN"; context.locked=true; context.reason="UNIT_CANNOT_DAMAGE_BASE"
         end
         mission=self:CommitAIGroup(g,target,mission,station,context,now,force)

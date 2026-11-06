@@ -1,7 +1,7 @@
 #Primary Weapons
 ; Give the beam families damaging RTS command bases a shared damage type.
-; Their normal damage against ships stays unchanged; RTS Base Hull applies the
-; base-only multiplier.
+; Their normal damage against ships stays unchanged; RTS Command Hull applies the
+; station-only multiplier.
 ;
 ; THIS LIST IS MACHINE-AUDITED. core/tools/test_table_references.py diffs it
 ; against the real retail beam set (extracted from root_fs2.vp; every entry
@@ -14,7 +14,7 @@
 ;
 ; Why an allowlist at all, when the mod does not own the beam tables: FSO armor
 ; entries key their multipliers by damage type, so the cap has to be expressed
-; as "beams vs base hull". Rather than retyping all of retail, the base armor
+; as "beams vs command hull". Rather than retyping all of retail, the command armor
 ; type could carry a catch-all and weapons could opt out; that is not what ships
 ; today, so the audit test above is what keeps this honest.
 $Name: BVas

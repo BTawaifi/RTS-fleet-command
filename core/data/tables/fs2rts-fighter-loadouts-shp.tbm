@@ -1,0 +1,53 @@
+#Ship Classes
+
+; -----------------------------------------------------------------------------
+; Missile bank capacity for fighters that fs2rts_loadouts.lua fits with a
+; lighter missile than the retail one. A bank holds capacity / cargo size
+; rounds, so a bank sized for 24 Harpoons would hold 240 Tempests. These
+; capacities keep each bank's damage near that of the retail missile it was sized
+; for (a few banks hold up to about 1.45x). Banks not listed here are unchanged.
+; core/tools/test_table_references.py audits this list against the retail table.
+;
+;   class         bank 1 -> bank 2 rounds fitted
+;   GTF Perseus   Tempest 44,  Trebuchet 4
+;   GVF Serapis   Tempest 68,  Harpoon 12
+;   GTF Loki      Tempest 24
+;   GTF Pegasus   Tempest 24,  Tempest 8
+;   GTF Ares      Trebuchet 11, Harpoon 31
+;   GTF Erinyes   Trebuchet 5,  Trebuchet 4
+;   GVF Tauret    Hornet 56,   Harpoon 14
+;   GVF Ptah      Trebuchet 3, Harpoon 3
+; -----------------------------------------------------------------------------
+$Name: GTF Perseus
++nocreate
+$SBank Capacity: ( 11, 32 )
+
+$Name: GVF Serapis
++nocreate
+$SBank Capacity: ( 17, 30 )
+
+$Name: GTF Loki
++nocreate
+$SBank Capacity: ( 6 )
+
+$Name: GTF Pegasus
++nocreate
+$SBank Capacity: ( 6, 2 )
+
+$Name: GTF Ares
++nocreate
+$SBank Capacity: ( 90, 78 )
+
+$Name: GTF Erinyes
++nocreate
+$SBank Capacity: ( 40, 32 )
+
+$Name: GVF Tauret
++nocreate
+$SBank Capacity: ( 56, 35 )
+
+$Name: GVF Ptah
++nocreate
+$SBank Capacity: ( 20, 8 )
+
+#End

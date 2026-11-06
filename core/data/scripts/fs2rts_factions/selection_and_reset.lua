@@ -113,7 +113,7 @@ function RTS:ResetState()
     self.AftermathActive=false; self.AftermathStationCount=nil; self.AftermathResultStatus=nil; self.AftermathResultText=nil
     self.AftermathFinalVictory=false
     self.SurvivorTargets={}; self.FactionDefeatedBy={}; self.NextSurvivorCombat=0; self.AftermathReportRect=nil
-    self.NextStationPointDefense=0; self.PilotBatteryCandidates=nil
+    self.NextStationPointDefense=0; self.NextStationSample=0; self.PilotBatteryCandidates=nil
     self.PreviousButtonControlMode=nil; self.BuildPage=1; self.BuildRowsPerPage=5; self.ShipCostMap={}; self.BuildCatalog={}
     self.CinematicActive=false; self.CinematicElapsed=0; self.CinematicShotIndex=1; self.CinematicCaption=nil; self.CinematicSubcaption=nil; self.CinematicFaction=nil; self.CinematicCaptionAlpha=0
     self.AnnouncementText=nil; self.AnnouncementFaction=nil; self.AnnouncementUntil=-1

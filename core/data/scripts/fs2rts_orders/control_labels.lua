@@ -48,8 +48,16 @@ end
 function RTS:ReleaseSelected()
     local released=0
     for _,ship in ipairs(self:GetSelectedFriendlyShips()) do
-        local order=self.UserOrders[ship:getSignature()]
-        if order~=nil and order.kind~="pilot" and self:IsMovableFriendly(ship) then
+        local sig=ship:getSignature()
+        local order=self.UserOrders[sig]
+        local request=self.FleetServiceRequests and self.FleetServiceRequests[sig]
+        local service=self.FleetServices and self.FleetServices[sig]
+        if (request or service or (order~=nil and order.kind~="pilot")) and self:IsMovableFriendly(ship) then
+            if request or service then
+                self.FleetServiceCooldown=self.FleetServiceCooldown or {}
+                self.FleetServiceCooldown[sig]=mn.getMissionTime()+(self.Config.Station.FleetService.RetrySeconds or 30)
+            end
+            if service then self:CancelFleetServiceForShip(ship) end
             self:ClearUserOrder(ship)
             self:ReturnToDefaultControl(ship)
             released=released+1
@@ -86,8 +94,8 @@ function RTS:ExecuteArmedCommand(x,y)
         if destination then self:IssueMove(destination) end
         self.ArmedCommand=nil
     else
-        local hostile=self:GetShipAtScreen(x,y,false,true)
-        if hostile then self:IssueAttack(hostile); self.ArmedCommand=nil
+        local hostile,subsystemIndex=self:GetHostileAtScreen(x,y)
+        if hostile then self:IssueAttack(hostile,subsystemIndex); self.ArmedCommand=nil
         else self:SetStatus("ATTACK: click an enemy ship (right-click cancels)",2) end
     end
     return true

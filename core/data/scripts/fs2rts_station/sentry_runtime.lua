@@ -44,7 +44,7 @@ function RTS:UpdateStationPointDefense(now)
                 if objectValid(turret) and turret:isTurret() and not turret.TurretLocked and turret.HitpointsLeft>0 then
                     for b=1,#turret.PrimaryBanks do
                         local weapon=turret.PrimaryBanks[b].WeaponClass
-                        if objectValid(weapon) and weapon.Name==cfg(self).Sentries.ScreenWeapon then range=self:GetWeaponFiringRange(weapon) end
+                        if objectValid(weapon) and weapon.Name==cfg(self).PointDefenseWeapon then range=self:GetWeaponFiringRange(weapon) end
                     end
                     if range>0 then
                         local target,distance,rank=nil,math.huge,math.huge

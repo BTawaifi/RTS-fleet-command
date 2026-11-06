@@ -81,6 +81,7 @@ function RTS:IsStaticDefense(ship)
 end
 
 function RTS:ComputeClassRole(ship)
+    if self.IsFieldTenderClass and self:IsFieldTenderClass(ship.Class.Name) then return 'support' end
     for _, option in ipairs(self.Config.ProductionClasses or {}) do
         if option.class == ship.Class.Name then return option.role or "combat" end
     end

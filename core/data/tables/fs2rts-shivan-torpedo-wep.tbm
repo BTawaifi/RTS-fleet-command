@@ -1,0 +1,46 @@
+#Secondary Weapons
+; A player-usable siege variant of the retail Unknown Megabomb. Retains its
+; damage, cargo, speed and lock time; all art and sounds are retail assets.
+; Its damage types put it under the same Command Hull siege-torpedo reduction as
+; every other retail bomb (see fs2rts-torpedoes-wep.tbm).
+$Name: RTS Shivan Torpedo
+$Model File: Harbinger.pof
+$Mass: 35.0
+$Velocity: 50.0
+$Fire Wait: 30.0
+$Damage: 3200
+$Damage Type: RTS Siege Torpedo
+$Shockwave damage type: RTS Siege Torpedo
+$Blast Force: 2000.0
+$Inner Radius: 100.0
+$Outer Radius: 450.0
+$Shockwave Speed: 75.0
+$Armor Factor: 1.0
+$Shield Factor: 0.2
+$Subsystem Factor: 1.0
+$Lifetime: 30.0
+$Energy Consumed: 0.0
+$Cargo Size: 40.0
+$Homing: YES
+    +Type: ASPECT
+    +Turn Time: 1.5
+    +Min Lock Time: 12.0
+    +Lock Pixels/Sec: 25
+    +Catch-up Pixels/Sec: 50
+    +Catch-up Penalty: 15
+$LaunchSnd: 97
+$ImpactSnd: 101
+$FlyBySnd: -1
+$Rearm Rate: 0.02
+$Flags: ( "Bomb" "Huge" "No Dumbfire" "player allowed" )
+$Trail:
+    +Start Width: 0.5
+    +End Width: 2.0
+    +Start Alpha: 1.0
+    +End Alpha: 0.0
+    +Max Life: 2.0
+    +Bitmap: MissileTrail02
+$Icon: iconmissile10
+$Anim: LoadMissile10
+$Impact Explosion: none
+#End

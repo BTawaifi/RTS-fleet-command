@@ -44,6 +44,13 @@ function RTS:SetUserOrder(ship, order)
         if not self:CanDamageCommandStation(ship,target) then return false end
     end
     local sig = ship:getSignature()
+    if order.kind~='service' then
+        if (self.FleetServiceRequests and self.FleetServiceRequests[sig]) or (self.FleetServices and self.FleetServices[sig]) then
+            self.FleetServiceCooldown=self.FleetServiceCooldown or {}
+            self.FleetServiceCooldown[sig]=mn.getMissionTime()+(self.Config.Station.FleetService.RetrySeconds or 30)
+        end
+        if self.CancelFleetServiceRequestForShip then self:CancelFleetServiceRequestForShip(ship) end
+    end
     self.UserOrders[sig] = order
     if self.FleetProtection then self.FleetProtection[sig]=nil end
     self:SetShipCommandDiscipline(ship,order.kind=='move' or order.kind=='hold')
@@ -85,6 +92,7 @@ end
 function RTS:ClearUserOrder(ship)
     if not shipValid(ship) then return end
     local sig = ship:getSignature()
+    if self.CancelFleetServiceRequestForShip then self:CancelFleetServiceRequestForShip(ship) end
     self.UserOrders[sig] = nil
     self:SetShipCommandDiscipline(ship,false)
     self:DropPursuit(sig)
@@ -136,6 +144,7 @@ function RTS:GetShipCommandLabel(ship)
         elseif order.kind=="attack_wing" then return "PLAYER ORDER: ATTACK WING"
         elseif order.kind=="guard" then return "PLAYER ORDER: GUARD"
         elseif order.kind=="move" then return "PLAYER ORDER: MOVE"
+        elseif order.kind=="supply" then return "PLAYER ORDER: SUPPLY"
         elseif order.kind=="hold" then return "PLAYER ORDER: HOLD"
         elseif order.kind=="engage" then return "PLAYER ORDER: ENGAGE"
         elseif order.kind=="pilot" then return "PLAYER ORDER: PILOT CONTROL"

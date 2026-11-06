@@ -1,24 +1,18 @@
 {
   "custom_dependencies": [
     {
-      "id": "MVPS",
-      "version": "~4.7.0",
+      "id": "FS2",
+      "version": null,
       "packages": null
     },
     {
       "id": "FSO",
-      "version": "26.0.1",
-      "packages": null
-    },
-    {
-      "id": "FS2",
       "version": null,
       "packages": null
     }
   ],
   "custom_mod_flags": [
     "RTS-fleet-command",
-    "MVPS",
     "FS2"
   ],
   "custom_build_id": null,

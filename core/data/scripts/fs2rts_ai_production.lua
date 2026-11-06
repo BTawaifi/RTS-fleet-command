@@ -78,6 +78,7 @@ function RTS:RequestAutoBuild(className)
     local tier=entry.tier or 1
     if tier>self:GetCurrentEscalationTier(now) then return false,"TIER_LOCKED" end
     if not shipAlive(self:GetFactionCommandShip("BLUE")) then return false,"BASE_DESTROYED" end
+    if not self:CanProduceClass("BLUE",entry.class,1,true) then return false,"SUPERCAP_LIMIT" end
     if state.AutoBuildRequest then return false,"REQUEST_ACTIVE" end
     local estimate=self:GetPurchaseEstimate(entry.class,tier,1)
     if not estimate then return false,"UNAVAILABLE" end
@@ -118,17 +119,20 @@ function RTS:CancelAutoBuildRequest(reason)
 end
 
 function RTS:CountAIRoleUnits(kind)
-    local counts={fighter=0,bomber=0,escort=0,capital=0,juggernaut=0,total=0}; local values={fighter=0,bomber=0,escort=0,capital=0,total=0}
+    local counts={fighter=0,bomber=0,escort=0,capital=0,corvette=0,destroyer=0,juggernaut=0,total=0}; local values={fighter=0,bomber=0,escort=0,capital=0,total=0}
     local station=self:GetFactionCommandShip(kind)
     local stationSig=shipValid(station) and station:getSignature() or nil
     self:EachShip(function(ship)
         if shipAlive(ship) and self:GetFactionKey(ship)==kind then
             if ship:getSignature()~=stationSig and not self:IsStaticDefense(ship) then
                 local entry=self:GetAIRosterEntry(kind,ship.Class.Name); local role=entry and entry.role or self:GetShipRole(ship)
+                if role=='support' then counts.support=(counts.support or 0)+1; return end
                 local cat=(role=="heavy" or role=="juggernaut" or role=="capital") and "capital" or role
                 if counts[cat]==nil then cat="fighter" end
                 counts[cat]=counts[cat]+1; counts.total=counts.total+1
-                if role=="juggernaut" then counts.juggernaut=counts.juggernaut+1 end
+                local subrole=self:GetCapitalCategory(ship.Class.Name)
+                if role=="juggernaut" or subrole=="juggernaut" then counts.juggernaut=counts.juggernaut+1
+                elseif subrole then counts[subrole]=counts[subrole]+1 end
                 local est=self:GetPurchaseEstimate(ship.Class.Name,entry and entry.tier or 1,1); local v=est and est.cost or 1
                 values[cat]=values[cat]+v; values.total=values.total+v
             end
@@ -161,12 +165,19 @@ function RTS:ChooseAIBuild(kind,state,now)
     local tier=self:GetCurrentEscalationTier(now); local roster=self:GetAIRoster(kind); local counts,values=self:CountAIRoleUnits(kind)
     local cap=self:GetFleetCap(kind)
     local slots=cap-self:CountCommittedCombatants(kind)
+    local tender=self:ChooseAITender(kind,state,counts,slots)
+    if tender then
+        return tender,{faction=kind,tier=tier,commandPoints=state.cp,reason="FIELD_TENDER_PURCHASE",
+            selectedClass=tender.entry.class,selectedCost=tender.estimate.cost,selectedCount=1,options={}}
+    end
     local demand=self.AIProductionNeeds and self.AIProductionNeeds[kind] or {}
-    local availableRoles={}
+    local availableRoles={}; local availableCapitals={}
     for _,entry in ipairs(roster) do
         local class=tb.ShipClasses[entry.class]
-        if (entry.tier or 1)<=tier and class and class:isValid() then
+        if (entry.tier or 1)<=tier and class and class:isValid() and self:CanProduceClass(kind,entry.class,1,true,counts) then
             local role=entry.role or "fighter"; availableRoles[(role=="heavy" or role=="juggernaut") and "capital" or role]=true
+            local subrole=self:GetCapitalCategory(entry.class)
+            if subrole then availableCapitals[subrole]=true end
         end
     end
     local targets=self:GetAICompositionTargets(kind,tier,availableRoles)
@@ -178,8 +189,14 @@ function RTS:ChooseAIBuild(kind,state,now)
     local desired=nil
     for _,cat in ipairs({"fighter","bomber","escort","capital"}) do if availableRoles[cat] and (not desired or deficits[cat]>deficits[desired]) then desired=cat end end
     desired=desired or "fighter"
+    local emergencyState=self.AIProductionEmergency and self.AIProductionEmergency[kind]
+    local emergencyBuild=emergencyState and emergencyState.emergency==true
+        and now-(emergencyState.time or now)<=math.max(24,(self.Config.AI.StrategicOrderInterval or 12)*2)
+    -- The goal gates every capital purchase, including one drawn for a fighter
+    -- deficit, so a corvette is bought only when the goal calls for one.
+    local capitalGoal=not emergencyBuild and self:GetAICapitalGoal(availableCapitals,counts) or nil
     local decision={faction=kind,tier=tier,commandPoints=state.cp,slots=slots,unitCounts=counts,
-        unitValues=values,compositionTargets=targets,tacticalDemand=demand,deficits=deficits,desiredRole=desired,options={}}
+        unitValues=values,compositionTargets=targets,tacticalDemand=demand,deficits=deficits,desiredRole=desired,capitalGoal=capitalGoal,options={}}
     local candidates={}; local cheapestDesired=math.huge; local cheapestCurrentDesired=math.huge; local hasCurrentDesired=false
     local newestUnlockedBomberTier=0; local cheapestNewestBomber=math.huge
     local unlockedCount=0; local fleetFitCount=0; local affordableCount=0
@@ -198,12 +215,15 @@ function RTS:ChooseAIBuild(kind,state,now)
         local class=tb.ShipClasses[entry.class]
         local available=class~=nil and class:isValid()
         local est=available and self:GetPurchaseEstimate(entry.class,et,count) or nil
+        local fitsRoleCap=self:CanProduceClass(kind,entry.class,count,true,counts)
+        local subrole=self:GetCapitalCategory(entry.class)
+        local fitsCapitalGoal=cat~='capital' or capitalGoal==nil or subrole==capitalGoal
         local option={class=entry.class,role=cat,tier=et,count=count,weight=entry.weight or 1,
-            unlocked=et<=tier,available=available,fitsFleetCap=count<=slots,
+            unlocked=et<=tier,available=available,fitsFleetCap=count<=slots,fitsRoleCap=fitsRoleCap,capitalCategory=subrole,fitsCapitalGoal=fitsCapitalGoal,
             cost=est and est.cost or nil,buildSeconds=est and est.time or nil,
             affordable=est~=nil and est.cost<=state.cp or false}
         decision.options[#decision.options+1]=option
-        if option.unlocked and available and est then
+        if option.unlocked and available and est and fitsRoleCap and fitsCapitalGoal then
             unlockedCount=unlockedCount+1
             if count<=slots then
                 fleetFitCount=fleetFitCount+1
@@ -213,7 +233,9 @@ function RTS:ChooseAIBuild(kind,state,now)
                 end
                 if cat==desired then
                     cheapestDesired=math.min(cheapestDesired,est.cost)
-                    if et==tier then hasCurrentDesired=true; cheapestCurrentDesired=math.min(cheapestCurrentDesired,est.cost) end
+                    -- Hulls that match the capital goal count as the current target
+                    -- whatever their tier.
+                    if et==tier or (cat=='capital' and capitalGoal~=nil) then hasCurrentDesired=true; cheapestCurrentDesired=math.min(cheapestCurrentDesired,est.cost) end
                 end
                 if est.cost<=state.cp then
                     affordableCount=affordableCount+1
@@ -242,6 +264,11 @@ function RTS:ChooseAIBuild(kind,state,now)
         savingSeconds=self.Config.AI.CapitalSavingSeconds or savingSeconds
         if tier>=4 then savingSeconds=self.Config.AI.HeavyCapitalSavingSeconds or savingSeconds end
         if tier>=5 then savingSeconds=self.Config.AI.JuggernautSavingSeconds or savingSeconds end
+        -- The saving window is the one for the hull being saved for (corvette,
+        -- destroyer or supercap), not the window of the newest tier.
+        local goalSeconds={corvette=self.Config.AI.CapitalSavingSeconds,
+            destroyer=self.Config.AI.HeavyCapitalSavingSeconds,juggernaut=self.Config.AI.JuggernautSavingSeconds}
+        if capitalGoal and goalSeconds[capitalGoal] then savingSeconds=goalSeconds[capitalGoal] end
     end
     -- An unreachable target makes SAVING_FOR_DESIRED_ROLE a permanent no-op.
     -- hasCurrentDesired aims the bank at the NEWEST tier's cheapest capital
@@ -269,9 +296,6 @@ function RTS:ChooseAIBuild(kind,state,now)
         decision.bankTargetUnreachable=true
         decision.bankTargetBoundedTo=cheapestDesired
     end
-    local emergencyState=self.AIProductionEmergency and self.AIProductionEmergency[kind]
-    local emergencyBuild=emergencyState and emergencyState.emergency==true
-        and now-(emergencyState.time or now)<=math.max(24,(self.Config.AI.StrategicOrderInterval or 12)*2)
     if retainBomberProgression and not emergencyBuild then
         -- Bank for the latest bomber instead of repeatedly draining its fund into obsolete ordnance.
         local progressing={}
@@ -395,7 +419,10 @@ function RTS:ChooseAIBuild(kind,state,now)
     if not emergencyBuild and hasCurrentDesired and state.cp>=cheapestCurrentDesired then
         local newest={}
         local preferredTier=retainBomberProgression and newestUnlockedBomberTier or tier
-        for _,c in ipairs(candidates) do if c.category==desired and (c.entry.tier or 1)==preferredTier then newest[#newest+1]=c end end
+        local goalHulls=desired=='capital' and capitalGoal~=nil
+        for _,c in ipairs(candidates) do
+            if c.category==desired and (goalHulls or (c.entry.tier or 1)==preferredTier) then newest[#newest+1]=c end
+        end
         if #newest>0 then candidates=newest end
     end
     -- A later global tier need not add a bomber; retain siege progression
@@ -531,7 +558,10 @@ function RTS:UpdateAIProduction(now)
             local cap=self:GetFleetCap(kind)
             if state.queue and now>=state.queue.finishTime then
                 local queued=state.queue
-                if self:CountFactionCombatants(kind)+(queued.count or 1)<=cap then
+                local fitsCap=self:CountFactionCombatants(kind)+(queued.count or 1)<=cap
+                if fitsCap and self:HoldCapitalForSpawnSlot(queued,station,queued.entry.class,queued.count,now,kind,"AI") then
+                    -- A capital with no free rear slot stays queued and paid; see HoldCapitalForSpawnSlot.
+                elseif fitsCap then
                     state.queue=nil
                     local spawned={}
                     local ok,first,returned=pcall(function() return self:SpawnAIProduction(kind,queued,spawned) end)
@@ -574,8 +604,9 @@ function RTS:UpdateAIProduction(now)
                         capacityWaitSeconds=queued.blockedAt and math.max(0,now-queued.blockedAt) or 0,
                         reason=failureReason},now)
                     if kind=="BLUE" and #signatures>0 then self:NotifyNewUnits(spawned) end
-                elseif queued.blockedAt==nil then
-                    queued.blockedAt=now
+                elseif not queued.fleetCapReported then
+                    queued.fleetCapReported=true
+                    if queued.blockedAt==nil then queued.blockedAt=now end
                     self:EmitAIEvent("PRODUCTION",{action="BUILD_BLOCKED",producer="AI",faction=kind,
                         jobId=queued.id,class=queued.entry.class,count=queued.count or 1,cost=queued.estimate.cost,
                         reason="FLEET_CAP",finishTime=queued.finishTime},now)
@@ -609,6 +640,7 @@ function RTS:UpdateAIProduction(now)
                         state.savingSince=state.savingSince or request.requestedAt or now
                         state.productionReserve=estimate and estimate.cost or request.cost
                         local fitsCap=self:CountCommittedCombatants("BLUE")+request.count<=self:GetFleetCap("BLUE")
+                            and self:CanProduceClass("BLUE",request.class,request.count,true)
                         if not fitsCap then
                             request.status="WAITING_FOR_CAP"
                             decision={faction=kind,tier=tier,commandPoints=state.cp,

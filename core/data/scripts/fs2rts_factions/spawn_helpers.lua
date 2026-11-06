@@ -11,6 +11,10 @@ end
 -- is the worst possible moment to page a POF, and a pricing failure there must
 -- not abort the rest of the $On Ship Death handler.
 function RTS:GetPurchaseEstimate(className, tier, count, allowModelLoad)
+    if self.IsFieldTenderClass and self:IsFieldTenderClass(className) then
+        local c = self.Config.FieldSupport
+        return { cost = c.Cost * (count or 1), time = c.BuildSeconds, count = count or 1, radius = 50 }
+    end
     if allowModelLoad == nil then allowModelLoad = true end
     local base = self.ShipCostMap[className]
     if base == nil then
@@ -47,6 +51,59 @@ function RTS:IsCapitalSpawnClass(className, radius)
         if e ~= nil then return e.role == "capital" or e.role == "heavy" or e.role == "juggernaut" end
     end
     return false
+end
+
+-- True for the registered combat capitals that use the deterministic rear placement in
+-- GetSpawnFrame. Support hulls and radius-only matches of IsCapitalSpawnClass keep the
+-- older placement.
+function RTS:IsRearSpawnClass(className)
+    local role = self:GetProductionRole(className)
+    return role == "capital" or role == "heavy" or role == "juggernaut"
+end
+
+-- Keeps a paid single-hull capital job queued while its rear slot is occupied. Returns true
+-- while the job should wait. After CapitalSpawn.BlockedTimeoutSeconds it returns false and
+-- the caller's normal spawn path runs: if the slot is still taken that path fails the build
+-- and refunds it, exactly as any other failed spawn.
+function RTS:HoldCapitalForSpawnSlot(job, anchor, className, count, now, kind, producer)
+    if (count or 1) ~= 1 or not shipValid(anchor) or not self:IsCommandStation(anchor)
+        or not self:IsRearSpawnClass(className) then return false end
+    local cap = self.Config.CapitalSpawn or {}
+    if job.spawnDeadline ~= nil and now >= job.spawnDeadline then
+        if not job.spawnTimedOut then
+            job.spawnTimedOut = true
+            self:Log(string.format("SPAWN TIMEOUT: %s waited %.0f s for a rear slot at %s", className, now - job.spawnBlockedAt, tostring(anchor.Name)))
+        end
+        return false
+    end
+    if job.spawnNextAttempt ~= nil and now < job.spawnNextAttempt then return true end
+    local class = tb.ShipClasses[className]
+    if class == nil or not class:isValid() then return false end
+    local ok, pos, _, reason = pcall(self.GetSpawnFrame, self, anchor, class, 1, 1, job.spawnBatch)
+    if not ok then
+        if not job.spawnCheckFailed then
+            job.spawnCheckFailed = true
+            self:Log(string.format("SPAWN SLOT CHECK FAILED: %s at %s: %s", className, tostring(anchor.Name), tostring(pos)))
+        end
+        return false
+    end
+    if pos ~= nil or reason ~= 'SPAWN_BLOCKED' then
+        if job.spawnBlockedAt ~= nil and not job.spawnLoggedClear then
+            job.spawnLoggedClear = true
+            self:Log(string.format("SPAWN SLOT FREE: %s after %.0f s", className, now - job.spawnBlockedAt))
+        end
+        return false
+    end
+    if job.spawnBlockedAt == nil then
+        job.spawnBlockedAt = now
+        job.spawnDeadline = now + (cap.BlockedTimeoutSeconds or 120)
+        if job.blockedAt == nil then job.blockedAt = now end
+        self:Log(string.format("SPAWN SLOT REJECTED: %s at %s has no rear slot; holding the job until %.0f", className, tostring(anchor.Name), job.spawnDeadline))
+        self:EmitAIEvent("PRODUCTION", {action = "BUILD_BLOCKED", producer = producer, faction = kind, jobId = job.id, class = className,
+            reason = "SPAWN_CONGESTED", deadline = job.spawnDeadline}, now)
+    end
+    job.spawnNextAttempt = now + (cap.BlockedRetrySeconds or 1)
+    return true
 end
 
 -- Pull a spawn candidate back to MinEnemyBaseSeparation from the nearest hostile

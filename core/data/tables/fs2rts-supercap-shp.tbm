@@ -1,0 +1,28 @@
+#Ship Classes
+; Sathanas counterplay. Only the SJ Sathanas is named here, and only its flags change.
+; core/tools/test_sathanas_counterplay.py audits this file.
+;
+; The engine gives a ship with the "supercap" flag a fixed share of the damage that guns,
+; missiles and torpedoes would do (a quarter), and none at all once its hull is at or below
+; 75%, unless the weapon itself carries the "supercap" flag. Only two retail weapons do, and
+; no fleet carries them, so a Sathanas could not be brought below 75% hull by any fleet in
+; play. Beams are not affected by that rule.
+;
+; Retail lists ("supercap" "big damage"). A $Flags line without +noreplace replaces the whole
+; set, so this one lists everything the Sathanas keeps: "capital" in place of "supercap" (the
+; Lucifer's class), "big damage" as retail has it, and the "generate icon" that
+; fs2rts-pilot-icons-shp.tbm adds, so the result does not depend on which table loads first.
+; The Colossus and Hades are not named and keep their flags.
+;
+; Hull is 300,000 (retail 1,000,000). Fleet groups sent at a Sathanas in
+; core/tools/supercap_hunt_probe.lua took 394 (8 bombers) to 876 (8 bombers and 12 fighters)
+; hull per second off the retail hull. Once the Sathanas reaches a station's guns the station
+; has about 450 s, and a fleet needs about 150 s to answer, so a committed group of 16 bombers
+; (758/s) has to finish it inside about 600 s: 300,000 / 758 = 396 s. The engine reads
+; $Hitpoints before $Flags in a ship entry, so it has to stay in this order.
+$Name: SJ Sathanas
++nocreate
+$Hitpoints: 300000
+$Flags: ("capital" "big damage" "generate icon")
+
+#End

@@ -1,0 +1,44 @@
+#Ship Classes
+; Inherit complete retail definitions, then replace native support AI with a
+; commandable, unarmed freighter. The mod's paid fleet service does the work.
+$Name: RTS Terran Tender
++Use Ship as Template: GTS Hygeia
+$Short name: Tender
++Tech Description:
+XSTR("A mobile field workshop. Build one with a friendly ship selected to call it to that ship, then move it with your fleet. SERVICE routes damaged ships to the nearest station or tender. Repairs and ammunition consume command points. Two service slots; counts against the fleet cap.", -1)
+$end_multi_text
+$Shields: 1000
+$Hitpoints: 1200
+$Flags: ( "freighter" "in tech database" "generate icon" )
+
+$Name: RTS Vasudan Tender
++Use Ship as Template: GVS Nephthys
+$Short name: Tender
++Tech Description:
+XSTR("A Vasudan mobile workshop. Select a friendly ship before buying to call it to that ship. SERVICE uses the nearest station or tender. Repairs and ammunition consume command points. Two service slots; counts against the fleet cap.", -1)
+$end_multi_text
+$Shields: 1000
+$Hitpoints: 1200
+$Flags: ( "freighter" "in tech database" "generate icon" )
+
+$Name: RTS Shivan Tender
++Use Ship as Template: ST Azrael
+$Short name: Tender
++Tech Description:
+XSTR("A Shivan transport serving as a mobile workshop. Select a friendly ship before buying to call it to that ship. SERVICE uses the nearest station or tender. Repairs and ammunition consume command points. Two service slots; counts against the fleet cap.", -1)
+$end_multi_text
+$Default PBanks: ()
+$Default SBanks: ()
+$SBank Capacity: ()
+$Shields: 1000
+$Hitpoints: 1200
+$Flags: ( "freighter" "in tech database" "generate icon" )
+; The transport's three turrets keep their inherited bank unless it is named; "" means no weapon.
+$Subsystem: turret01a,5,1.0
+	$Default PBanks: ( "" )
+$Subsystem: turret02a,5,1.0
+	$Default PBanks: ( "" )
+$Subsystem: turret03a,5,1.0
+	$Default PBanks: ( "" )
+
+#End

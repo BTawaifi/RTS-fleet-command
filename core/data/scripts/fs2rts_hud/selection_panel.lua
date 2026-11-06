@@ -6,7 +6,7 @@ local RTS, CONTROLLER_COLORS, ACTION_BUTTON_ROWS, ACTION_BUTTON_LABELS, ARMED_CO
 -- row, once per selection row and once per decorated contact, so an eight-entry
 -- table literal per call was a few hundred small tables a frame for a lookup of
 -- two numbers.
-local ROLE_BADGE_COLORS={fighter={70,175,225},bomber={225,125,55},escort={85,195,155},capital={185,160,225},heavy={230,190,90},juggernaut={240,105,105},sentry={170,190,200},station={110,170,200}}
+local ROLE_BADGE_COLORS={fighter={70,175,225},bomber={225,125,55},escort={85,195,155},capital={185,160,225},heavy={230,190,90},juggernaut={240,105,105},support={120,220,180},sentry={170,190,200},station={110,170,200}}
 
 local ROLE_BADGE_FALLBACK_COLOR={145,165,175}
 

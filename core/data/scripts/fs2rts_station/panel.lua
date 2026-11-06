@@ -99,6 +99,17 @@ function RTS:DrawStationPanel(x1, y1, x2, y2)
         y = y + 26
     end
 
+    local rebuild=state.turretRebuild
+    local rebuildOffer,rebuildReason=self:GetTurretRebuildOffer(kind,now)
+    if rebuild or rebuildOffer then
+        local label,enabled
+        if rebuild then label="REBUILDING TURRET  "..math.max(0,math.ceil(rebuild.finishTime-now)).."s"; enabled=false
+        else label="REBUILD TURRET ("..rebuildOffer.count.." down)  "..rebuildOffer.cost.." CP  "..math.ceil(rebuildOffer.seconds).."s"; enabled=rebuildReason==nil end
+        local r={x1=x1,y1=y,x2=x2,y2=y+24}; rects.rebuild=r
+        self:DrawButton(r,label,enabled,false)
+        y=y+26
+    end
+
     local sentries = self:GetSentrySlotCount(kind); local placed=#self:GetFactionSentries(kind)
     local building=sentries-placed
     gr.setColor(200, 225, 235, 255)
@@ -145,9 +156,9 @@ function RTS:DrawStationTooltip(panel)
             if key == "station" then
                 title = self:GetFactionDisplayName("BLUE").." STATION"; lines = { "Hover an upgrade to inspect its three levels.",
                     "One upgrade at a time; ship production continues.",
-                    "SERVICE sends selected ships to the station's far side.",
+                    "SERVICE calls a tender to the selected ships.",
                     "A green + on the map marks ships recovering.",
-                    tostring(cfg(self).FleetService.Slots).." service slots; capitals use two. Damage pauses work.",
+                    tostring(self.Config.FieldSupport.Slots).." slots per tender; capitals use two. Damage pauses work.",
                     "Repair: 0.4% hull/s to 90%; rearm: 4% payload/s.",
                     "Full hull repair costs 35% of ship CP; full ammo 12%.",
                     "Subsystems: 1%/s to 90%; full repair costs 15%.",
@@ -207,6 +218,12 @@ function RTS:DrawStationTooltip(panel)
                     lines[#lines+1]="Applies to: "..table.concat(roles,", ")
                     lines[#lines+1]="No eligible ships: no charge or cooldown. Cannot stack."
                 end
+            elseif key == "rebuild" then
+                local c = cfg(self).TurretRebuild or {}
+                title = "REBUILD TURRET"; lines = { "A turret at 0 hull stays down until rebuilt; it no longer repairs for free.",
+                    "Heaviest downed turret first, one at a time. Upgrades are not blocked.",
+                    "Cost "..(c.MinCost or 0).."-"..(c.MaxCost or 0).." CP and "..(c.MinSeconds or 0).."-"..(c.MaxSeconds or 0).."s by turret size.",
+                    "It returns with "..math.floor((c.RestoreFraction or .5)*100).."% hull and then repairs normally." }
             elseif key == "sell" then
                 title = "SELL SENTRIES"; lines = { "Removes selected sentries for " .. math.floor((self.Config.Station.Sentries.SellRefund or 0.5) * 100) .. "% of their cost." }
             end
@@ -239,6 +256,7 @@ function RTS:HandleStationPanelClick(x, y)
         if self:PointInside(r, x, y) then
             local track = key:match("^track_(.+)$")
             if track then self:BuyUpgrade("BLUE", track)
+            elseif key == "rebuild" then self:BuyTurretRebuild("BLUE")
             elseif key == "sell" then self:SellSelectedSentries()
         elseif key == "ability" then
             local ability=self:GetFactionAbilityProfile("BLUE")
