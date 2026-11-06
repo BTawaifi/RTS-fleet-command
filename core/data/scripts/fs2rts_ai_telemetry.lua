@@ -559,12 +559,16 @@ function RTS:RegisterBaseDamageProtection()
                     protected[weapon:getSignature()]=true
                 end
                 self:TrackPilotPrimaryWeapon(weapon,parent)
+                self:NotePilotThreatWeapon(weapon,parent)
             end
         end
     end)
     register('weapon-delete','On Weapon Delete',function()
         local weapon=hv['Weapon']
-        if valid(weapon) then protected[weapon:getSignature()]=nil end
+        if valid(weapon) then
+            protected[weapon:getSignature()]=nil
+            self:ForgetPilotThreatWeapon(weapon)
+        end
     end)
     register('beam-fire','On Beam Fire',function()
         local beam=hv['Beam']

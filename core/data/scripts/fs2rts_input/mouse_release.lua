@@ -150,7 +150,7 @@ function RTS:OnMouseReleased(button)
         if self:IsPointOnTacticalMap(x,y) then self:MapRightClick(x,y); return end
         if self:IsPointOnRTSUI(x,y) then return end
         local selected=self:GetSelectedFriendlyShips(); if #selected==0 then return end
-        local hostile=self:GetShipAtScreen(x,y,false,true); if hostile then self:IssueAttack(hostile); return end
+        local hostile,subsystemIndex=self:GetHostileAtScreen(x,y); if hostile then self:IssueAttack(hostile,subsystemIndex); return end
         local friendly=self:GetShipAtScreen(x,y,true,false); if friendly then self:IssueGuard(friendly); return end
         local destination=self:ScreenToPlane(x,y,self.CameraFocus.y); if destination then self:IssueMove(destination) end
     elseif bit.checkBit(button,2) then self.MiddleDrag=nil end

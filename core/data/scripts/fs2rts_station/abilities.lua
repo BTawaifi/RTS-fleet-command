@@ -243,7 +243,10 @@ end
 function RTS:UpdateStations(now)
     if self.StationState == nil then return end
     self:UpdateStationPointDefense(now)
-    if not self.AftermathActive then
+    if not self.AftermathActive and now>=(self.NextStationSample or 0) then
+    -- Repair, upgrade completion and station AI integrate over elapsed time, so they
+    -- are sampled four times a second instead of every frame.
+    self.NextStationSample=now+.25
     for _, kind in ipairs(self.Config.FactionOrder or U.AI_FACTION_ORDER) do
         local state = self.StationState[kind]
         local station = self:GetFactionCommandShip(kind)
@@ -269,6 +272,7 @@ function RTS:UpdateStations(now)
                 end
             end
             if turretDamage then state.lastDamageAt=now end
+            self:SampleStationTurrets(kind,state,station,now)
             if state.upgrade and now >= state.upgrade.finishTime then
                 local up = state.upgrade; state.upgrade = nil
                 state.levels[up.track] = up.level
@@ -287,13 +291,13 @@ function RTS:UpdateStations(now)
                 station.HitpointsLeft = math.min(repairCeiling, hull + station.HitpointsMax * repairRate * dt)
                 state.repairedTotal=(state.repairedTotal or 0)+math.max(0,station.HitpointsLeft-hull)
             end
-            local subsystemRate=cfg(self).FleetService.SubsystemPerSecond or .01
+            local subsystemRate=cfg(self).TurretRepairPerSecond or .01
             if dt>0 then
                 for i=1,#station do
                     local turret=station[i]
                     local max=objectValid(turret) and turret:isTurret() and (turret.HitpointsMax or 0) or 0
                     local hp=max>0 and (turret.HitpointsLeft or 0) or 0
-                    if hp<max then turret.HitpointsLeft=math.min(max,hp+max*subsystemRate*dt) end
+                    if hp>0 and hp<max then turret.HitpointsLeft=math.min(max,hp+max*subsystemRate*dt) end
                     if max>0 then state.lastTurretHits[i]=turret.HitpointsLeft or 0 end
                 end
             end
@@ -306,7 +310,7 @@ function RTS:UpdateStations(now)
             end
             if kind ~= "BLUE" or self.AutoPlayerMode then self:UpdateStationAI(kind, state, station, now) end
         else
-            state.upgrade = nil
+            state.upgrade = nil; state.turretRebuild = nil
         end
     end
     self:UpdateSentryConstruction(now)

@@ -1,33 +1,17 @@
--- Field tenders: unarmed mobile workshops that act as fleet-service anchors beside
--- the command station. A tender supplies a ship on a right-click (the supply order)
--- and, with no order, goes looking for ships that need supply. A ship it services
--- parks alongside it. The service itself (pads, repair rates, CP cost) is
--- fs2rts_service.lua.
+-- Mobile tenders answer fleet-service requests and provide paid repair and rearm.
 local RTS=require 'fs2rts_state'
 local U=require 'fs2rts_util'
-local shipAlive=U.shipAlive
+local shipAlive,objectValid=U.shipAlive,U.objectValid
+local stopAssignedTender
 
--- Orders that own a ship too firmly for a tender to pull it out on its own.
+local function settings(self) return self.Config.FieldSupport or {} end
+local function seekSettings(self) return settings(self).Seek or {} end
+local function distanceBetween(a,b) return a.Position:getDistance(b.Position) end
+-- Player orders that keep a ship out of automatic tender pickup (a committed strike or a service visit).
 local UNSUPPLIED_ORDERS={attack=true,attack_wing=true,pilot=true,wing=true,service=true}
-local MOVING_SPEED=15
-local RALLY_MIN_SHIPS=3
-
-local function settings(self)
-    return self.Config.FieldSupport or {}
-end
-
-local function seekSettings(self)
-    return settings(self).Seek or {}
-end
-
-local function distanceBetween(a,b)
-    return a.Position:getDistance(b.Position)
-end
 
 function RTS:IsFieldTenderClass(className)
-    for _,name in pairs(settings(self).Classes or {}) do
-        if name==className then return true end
-    end
+    for _,name in pairs(settings(self).Classes or {}) do if name==className then return true end end
     return false
 end
 
@@ -44,7 +28,6 @@ function RTS:GetFieldTenderOption(kind)
     return {class=className,label='Field tender',role='support',tier=1,count=1,cost=c.Cost,time=c.BuildSeconds}
 end
 
--- Live tenders of a faction, plus those waiting in its build queue when asked.
 function RTS:CountFieldTenders(kind,includeQueued)
     local count=0
     for _,ship in ipairs(self:GetShipList()) do
@@ -63,164 +46,375 @@ function RTS:CountFieldTenders(kind,includeQueued)
 end
 
 function RTS:IsServiceAnchorFor(ship,anchor)
-    return shipAlive(anchor) and anchor:getSignature()~=ship:getSignature()
+    return self:IsFieldTender(anchor) and anchor:getSignature()~=ship:getSignature()
         and self:GetFactionKey(anchor)==self:GetFactionKey(ship)
-        and (self:IsCommandStation(anchor) or self:IsFieldTender(anchor))
 end
 
--- Hull gap and arrival tolerance for ships serviced at `anchor`: a tender is
--- approached closely, a station from further out.
 function RTS:GetServiceGeometry(anchor)
-    local station=self.Config.Station.FleetService
-    if self:IsFieldTender(anchor) then
-        local c=settings(self)
-        return c.StandOff or station.StandOff,c.ArrivalRadius or station.ArrivalRadius
-    end
-    return station.StandOff,station.ArrivalRadius
+    local c=settings(self)
+    return c.StandOff or 120,c.ArrivalRadius or 220
 end
 
--- A new anchor invalidates every pad position that was computed against the old one.
 function RTS:ResetServicePad(record)
     record.padPoint=nil; record.padStation=nil; record.padAnchorPosition=nil
     record.padApproachX=nil; record.padApproachZ=nil; record.arrived=false; record.holdSince=nil
     record.ammoCredit={}
 end
 
--- The station or tender a ship services at. A visit keeps its anchor until that
--- anchor is lost; a new visit takes the nearest one.
 function RTS:GetFleetServiceAnchor(ship,record)
-    local current=record and record.serviceAnchor and self:FindShipBySignature(record.serviceAnchor)
-    if self:IsServiceAnchorFor(ship,current) then return current end
-    local best=self:GetFactionCommandShip(self:GetFactionKey(ship))
-    if not self:IsServiceAnchorFor(ship,best) then best=nil end
-    local nearest=best and distanceBetween(ship,best) or math.huge
-    for _,candidate in ipairs(self:GetShipList()) do
-        if self:IsFieldTender(candidate) and self:IsServiceAnchorFor(ship,candidate) then
-            local d=distanceBetween(ship,candidate)
-            if d<nearest then best=candidate; nearest=d end
+    local anchor=record and record.serviceAnchor and self:FindShipBySignature(record.serviceAnchor)
+    return self:IsServiceAnchorFor(ship,anchor) and anchor or nil
+end
+
+local function shipRadius(ship)
+    return ship.Radius or (ship.Class.Model and ship.Class.Model.Radius) or 50
+end
+
+function RTS:IsTenderAlongside(tender,ship)
+    if not self:IsServiceAnchorFor(ship,tender) then return false end
+    local standOff,arrival=self:GetServiceGeometry(tender)
+    return distanceBetween(tender,ship)<=shipRadius(tender)+shipRadius(ship)+standOff+arrival
+end
+
+function RTS:CanSupplyTarget(tender,target)
+    return self:IsFieldTender(tender) and shipAlive(target) and not self:IsFieldTender(target)
+        and self:IsFleetServiceShip(target) and self:IsServiceAnchorFor(target,tender)
+end
+
+function RTS:RequestFleetService(ship,reason,now,manual,preferredTender)
+    if self.AftermathActive or not self:IsFleetServiceShip(ship) or self:IsFieldTender(ship) then return false end
+    local id=ship:getSignature()
+    local pilot=self.PossessedSignature==id
+    if (pilot and (not manual or reason~='PILOT_SERVICE')) or (self.IsShipWithdrawing and self:IsShipWithdrawing(ship)) then return false end
+    if preferredTender and not self:CanSupplyTarget(preferredTender,ship) then return false end
+    local active=(self.FleetServices or {})[id]
+    if active then
+        if preferredTender and active.serviceAnchor~=preferredTender:getSignature() then return false end
+        active.manual=active.manual or manual==true
+        return true
+    end
+    self.FleetServiceRequests=self.FleetServiceRequests or {}
+    local request=self.FleetServiceRequests[id]
+    if not request then
+        self.FleetServiceRequestSerial=(self.FleetServiceRequestSerial or 0)+1
+        request={reason=reason,requestedAt=now,serial=self.FleetServiceRequestSerial,manual=manual==true,pilot=pilot}
+        self.FleetServiceRequests[id]=request
+    elseif manual then
+        if not request.manual then
+            self.FleetServiceRequestSerial=(self.FleetServiceRequestSerial or 0)+1
+            request.serial=self.FleetServiceRequestSerial
+        end
+        request.manual=true; request.reason=reason
+    end
+    if preferredTender then
+        local preferred=preferredTender:getSignature()
+        if request.assignedTender~=preferred then
+            stopAssignedTender(self,request.assignedTender,id)
+            request.assignedTender=nil
+        end
+        request.preferredTender=preferred
+    end
+    return true
+end
+
+function RTS:RestoreFleetServiceRequest(ship,request)
+    if not shipAlive(ship) or not request or (self.PossessedSignature==ship:getSignature() and not request.pilot)
+        or (self.IsShipWithdrawing and self:IsShipWithdrawing(ship)) then return end
+    self.FleetServiceRequests=self.FleetServiceRequests or {}
+    local id=ship:getSignature()
+    if self.FleetServiceRequests[id] then return end
+    request.assignedTender=nil; request.preferredTender=nil
+    self.FleetServiceRequests[id]=request
+end
+
+stopAssignedTender=function(self,tenderId,targetId)
+    if not tenderId then return end
+    local tender=self:FindShipBySignature(tenderId)
+    if not self:IsFieldTender(tender) then return end
+    if self.FieldTenderSeek then self.FieldTenderSeek[tenderId]=nil end
+    local order=(self.UserOrders or {})[tenderId]
+    if order and order.kind=='supply' and order.targetSignature==targetId then
+        self.UserOrders[tenderId]=nil
+        tender:clearOrders()
+    elseif not order then
+        tender:clearOrders()
+    end
+end
+
+function RTS:StopTenderForService(tenderId,targetId)
+    stopAssignedTender(self,tenderId,targetId)
+end
+
+function RTS:ClearFleetServiceRequests()
+    for id,request in pairs(self.FleetServiceRequests or {}) do
+        stopAssignedTender(self,request.assignedTender,id)
+    end
+    self.FleetServiceRequests={}
+end
+
+function RTS:CancelFleetServiceRequestForShip(ship)
+    if not ship or not ship:isValid() then return end
+    local id=ship:getSignature()
+    local requests=self.FleetServiceRequests or {}
+    local request=requests[id]
+    if request then
+        requests[id]=nil
+        stopAssignedTender(self,request.assignedTender,id)
+    end
+    if not self:IsFieldTenderClass(ship.Class.Name) then return end
+    for _,waiting in pairs(requests) do
+        if waiting.assignedTender==id then waiting.assignedTender=nil end
+        if waiting.preferredTender==id then waiting.preferredTender=nil end
+    end
+    for targetId,service in pairs(self.FleetServices or {}) do
+        if service.serviceAnchor==id then
+            local target=self:FindShipBySignature(targetId)
+            if shipAlive(target) then
+                self:CancelFleetServiceForShip(target,service.pendingOrder)
+                self:RestoreFleetServiceRequest(target,service.request)
+            end
         end
     end
-    if record then
-        record.serviceAnchor=best and best:getSignature() or nil
-        self:ResetServicePad(record)
-    end
-    return best
 end
 
-local function ByDistance(a,b)
-    return a.distance<b.distance
+local function visitorWeight(self,ship)
+    local role=self:GetShipRole(ship)
+    if role=='capital' or role=='heavy' or role=='juggernaut' then return math.min(2,settings(self).Slots or 1) end
+    return 1
 end
 
--- For an automatic visit: the nearest station or tender with no armed hostile near it
--- and, for a station, not being shelled. When none is safe it returns the nearest one
--- and false.
-function RTS:GetSaferServiceAnchor(ship,threatOf,baseAttacked)
-    local candidates={}
-    local station=self:GetFactionCommandShip(self:GetFactionKey(ship))
-    if self:IsServiceAnchorFor(ship,station) then candidates[#candidates+1]={anchor=station,distance=distanceBetween(ship,station)} end
-    for _,tender in ipairs(self:GetShipList()) do
-        if self:IsFieldTender(tender) and self:IsServiceAnchorFor(ship,tender) then
-            candidates[#candidates+1]={anchor=tender,distance=distanceBetween(ship,tender)}
+local function usedSlots(self,tender)
+    local count=0
+    for id,record in pairs(self.FleetServices or {}) do
+        if record.serviceAnchor==tender:getSignature() then
+            local ship=self:FindShipBySignature(id)
+            if shipAlive(ship) then count=count+visitorWeight(self,ship) end
         end
-    end
-    table.sort(candidates,ByDistance)
-    for _,candidate in ipairs(candidates) do
-        local shelled=baseAttacked and self:IsCommandStation(candidate.anchor)
-        if not shelled and not threatOf(candidate.anchor) then return candidate.anchor,true end
-    end
-    return candidates[1] and candidates[1].anchor or nil,false
-end
-
-local function TenderIsMoving(tender)
-    local velocity=tender.Physics and tender.Physics.Velocity
-    if not velocity then return false end
-    return math.sqrt(velocity.x*velocity.x+velocity.y*velocity.y+velocity.z*velocity.z)>MOVING_SPEED
-end
-
-local function CountTenderVisitors(self,tender)
-    local signature=tender:getSignature(); local count=0
-    for _,record in pairs(self.FleetServices or {}) do
-        if record.serviceAnchor==signature then count=count+1 end
     end
     return count
 end
 
--- A tender with ships alongside must stay where it is: the planner leaves it alone.
 function RTS:IsFieldTenderBusy(ship)
-    return self:IsFieldTender(ship) and CountTenderVisitors(self,ship)>0
+    return self:IsFieldTender(ship) and usedSlots(self,ship)>0
 end
 
--- Stops the tender where it is. ORDER_STAY_STILL does not brake, so the speed is
--- bled off directly, as for ships holding a service pad.
+local function countRearmBays(ship)
+    local class=ship and ship.Class
+    local model=class and class.Model
+    local bays=model and model.Dockingbays
+    if not bays then return 0 end
+    local count=0
+    for i=1,#bays do
+        local name=string.lower(bays[i]:getName() or '')
+        if string.sub(name,1,5)~='cargo' then count=count+1 end
+    end
+    return count
+end
+
+local rearmBayCache={}
+
+local function rearmBayCount(ship)
+    local ok,className=pcall(function() return ship.Class.Name end)
+    local cached=ok and rearmBayCache[className]
+    if cached~=nil then return cached end
+    local counted,count=pcall(countRearmBays,ship)
+    if not counted then return 0 end
+    if ok and className then rearmBayCache[className]=count end
+    return count
+end
+
+local function hasOrderType(ship,kind)
+    for i=1,#ship.Orders do
+        local order=ship.Orders[i]
+        if order then
+            local ok,orderKind=pcall(order.getType,order)
+            if ok and orderKind==kind then return true end
+        end
+    end
+    return false
+end
+
+local function dockTable(self)
+    self.FieldTenderDock=self.FieldTenderDock or {}
+    return self.FieldTenderDock
+end
+
+-- A tender docks physically with a ship only when both models have a rearm-capable
+-- docking bay. Pilot-controlled hulls and visits that already failed to dock use the
+-- alongside fallback.
+local function canDockWith(self,tender,ship)
+    if settings(self).PhysicalDock==false then return false end
+    if self.PossessedSignature==ship:getSignature() then return false end
+    local dock=dockTable(self)[tender:getSignature()]
+    if dock and dock.target==ship:getSignature() and dock.refused then return false end
+    return rearmBayCount(tender)>0 and rearmBayCount(ship)>0
+end
+
+-- True when this visit is served docked: repair and rearm run only while the tender
+-- is physically docked with the ship. A visit whose dock was refused, or whose
+-- models have no rearm bay, is served alongside instead.
+function RTS:IsDockedServiceRequired(tender,ship)
+    return canDockWith(self,tender,ship)
+end
+
+local function pursueDock(self,tender,ship,now)
+    local docks=dockTable(self)
+    local id=tender:getSignature()
+    local targetId=ship:getSignature()
+    local dock=docks[id]
+    if not dock or dock.target~=targetId then
+        dock={target=targetId,startedAt=now,refused=false}
+        docks[id]=dock
+    end
+    if tender:isDocked(ship) then return true end
+    if dock.issuedAt and hasOrderType(tender,ORDER_DOCK) then return true end
+    if dock.issuedAt and now-dock.issuedAt<(seekSettings(self).ReissueSeconds or 5) then return true end
+    tender:clearOrders()
+    if tender:giveOrder(ORDER_DOCK,ship,nil,seekSettings(self).MovePriority or .7)~=true then
+        dock.refused=true
+        return false
+    end
+    self:SetShipCommandDiscipline(tender,false)
+    dock.issuedAt=now
+    return true
+end
+
+-- True while the tender is docked with, or flying a dock approach to, this ship.
+local function tenderIsDockingWith(self,tender,ship)
+    local dock=dockTable(self)[tender:getSignature()]
+    if not dock or dock.refused or dock.target~=ship:getSignature() then return false end
+    return tender:isDocked(ship) or hasOrderType(tender,ORDER_DOCK)
+end
+
+function RTS:ReleaseTenderDock(tender,ship)
+    if not shipAlive(tender) or not shipAlive(ship) then return end
+    local docks=dockTable(self)
+    local id=tender:getSignature()
+    local dock=docks[id]
+    if not dock or dock.target~=ship:getSignature() then return end
+    docks[id]=nil
+    if tender:isDocked(ship) then tender:setUndocked(ship) end
+    if hasOrderType(tender,ORDER_DOCK) then tender:clearOrders() end
+end
+
+local function dockStillWanted(self,tender,dock)
+    local service=(self.FleetServices or {})[dock.target]
+    if service and service.serviceAnchor==tender:getSignature() then return true end
+    local request=(self.FleetServiceRequests or {})[dock.target]
+    return request~=nil and request.assignedTender==tender:getSignature()
+end
+
+-- A tender docks with one ship at a time. True while it is docked with, or flying
+-- to dock with, a different ship that is still wanted.
+local function dockedWithAnother(self,tender,ship)
+    local dock=dockTable(self)[tender:getSignature()]
+    if not dock or dock.refused or dock.target==ship:getSignature() then return false end
+    return shipAlive(self:FindShipBySignature(dock.target)) and dockStillWanted(self,tender,dock)
+end
+
+local function sweepTenderDock(self,tender,now)
+    local docks=dockTable(self)
+    local id=tender:getSignature()
+    local dock=docks[id]
+    if not dock then return end
+    local ship=self:FindShipBySignature(dock.target)
+    if not shipAlive(ship) then
+        docks[id]=nil
+        if hasOrderType(tender,ORDER_DOCK) then tender:clearOrders() end
+        return
+    end
+    if not dockStillWanted(self,tender,dock) then self:ReleaseTenderDock(tender,ship); return end
+    if dock.refused or tender:isDocked(ship) then return end
+    if distanceBetween(tender,ship)>(seekSettings(self).DockApproachRange or 1500) then
+        dock.startedAt=now
+    elseif now-dock.startedAt>(seekSettings(self).DockSeconds or 90) then
+        dock.refused=true
+        if hasOrderType(tender,ORDER_DOCK) then tender:clearOrders() end
+    end
+end
+
 function RTS:HoldDockedTender(tender)
-    if not TenderIsMoving(tender) then return end
-    tender:clearOrders(); self:HoldShip(tender,.9)
-    local physics=tender.Physics
-    if physics then physics.Velocity=U.vec(0,0,0) end
+    local dockTarget=(dockTable(self)[tender:getSignature()] or {}).target
+    local dockShip=dockTarget and self:FindShipBySignature(dockTarget)
+    if shipAlive(dockShip) and tenderIsDockingWith(self,tender,dockShip) then return end
+    local velocity=tender.Physics and tender.Physics.Velocity
+    if not velocity then return end
+    local speed=math.sqrt(velocity.x*velocity.x+velocity.y*velocity.y+velocity.z*velocity.z)
+    local holding=false
+    for i=1,#tender.Orders do
+        local order=tender.Orders[i]
+        if order and order:isValid() and order:getType()==ORDER_STAY_STILL then holding=true end
+    end
+    if not holding then
+        tender:clearOrders()
+        tender:giveOrder(ORDER_STAY_STILL,nil,nil,.95)
+    end
+    if speed>0 then tender.Physics.Velocity=U.vec(0,0,0) end
+    if self.FieldTenderSeek then self.FieldTenderSeek[tender:getSignature()]=nil end
 end
 
--- Where a tender stops beside its target: on its own side, a stand-off outside both hulls.
-local function GetSupplyRendezvous(self,tender,target)
-    local standOff=self:GetServiceGeometry(tender)
-    local gap=(tender.Radius or 50)+(target.Radius or 50)+standOff
+local function rendezvous(self,tender,target)
+    local standOff,arrival=self:GetServiceGeometry(tender)
+    local gap=shipRadius(tender)+shipRadius(target)+standOff+arrival*.5
     local dx=tender.Position.x-target.Position.x
     local dy=tender.Position.y-target.Position.y
     local dz=tender.Position.z-target.Position.z
     local distance=math.sqrt(dx*dx+dy*dy+dz*dz)
-    if distance<=gap*1.5 or distance<=0 then return nil end
+    if distance<=0 then return nil end
     local scale=gap/distance
     return U.vec(target.Position.x+dx*scale,target.Position.y+dy*scale,target.Position.z+dz*scale)
 end
 
--- True when `tender` can supply `target`: a tender, and a mobile ship of its own faction.
-function RTS:CanSupplyTarget(tender,target)
-    return self:IsFieldTender(tender) and shipAlive(target) and tender:getSignature()~=target:getSignature()
-        and self:IsFleetServiceShip(target) and self:GetFactionKey(target)==self:GetFactionKey(tender)
+local function moveTender(self,tender,target,now)
+    if canDockWith(self,tender,target) and pursueDock(self,tender,target,now) then return true end
+    local point=rendezvous(self,tender,target)
+    if not point then return false end
+    self.FieldTenderSeek=self.FieldTenderSeek or {}
+    local id=tender:getSignature()
+    local state=self.FieldTenderSeek[id] or {}
+    self.FieldTenderSeek[id]=state
+    if state.targetSignature==target:getSignature() and state.movePoint
+        and now-(state.movedAt or -math.huge)<(seekSettings(self).ReissueSeconds or 5)
+        and state.movePoint:getDistance(point)<400 then return true end
+    local destination=self:ClampShipDestination(tender,point)
+    if not destination then return false end
+    local waypoint=self:ConfigureMoveWaypoints(tender,destination)
+    if not objectValid(waypoint) then return false end
+    tender:clearOrders()
+    if tender:giveOrder(ORDER_WAYPOINTS_ONCE,waypoint,nil,seekSettings(self).MovePriority or .7)~=true then return false end
+    self:SetShipCommandDiscipline(tender,false)
+    state.targetSignature=target:getSignature(); state.movePoint=U.copyVec(destination); state.movedAt=now
+    return true
 end
 
--- Puts the tender on its way to the target. Called when the order is given and
--- whenever the order is reissued after an interruption.
 function RTS:ReissueSupplyOrder(tender,order)
     local target=self:FindShipBySignature(order.targetSignature)
-    if not self:CanSupplyTarget(tender,target) then
-        self:ClearUserOrder(tender); self:ReturnToDefaultControl(tender)
-        return false
-    end
-    local point=GetSupplyRendezvous(self,tender,target)
-    if point then return self:MoveShipTo(tender,point,.95) end
-    tender:clearOrders(); self:HoldShip(tender,.95)
-    return true
+    if not self:CanSupplyTarget(tender,target) then return false end
+    if not self:RequestFleetService(target,'FIELD_SUPPLY',mn.getMissionTime(),true,tender) then return false end
+    local request=self.FleetServiceRequests[target:getSignature()]
+    if request then request.assignedTender=tender:getSignature() end
+    if self:IsTenderAlongside(tender,target) then return true end
+    return moveTender(self,tender,target,mn.getMissionTime())
 end
 
--- The tender's supply order: it flies to the target; the target is taken in once
--- the tender is within JoinRange (see ServeSupplyOrder).
 function RTS:SupplyShip(tender,target)
     if not self:CanSupplyTarget(tender,target) then return false end
-    self:SetUserOrder(tender,{kind='supply',targetSignature=target:getSignature(),reissuedAt=mn.getMissionTime()})
-    self:ReissueSupplyOrder(tender,self.UserOrders[tender:getSignature()])
-    return true
+    local active=(self.FleetServices or {})[target:getSignature()]
+    if active and active.serviceAnchor~=tender:getSignature() then return false end
+    self:SetUserOrder(tender,{kind='supply',targetSignature=target:getSignature()})
+    return self:ReissueSupplyOrder(tender,self.UserOrders[tender:getSignature()])
 end
 
--- Sends `ship` to be serviced at `tender`, ahead of ships the tender picked up by itself.
 function RTS:SendShipToTender(ship,tender,now)
     if not self:CanSupplyTarget(tender,ship) then return false end
-    if not self:BeginFleetService(ship,'FIELD_SUPPLY',now,true,tender) then return false end
-    self.FleetServices[ship:getSignature()].prioritized=true
-    self:SetUserOrder(ship,{kind='service'})
-    self:HoldDockedTender(tender)
-    return true
+    return self:RequestFleetService(ship,'FIELD_SUPPLY',now,true,tender)
 end
 
--- The right-click on a friendly `target`: a selected tender supplies the target, and any
--- other selected ship is serviced by a target that is a tender. False leaves the click
--- to the ordinary guard order.
 function RTS:TrySupply(ship,target,now)
     if self:IsFieldTender(ship) and self:SupplyShip(ship,target) then return true end
     return self:IsFieldTender(target) and self:SendShipToTender(ship,target,now)
 end
 
--- The ship a queued tender is delivered to: the ship that was selected when it was
--- bought. Nil when there is none (or it is gone), so the build falls back to the station.
 function RTS:GetJobProductionAnchor(job)
     local signature=job and job.deliverySignature
     local anchor=signature and self:FindShipBySignature(signature)
@@ -229,216 +423,154 @@ function RTS:GetJobProductionAnchor(job)
     return nil
 end
 
-local function NeedsSupply(self,ship,limits)
-    if ship.HitpointsLeft/math.max(1,ship.HitpointsMax)<limits.Hull then return true end
-    if self:GetFleetAmmo(ship)<limits.Ammo then return true end
-    return self:GetFleetSubsystems(ship)<limits.Systems
+function RTS:GetTenderEscortTarget(tender) return nil end
+
+local function needsSupply(self,ship)
+    local limits=settings(self).AutoSupply
+    return ship.HitpointsLeft/math.max(1,ship.HitpointsMax)<limits.Hull
+        or self:GetFleetAmmo(ship)<limits.Ammo or self:GetFleetSubsystems(ship)<limits.Systems
 end
 
--- A ship a tender may take on its own: no firm order, not already in service, not
--- on a committed strike. Whether it needs anything is a separate question.
-local function IsSupplyCandidate(self,tender,ship,now)
-    if ship:getSignature()==tender:getSignature() or not self:IsFleetServiceShip(ship) then return false end
-    if self:GetFactionKey(ship)~=self:GetFactionKey(tender) or self:IsFieldTender(ship) then return false end
-    local id=ship:getSignature()
-    if (self.FleetServices or {})[id] or self.PossessedSignature==id then return false end
-    if now<((self.FleetServiceCooldown or {})[id] or 0) then return false end
-    local order=self.UserOrders[id]
-    if order and UNSUPPLIED_ORDERS[order.kind] then return false end
-    local aiOrder=self.AIOrderState and self.AIOrderState[id]
-    return not (aiOrder and aiOrder.mission=='PRIMARY')
+local function supportedByAny(self,tenders,ship)
+    for i=1,#tenders do
+        if self:CanSupplyTarget(tenders[i],ship) then return true end
+    end
+    return false
 end
 
--- Need x size / distance: a big ship, one with damaged systems and a near one come first.
-local function SupplyScore(self,tender,ship)
+-- One pass over the ships for all tenders that may take new work this tick.
+local function enqueueAutomaticRequests(self,tenders,ships,now)
+    if #tenders==0 then return end
+    for _,ship in ipairs(ships) do
+        local id=ship:getSignature()
+        local order=(self.UserOrders or {})[id]
+        local aiOrder=self.AIOrderState and self.AIOrderState[id]
+        if not (self.FleetServices or {})[id] and not (self.FleetServiceRequests or {})[id]
+            and self.PossessedSignature~=id and now>=((self.FleetServiceCooldown or {})[id] or 0)
+            and now>=((self.FieldServiceReadyAt or {})[id] or 0)
+            and not (order and UNSUPPLIED_ORDERS[order.kind])
+            and not (aiOrder and aiOrder.mission=='PRIMARY') and supportedByAny(self,tenders,ship)
+            and needsSupply(self,ship) then
+            self:RequestFleetService(ship,'FIELD_SUPPLY',now,false)
+        end
+    end
+end
+
+local function pruneRequests(self)
+    for id,request in pairs(self.FleetServiceRequests or {}) do
+        local target=self:FindShipBySignature(id)
+        if not shipAlive(target) or (self.PossessedSignature==id and not request.pilot)
+            or (self.IsShipWithdrawing and self:IsShipWithdrawing(target)) then
+            self.FleetServiceRequests[id]=nil
+            stopAssignedTender(self,request.assignedTender,id)
+        else
+            local assigned=request.assignedTender and self:FindShipBySignature(request.assignedTender)
+            if request.assignedTender and not self:CanSupplyTarget(assigned,target) then request.assignedTender=nil end
+            local preferred=request.preferredTender and self:FindShipBySignature(request.preferredTender)
+            if request.preferredTender and not self:CanSupplyTarget(preferred,target) then request.preferredTender=nil end
+        end
+    end
+end
+
+-- True when some other request could be served by this tender.
+function RTS:HasWaitingServiceRequest(tender,exceptShip)
+    local exceptId=exceptShip and exceptShip:getSignature()
+    local tenderId=tender:getSignature()
+    for id,request in pairs(self.FleetServiceRequests or {}) do
+        if id~=exceptId and (not request.assignedTender or request.assignedTender==tenderId)
+            and (not request.preferredTender or request.preferredTender==tenderId)
+            and self:CanSupplyTarget(tender,self:FindShipBySignature(id)) then return true end
+    end
+    return false
+end
+
+-- Need x size / distance: a big ship, one with damaged systems and a near one rank first.
+local function weightedNeed(self,ship)
     local seek=seekSettings(self)
     local hullMissing=1-ship.HitpointsLeft/math.max(1,ship.HitpointsMax)
     local systemsMissing=1-self:GetFleetSubsystems(ship)
     local ammoMissing=1-self:GetFleetAmmo(ship)
     local need=math.max(0,hullMissing)+(seek.SystemsWeight or 1)*math.max(0,systemsMissing)+(seek.AmmoWeight or .5)*math.max(0,ammoMissing)
     local priced=self.ShipCostMap and self.ShipCostMap[ship.Class.Name]
-    local cost=priced and priced.cost or 0
-    local size=math.min(seek.SizeCap or 4,1+cost/(seek.SizeCost or 2500))
-    return need*size/(1+distanceBetween(ship,tender)/(seek.DistanceScale or 6000))
+    local size=math.min(seek.SizeCap or 4,1+(priced and priced.cost or 0)/(seek.SizeCost or 2500))
+    return need*size
 end
 
-local function NeedySupplyCandidates(self,tender,now,maxDistance)
-    local limits=settings(self).AutoSupply
-    local list={}
-    for _,ship in ipairs(self:GetShipList()) do
-        if shipAlive(ship) and IsSupplyCandidate(self,tender,ship,now) and NeedsSupply(self,ship,limits)
-            and (maxDistance==nil or distanceBetween(ship,tender)<=maxDistance) then
-            list[#list+1]={ship=ship,score=SupplyScore(self,tender,ship)}
+-- The tender-independent part is computed once per request per tick.
+local function supplyScore(self,tender,ship,request,now)
+    if not request.weightedNeed or request.weightedNeedAt~=now then
+        request.weightedNeed=weightedNeed(self,ship); request.weightedNeedAt=now
+    end
+    return request.weightedNeed/(1+distanceBetween(ship,tender)/(seekSettings(self).DistanceScale or 6000))
+end
+
+-- Priority order: player-issued requests first, in the order they were issued;
+-- then automatic requests by supplyScore. A tender keeps the request it was already
+-- assigned (within RepickSeconds) ahead of others of the same kind. Equal scores go
+-- to the earlier request.
+local function entryPrecedes(entry,other)
+    if not other then return true end
+    if entry.manual~=other.manual then return entry.manual end
+    if entry.sticky~=other.sticky then return entry.sticky end
+    if entry.manual then return entry.request.serial<other.request.serial end
+    if entry.score~=other.score then return entry.score>other.score end
+    return entry.request.serial<other.request.serial
+end
+
+local function chooseRequest(self,tender,order,nearby,availableSlots,now)
+    local best
+    local tenderId=tender:getSignature()
+    local repick=seekSettings(self).RepickSeconds or 10
+    for id,request in pairs(self.FleetServiceRequests or {}) do
+        local ship=self:FindShipBySignature(id)
+        if self:CanSupplyTarget(tender,ship) and (not order or order.targetSignature==id)
+            and (not request.assignedTender or request.assignedTender==tenderId)
+            and (not request.preferredTender or request.preferredTender==tenderId)
+            and visitorWeight(self,ship)<=availableSlots
+            and not (canDockWith(self,tender,ship) and dockedWithAnother(self,tender,ship))
+            and (not nearby or self:IsTenderAlongside(tender,ship)) then
+            local entry={request=request,ship=ship,manual=request.manual==true,
+                sticky=request.assignedTender==tenderId and now-(request.assignedAt or -math.huge)<repick,
+                score=request.manual and 0 or supplyScore(self,tender,ship,request,now)/(1+(request.rotations or 0))}
+            if entryPrecedes(entry,best) then best=entry end
         end
     end
-    table.sort(list,function(a,b) return a.score>b.score end)
-    return list
+    if not best then return nil,nil end
+    return best.request,best.ship
 end
 
--- Best-scoring needy ship with no hostile close by, looking at the top few only.
-local function BestSupplyTarget(self,tender,now,threatOf,maxDistance)
-    local list=NeedySupplyCandidates(self,tender,now,maxDistance)
-    for i=1,math.min(#list,seekSettings(self).ThreatChecks or 4) do
-        if not threatOf(list[i].ship) then return list[i].ship end
+local function releaseOtherAssignments(self,tenderId,keepId)
+    for id,request in pairs(self.FleetServiceRequests or {}) do
+        if id~=keepId and request.assignedTender==tenderId then request.assignedTender=nil end
     end
-    return nil
 end
 
--- Per-tender memory of what it is heading for and when it last gave a move order.
-local function SeekState(self,tender)
-    self.FieldTenderSeek=self.FieldTenderSeek or {}
-    local signature=tender:getSignature()
-    self.FieldTenderSeek[signature]=self.FieldTenderSeek[signature] or {}
-    return self.FieldTenderSeek[signature]
-end
-
-local function IsKeptTarget(self,tender,seek,now)
-    local target=seek.targetSignature and self:FindShipBySignature(seek.targetSignature)
-    if not shipAlive(target) or now-(seek.pickedAt or -math.huge)>=(seekSettings(self).RepickSeconds or 10) then return nil end
-    if not IsSupplyCandidate(self,tender,target,now) or not NeedsSupply(self,target,settings(self).AutoSupply) then return nil end
-    return target
-end
-
-local function PickTarget(self,tender,seek,now,threatOf)
-    local kept=IsKeptTarget(self,tender,seek,now)
-    if kept then return kept end
-    local target=BestSupplyTarget(self,tender,now,threatOf)
-    seek.targetSignature=target and target:getSignature() or nil
-    seek.pickedAt=now
-    return target
-end
-
-local function MoveTender(self,tender,seek,point,tag,now)
-    local rules=seekSettings(self)
-    if seek.moveTag==tag and seek.movePoint and now-(seek.movedAt or -math.huge)<(rules.ReissueSeconds or 5)
-        and seek.movePoint:getDistance(point)<400 then return end
-    seek.moveTag=tag; seek.movePoint=point; seek.movedAt=now
-    self:MoveShipTo(tender,point,rules.MovePriority or .7)
-end
-
--- Where an idle tender waits: behind the friendly ship nearest the fleet's centre,
--- toward its own station. Nil when there is no fleet to trail.
-local function GetFleetRallyPoint(self,tender)
-    local kind=self:GetFactionKey(tender)
-    local ships,x,z={},0,0
-    for _,ship in ipairs(self:GetShipList()) do
-        if shipAlive(ship) and self:GetFactionKey(ship)==kind and self:IsFleetServiceShip(ship) and not self:IsFieldTender(ship) then
-            ships[#ships+1]=ship; x=x+ship.Position.x; z=z+ship.Position.z
-        end
-    end
-    if #ships<RALLY_MIN_SHIPS then return nil end
-    x=x/#ships; z=z/#ships
-    local heart,nearest=nil,math.huge
-    for _,ship in ipairs(ships) do
-        local dx,dz=ship.Position.x-x,ship.Position.z-z
-        local d=dx*dx+dz*dz
-        if d<nearest then heart=ship; nearest=d end
-    end
-    local point=heart.Position
-    local station=self:GetFactionCommandShip(kind)
-    if shipAlive(station) then
-        local dx,dz=station.Position.x-point.x,station.Position.z-point.z
-        local length=math.sqrt(dx*dx+dz*dz)
-        if length>1 then
-            local trail=math.min(seekSettings(self).FleetTrail or 1200,length)
-            point=U.vec(point.x+dx/length*trail,point.y,point.z+dz/length*trail)
-        end
-    end
-    return point
-end
-
--- The ship the planner should escort for this tender: what it is heading for, else nil.
-function RTS:GetTenderEscortTarget(tender)
-    local seek=self.FieldTenderSeek and shipAlive(tender) and self.FieldTenderSeek[tender:getSignature()]
-    local target=seek and seek.targetSignature and self:FindShipBySignature(seek.targetSignature)
-    return shipAlive(target) and target or nil
-end
-
--- The planner moves AI tenders (and the player's in Auto Mode) by escort orders.
-local function PlannerMovesTender(self,tender)
-    if self:GetFactionKey(tender)~='BLUE' then return true end
-    local id=tender:getSignature()
-    return self.AutoPlayerMode==true and self.PossessedSignature~=id and self.UserOrders[id]==nil
-end
-
-local function BeginTenderService(self,tender,ship,now,manual)
-    if not self:BeginFleetService(ship,'FIELD_SUPPLY',now,manual,tender) then return false end
-    self:HoldDockedTender(tender)
+local function acceptRequest(self,tender,ship,request,now)
+    if not self:BeginFleetService(ship,request.reason,now,request.manual,tender) then return false end
+    local id=ship:getSignature()
+    self.FleetServiceRequests[id]=nil
+    self.FleetServices[id].request=request
+    request.assignedTender=nil
+    if request.manual and not request.pilot and self:IsFriendly(ship) then self:SetUserOrder(ship,{kind='service'}) end
+    if not (canDockWith(self,tender,ship) and pursueDock(self,tender,ship,now)) then self:HoldDockedTender(tender) end
     return true
 end
 
--- A supply order ends when its ship is serviced or gone; the tender is then released
--- to look for work on its own.
-local function ReleaseTender(self,tender)
-    self:ClearUserOrder(tender)
-    self:ReturnToDefaultControl(tender)
-end
-
-local function ServeSupplyOrder(self,tender,order,now)
-    local target=self:FindShipBySignature(order.targetSignature)
-    if not self:CanSupplyTarget(tender,target) then ReleaseTender(self,tender); return end
-    local record=(self.FleetServices or {})[target:getSignature()]
-    if record and record.serviceAnchor==tender:getSignature() then
-        order.started=true; self:HoldDockedTender(tender); return
-    end
-    if order.started then ReleaseTender(self,tender); return end
-    if distanceBetween(tender,target)<=(seekSettings(self).JoinRange or 1500) then
-        if BeginTenderService(self,tender,target,now,true) then
-            self.FleetServices[target:getSignature()].prioritized=true
-            self:SetUserOrder(target,{kind='service'})
-            order.started=true
-        else
-            ReleaseTender(self,tender)
+local function displacedVisitor(self,tender)
+    local best,bestRecord,alongside=nil,nil,false
+    for id,record in pairs(self.FleetServices or {}) do
+        local ship=self:FindShipBySignature(id)
+        if record.serviceAnchor==tender:getSignature() and shipAlive(ship) then
+            if self:IsTenderAlongside(tender,ship) then alongside=true
+            elseif not bestRecord or record.started<bestRecord.started
+                or (record.started==bestRecord.started and id<best:getSignature()) then
+                best,bestRecord=ship,record
+            end
         end
-        return
     end
-    if now-(order.reissuedAt or -math.huge)>=(seekSettings(self).ReissueSeconds or 5) then
-        order.reissuedAt=now; self:ReissueSupplyOrder(tender,order)
-    end
+    return best,bestRecord,alongside
 end
 
--- Takes needy ships close to the tender while it has a free slot. They fly the last
--- stretch themselves, so the tender does not have to move.
-local function TakeNearbyShip(self,tender,now,threatOf)
-    local limit=settings(self).Slots
-    if CountTenderVisitors(self,tender)>=limit then return end
-    local ship=BestSupplyTarget(self,tender,now,threatOf,seekSettings(self).NearbyRange or 3000)
-    if ship then BeginTenderService(self,tender,ship,now,false) end
-end
-
--- A tender with no player order: keep the ships alongside serviced, otherwise go
--- to the neediest ship, otherwise trail the fleet.
-local function DriveTender(self,tender,now,threatOf)
-    local seek=SeekState(self,tender)
-    TakeNearbyShip(self,tender,now,threatOf)
-    if CountTenderVisitors(self,tender)>0 then
-        self:HoldDockedTender(tender); seek.targetSignature=nil; return
-    end
-    local target=PickTarget(self,tender,seek,now,threatOf)
-    if target and distanceBetween(tender,target)<=(seekSettings(self).JoinRange or 1500) then
-        if threatOf(target) then seek.targetSignature=nil
-        else BeginTenderService(self,tender,target,now,false) end
-        return
-    end
-    if PlannerMovesTender(self,tender) then return end
-    local point=target and GetSupplyRendezvous(self,tender,target)
-    if point then MoveTender(self,tender,seek,point,target:getSignature(),now); return end
-    if target then return end
-    local rally=GetFleetRallyPoint(self,tender)
-    if rally and distanceBetween(tender,{Position=rally})>(seekSettings(self).JoinRange or 1500) then
-        MoveTender(self,tender,seek,rally,'rally',now)
-    end
-end
-
--- A tender the player has ordered elsewhere keeps its order; ships already near it
--- are still serviced once it is stationary.
-local function DriveOrderedTender(self,tender,now,threatOf)
-    if TenderIsMoving(tender) then return end
-    TakeNearbyShip(self,tender,now,threatOf)
-end
-
--- The AI's one-off tender purchase: once it fields enough ships, with the CP to pay and
--- no emergency under way. Returns a build choice in ChooseAIBuild's shape, or nil.
 function RTS:ChooseAITender(kind,state,counts,slots)
     local rules=settings(self).AI or {}
     if (rules.MinFleet or 0)<=0 or slots<1 or (counts.total or 0)<rules.MinFleet then return nil end
@@ -452,18 +584,69 @@ function RTS:ChooseAITender(kind,state,counts,slots)
     return {entry=entry,estimate=estimate,count=1,category='support',telemetry={}}
 end
 
--- Per service tick, for every tender: serve its supply order, or work on its own.
--- threatOf(ship) returns a nearby hostile or nil (the service tick's own threat scan).
+local ORDERED_TENDER_MOVING_SPEED=15
+
+local function tenderIsMoving(tender)
+    local velocity=tender.Physics and tender.Physics.Velocity
+    if not velocity then return false end
+    return math.sqrt(velocity.x*velocity.x+velocity.y*velocity.y+velocity.z*velocity.z)>ORDERED_TENDER_MOVING_SPEED
+end
+
+-- A tender on a player order other than supply keeps that order. While it is
+-- stationary it serves ships already alongside, but never travels for a request.
+local function serveAlongsideOnly(self,tender,now)
+    if tenderIsMoving(tender) then return end
+    local available=math.max(0,(settings(self).Slots or 1)-usedSlots(self,tender))
+    local request,ship=chooseRequest(self,tender,nil,true,available,now)
+    if request and ship then acceptRequest(self,tender,ship,request,now) end
+end
+
 function RTS:UpdateFieldSupport(now,threatOf)
-    for _,tender in ipairs(self:GetShipList()) do
-        if self:IsFieldTender(tender) then
-            local order=self.UserOrders[tender:getSignature()]
-            if order and order.kind=='supply' then
-                ServeSupplyOrder(self,tender,order,now)
-            elseif order then
-                DriveOrderedTender(self,tender,now,threatOf)
+    self.FleetServiceRequests=self.FleetServiceRequests or {}
+    pruneRequests(self)
+    local ships=self:GetShipList()
+    local intake={}
+    for _,tender in ipairs(ships) do
+        if self:IsFieldTender(tender) and self.PossessedSignature~=tender:getSignature() then
+            local order=(self.UserOrders or {})[tender:getSignature()]
+            if not order or order.kind=='supply' or not tenderIsMoving(tender) then intake[#intake+1]=tender end
+        end
+    end
+    enqueueAutomaticRequests(self,intake,ships,now)
+    for _,tender in ipairs(ships) do
+        if self:IsFieldTender(tender) and self.PossessedSignature~=tender:getSignature() then
+            local id=tender:getSignature()
+            sweepTenderDock(self,tender,now)
+            local order=(self.UserOrders or {})[id]
+            if not order or order.kind=='supply' then
+                local used=usedSlots(self,tender)
+                local displaced,displacedRecord,alongside
+                if used>0 then displaced,displacedRecord,alongside=displacedVisitor(self,tender) end
+                if displaced then
+                    if alongside then
+                        self:CancelFleetServiceForShip(displaced,displacedRecord.pendingOrder)
+                        self:RestoreFleetServiceRequest(displaced,displacedRecord.request)
+                        self:HoldDockedTender(tender)
+                    else
+                        moveTender(self,tender,displaced,now)
+                    end
+                else
+                    local available=math.max(0,(settings(self).Slots or 1)-used)
+                    local request,ship=chooseRequest(self,tender,order,used>0,available,now)
+                    if used>0 then self:HoldDockedTender(tender) end
+                    if request and ship then
+                        releaseOtherAssignments(self,id,ship:getSignature())
+                        if request.assignedTender~=id then request.assignedAt=now end
+                        request.assignedTender=id
+                        if self:IsTenderAlongside(tender,ship) then acceptRequest(self,tender,ship,request,now)
+                        elseif used==0 then moveTender(self,tender,ship,now) end
+                    elseif order and used==0 then
+                        self:ClearUserOrder(tender)
+                        self:ReturnToDefaultControl(tender)
+                    end
+                end
             else
-                DriveTender(self,tender,now,threatOf)
+                serveAlongsideOnly(self,tender,now)
             end
         end
     end

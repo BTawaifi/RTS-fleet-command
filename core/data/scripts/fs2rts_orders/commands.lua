@@ -34,6 +34,12 @@ function RTS:ReissueUserOrder(ship, order)
             end
             ship:clearOrders()
             if order.kind == "attack" or order.kind=="attack_wing" then
+                local subsystem=order.subsystemIndex and target[order.subsystemIndex]
+                if subsystem and not (subsystem:isValid() and subsystem.HitpointsLeft>0) then order.subsystemIndex=nil; subsystem=nil end
+                if subsystem then
+                    self:DropPursuit(ship:getSignature())
+                    return ship:giveOrder(ORDER_ATTACK,target,subsystem,0.95)==true
+                end
                 if self:IsPursuitPair(ship,target,nil,true) then
                     return self:IssuePursuitOrder(ship,target,0.95)
                 end

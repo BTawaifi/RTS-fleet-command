@@ -7,14 +7,15 @@ local U, RTS, shipValid, shipAlive, objectValid, cfg = _shared.U, _shared.RTS, _
 -- ---------------------------------------------------------------------------
 function RTS:ResetStationState()
     self.NextSentryAimUpdate=0
-    self.NextStationPointDefense=0
+    self.NextStationPointDefense=0; self.NextStationSample=0
     self.FleetServices={}; self.FleetServiceSerial=0; self.FleetServiceCooldown={}; self.SurvivalDangerSince={}; self.NextFleetServiceThink=0
+    self.FleetServiceRequests={}; self.FleetServiceRequestSerial=0; self.FieldTenderSeek={}; self.FieldTenderDock={}
     self.BountyProcessed={}
     self.StationState = {}
     for _, kind in ipairs(self.Config.FactionOrder or U.AI_FACTION_ORDER) do
         self.StationState[kind] = { levels = { armor = 0, defenses = 0, logistics = 0, command = 0 },
             upgrade = nil, abilityReadyAt = 0, lastHull = nil, lastDamageAt = -100, nextAIThink = 0, sentrySerial = 0,
-            lastTurretHits = {},
+            lastTurretHits = {}, turretRebuild = nil, downedTurrets = {}, largestTurret = 0, nextTurretBuy = 0,
             -- Start of the current contiguous base-investment deferral, owned by
             -- the capital gate in UpdateStationAI (AI.CapitalAwareInvestment,
             -- ships off). Listed here so a mission restart cannot inherit a stale
@@ -123,20 +124,23 @@ function RTS:ApplyStationDefenseProgression(kind,level)
     local station=self:GetFactionCommandShip(kind)
     if not shipValid(station) then return end
     level=math.max(0,math.min(3,tonumber(level) or self:GetUpgradeLevel(kind,"defenses")))
+    local screenWeapon=cfg(self).PointDefenseWeapon
     local guns,beams={},{}
     for i=1,#station do
         local turret=station[i]
         if objectValid(turret) and turret:isTurret() then
-            local hasBeam=false
+            local hasBeam,hasScreen=false,false
             for _,banks in ipairs({turret.PrimaryBanks or {},turret.SecondaryBanks or {}}) do
                 for bankIndex=1,#banks do
-                    local bank=banks[bankIndex]
-                    local weapon=bank.WeaponClass
-                    if objectValid(weapon) and weapon:isBeam() then hasBeam=true; break end
+                    local weapon=banks[bankIndex].WeaponClass
+                    if objectValid(weapon) then
+                        if weapon:isBeam() then hasBeam=true end
+                        if weapon.Name==screenWeapon then hasScreen=true end
+                    end
                 end
-                if hasBeam then break end
             end
-            local list=hasBeam and beams or guns
+            -- The anti-fighter interceptor mounts unlock with the base guns, not with the beams.
+            local list=(hasBeam and not hasScreen) and beams or guns
             list[#list+1]=turret
         end
     end

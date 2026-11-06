@@ -1,32 +1,54 @@
--- Individual survival and finite, paid station fleet services.
+-- Individual survival and finite, paid tender fleet services.
 local R=require 'fs2rts_state'
 local RTS=R
 local U=require 'fs2rts_util'
-local alive,vec,copyVec,objectValid=U.shipAlive,U.vec,U.copyVec,U.objectValid
+local alive,vec=U.shipAlive,U.vec
 local function config(self) return self.Config.Station.FleetService end
 local function hull(ship) return ship.HitpointsLeft/math.max(1,ship.HitpointsMax) end
-local function reservePad(self,ship,s)
-    s.faction=self:GetFactionKey(ship); s.padRadius=ship.Class.Model and ship.Class.Model.Radius or 50
-    local used={}
-    for _,record in pairs(self.FleetServices or {}) do
-        if record~=s and record.faction==s.faction and record.padSlot then used[record.padSlot]=true end
-    end
-    s.padSlot=1
-    while used[s.padSlot] do s.padSlot=s.padSlot+1 end
-end
 -- Service owns the ship until completion or a fresh command cancels it.
 local function servicePriority()
     return 0.97
 end
--- Residual rotational velocity from the arrival turn reads as the ship rolling
--- on the pad. Trimmed gently and only while parked or inbound for service.
-local function dampSpin(ship)
-    pcall(function()
-        local rv=ship.Physics and ship.Physics.RotationalVelocity
-        if rv~=nil then ship.Physics.RotationalVelocity=vec(rv.x*.75,rv.y*.75,rv.z*.75) end
-    end)
+
+local function validOrderType(order)
+    if order:isValid() then return order:getType() end
+    return nil
 end
 
+local function holdServiceShip(self,ship,service,focused,now,arrivedNow)
+    local priority=servicePriority()
+    if arrivedNow then
+        ship:clearOrders()
+        local physics=ship.Physics
+        if physics and not focused then physics.Velocity=vec(0,0,0); physics.RotationalVelocity=vec(0,0,0) end
+        if ship:giveOrder(ORDER_STAY_STILL,nil,nil,priority)~=true then
+            service.arrived=false; service.holdSince=nil
+            self:SetFleetServicePhase(ship,service,'ORDER_FAILED',now)
+            return false
+        end
+    elseif not self.Paused and not focused then
+        local physics=ship.Physics
+        local velocity=physics and physics.Velocity
+        if velocity then physics.Velocity=vec(velocity.x*.35,velocity.y*.35,velocity.z*.35) end
+    end
+    local holding=false
+    for i=1,#ship.Orders do
+        local order=ship.Orders[i]
+        if order then
+            local valid,kind=pcall(validOrderType,order)
+            if valid and kind==ORDER_STAY_STILL then holding=true end
+        end
+    end
+    if not holding then
+        service.holdSince=now
+        ship:clearOrders()
+        if ship:giveOrder(ORDER_STAY_STILL,nil,nil,priority)~=true then
+            self:SetFleetServicePhase(ship,service,'ORDER_FAILED',now)
+            return false
+        end
+    end
+    return true
+end
 local function baseAttackRules(self) return config(self).BaseAttack or {} end
 
 -- Remembers when a faction's command station last lost hull or shield between two
@@ -52,11 +74,17 @@ function RTS:IsBaseUnderAttack(kind,now)
     return watch~=nil and watch.hitAt~=nil and now-watch.hitAt<=(baseAttackRules(self).WindowSeconds or 20)
 end
 
+local function releaseVisitDock(self,ship,service)
+    local tender=self:FindShipBySignature(service.serviceAnchor)
+    if tender then self:ReleaseTenderDock(tender,ship) end
+end
+
 -- Ends a visit early and hands the ship back to its parked player order or to the
 -- planner. The retry delay keeps it from walking straight back to the pad.
 local function InterruptFleetService(self,ship,s,now,reason,threat)
     local sid=ship:getSignature(); local kind=self:GetFactionKey(ship)
     local parked=self.UserOrders and self.UserOrders[sid]
+    releaseVisitDock(self,ship,s)
     self.FleetServices[sid]=nil
     self:SetShipCommandDiscipline(ship,false); self:SetShipTurretLock(ship,false)
     self.AIOrderState[sid]=nil; self.PolicyApplied[sid]=nil
@@ -72,18 +100,6 @@ local function InterruptFleetService(self,ship,s,now,reason,threat)
     if kind=='BLUE' then
         if resume~=nil then self:ReissueUserOrder(ship,resume) else self:ReturnToDefaultControl(ship) end
     else self:AssignAIStrategicOrder(ship,kind,true) end
-end
-
--- While the base is shelled, an automatic visitor at the station that is fit to
--- fight goes back to its orders. Ammunition does not matter: it ranks last.
-local function ReleaseForBaseDefence(self,ship,rec,now)
-    if rec.manual then return false end
-    local anchor=rec.serviceAnchor and self:FindShipBySignature(rec.serviceAnchor)
-    if not (alive(anchor) and self:IsCommandStation(anchor)) then return false end
-    local rules=baseAttackRules(self)
-    if hull(ship)<(rules.ReleaseHull or .6) or self:GetFleetSubsystems(ship)<(rules.ReleaseSystems or .6) then return false end
-    InterruptFleetService(self,ship,rec,now,'BASE_UNDER_ATTACK',nil)
-    return true
 end
 
 function RTS:IsFleetServiceShip(ship)
@@ -191,6 +207,10 @@ end
 
 function RTS:GetFleetServiceSummary(kind)
     local active,waiting=0,0
+    for id in pairs(self.FleetServiceRequests or {}) do
+        local ship=self:FindShipBySignature(id)
+        if alive(ship) and self:GetFactionKey(ship)==kind then waiting=waiting+1 end
+    end
     for id,s in pairs(self.FleetServices or {}) do
         local ship=self:FindShipBySignature(id)
         if alive(ship) and self:GetFactionKey(ship)==kind then
@@ -203,7 +223,10 @@ end
 function RTS:GetFleetServiceLabel(ship)
     if not alive(ship) then return nil end
     local s=self.FleetServices and self.FleetServices[ship:getSignature()]
-    if not s then return nil end
+    if not s then
+        local request=self.FleetServiceRequests and self.FleetServiceRequests[ship:getSignature()]
+        return request and (request.assignedTender and 'TENDER EN ROUTE' or 'WAITING FOR TENDER') or nil
+    end
     return string.format('%s: %s | HULL %d%% / AMMO %d%% / SYS %d%%',s.reason:gsub('_',' '),s.phase:gsub('_',' '),
         math.floor(100*hull(ship)),math.floor(100*self:GetFleetAmmo(ship)),math.floor(100*self:GetFleetSubsystems(ship)))
 end
@@ -215,54 +238,36 @@ function RTS:SetFleetServicePhase(ship,s,phase,now)
         phase=phase,reason=s.reason,visit=s.visit,hull=hull(ship),ammo=self:GetFleetAmmo(ship)},now)
 end
 
--- anchorOverride names the station or tender that must serve this visit; without
--- it the nearest anchor is chosen.
 function RTS:BeginFleetService(ship,reason,now,manual,anchorOverride)
     if self.AftermathActive then return false end
-    if not self:IsFleetServiceShip(ship) or self.PossessedSignature==ship:getSignature() then return false end
+    if not self:IsFleetServiceShip(ship) or self:IsFieldTender(ship) then return false end
+    local pilot=self.PossessedSignature==ship:getSignature()
+    if pilot and (not manual or reason~='PILOT_SERVICE') then return false end
     if self.IsShipWithdrawing and self:IsShipWithdrawing(ship) then return false end
+    if not self:IsServiceAnchorFor(ship,anchorOverride) or not self:IsTenderAlongside(anchorOverride,ship) then return false end
     self.FleetServices=self.FleetServices or {}
     local id=ship:getSignature()
     if self.FleetServices[id] then
         local current=self.FleetServices[id]
         current.manual=current.manual or manual==true
-        if self:IsServiceAnchorFor(ship,anchorOverride) and current.serviceAnchor~=anchorOverride:getSignature() then
-            current.serviceAnchor=anchorOverride:getSignature(); self:ResetServicePad(current)
-        end
-        if manual then
-            local station=self:GetFleetServiceAnchor(ship,current)
-            if alive(station) and not current.arrived then
-                self:MoveFleetServiceShip(ship,current,self:GetFleetServicePoint(ship,station,nil,current.padApproachX,current.padApproachZ),now,station:getSignature())
-            end
-        end
-        return true
+        return current.serviceAnchor==anchorOverride:getSignature()
     end
-    local station=self:IsServiceAnchorFor(ship,anchorOverride) and anchorOverride or self:GetFleetServiceAnchor(ship)
-    if not alive(station) then return false end
+    local station=anchorOverride
     -- Release any prior move lock: FSO needs dynamic AI enabled to evade a
     -- locked missile, and its hit reactions preserve the assigned service goal.
-    self:SetShipCommandDiscipline(ship,false)
+    if not pilot then self:SetShipCommandDiscipline(ship,false) end
     local s={reason=reason,started=now,lastUpdate=now,lastHull=ship.HitpointsLeft,
-        quietAt=now,lastShields=ship.Shields and ship.Shields.CombinedLeft or 0,ammoCredit={},manual=manual==true,spent=0,
-        serviceAnchor=station:getSignature()}
+        ammoCredit={},manual=manual==true,spent=0,
+        serviceAnchor=station:getSignature(),pilot=pilot}
     self.FleetServiceSerial=(self.FleetServiceSerial or 0)+1; s.visit=self.FleetServiceSerial
-    if s.manual then
-        local hit=self.AIStats and self.AIStats.hits and self.AIStats.hits[id]
-        s.quietAt=math.max(now-config(self).QuietSeconds,hit and hit.hostileTime or -math.huge)
-    end
     -- Park the prior player order during recovery and restore it on completion.
     local order=self.UserOrders and self.UserOrders[id]
-    s.pendingOrder=(order and order.kind~='service') and order or nil
-    self.FleetServices[id]=s; self.AIOrderState[id]=nil; self.PolicyApplied[id]=nil
+    s.pendingOrder=(not pilot and order and order.kind~='service') and order or nil
+    self.FleetServices[id]=s
+    if not pilot then self.AIOrderState[id]=nil; self.PolicyApplied[id]=nil end
     if self.RecordServiceStart then self:RecordServiceStart(ship,now) end
-    reservePad(self,ship,s)
-    self:SetFleetServicePhase(ship,s,'RETURNING',now)
-    self:SetShipCommandDiscipline(ship,false)
-    self:SetShipTurretLock(ship,true)
-    if alive(station) then
-        s.padApproachX,s.padApproachZ=self:GetServiceApproach(ship,station,self:GetFleetLocalThreat(ship))
-        self:MoveFleetServiceShip(ship,s,self:GetFleetServicePoint(ship,station,nil,s.padApproachX,s.padApproachZ),now,station:getSignature())
-    end
+    self:SetFleetServicePhase(ship,s,'QUEUED',now)
+    if not pilot then self:SetShipCommandDiscipline(ship,false); self:SetShipTurretLock(ship,true) end
     return true
 end
 
@@ -276,15 +281,19 @@ function RTS:CancelFleetServiceForShip(ship,keepOrder)
     local id=ship:getSignature()
     local s=self.FleetServices[id]
     if not s then return false end
+    releaseVisitDock(self,ship,s)
+    if s.pilot then self.FleetServices[id]=nil; return true end
     self.FleetServices[id]=nil; self.AIOrderState[id]=nil; self.PolicyApplied[id]=nil
     self:SetShipCommandDiscipline(ship,false); self:SetShipTurretLock(ship,false)
     s.destination=nil; s.destinationAnchor=nil; s.holdSince=nil
-    local order=keepOrder or self.UserOrders[id] or s.pendingOrder
+    local current=self.UserOrders[id]
+    local order=keepOrder or (current and current.kind~='service' and current) or s.pendingOrder
     if order then
         self.UserOrders[id]=order
         self:ReissueUserOrder(ship,order)
         return true
     end
+    self.UserOrders[id]=nil
     ship:clearOrders()
     return true
 end
@@ -293,9 +302,19 @@ function RTS:FinishFleetService(ship,s,now)
     local id=ship:getSignature()
     self:SetFleetServicePhase(ship,s,'READY',now)
     if self.RecordServiceFinish then self:RecordServiceFinish(ship,now,s) end
+    releaseVisitDock(self,ship,s)
+    if s.pilot then
+        self.FleetServices[id]=nil
+        self.FleetServiceCooldown[id]=now+config(self).RetrySeconds
+        self.PilotSupportNotice={text='TENDER SERVICE COMPLETE',untilTime=self:UINow()+3}
+        return
+    end
     self.FleetServices[id]=nil; self.AIOrderState[id]=nil; self.PolicyApplied[id]=nil
     self:SetShipCommandDiscipline(ship,false); self:SetShipTurretLock(ship,false)
     self.FleetServiceCooldown[id]=now+config(self).RetrySeconds
+    -- A finished automatic visit starts a downtime before the hull may be requested again.
+    self.FieldServiceReadyAt=self.FieldServiceReadyAt or {}
+    self.FieldServiceReadyAt[id]=now+((self.Config.FieldSupport.Seek or {}).ServiceDowntimeSeconds or 0)
     -- Existing manual intent survives automatic self-preservation; explicit
     -- SERVICE ends by handing the ship back to its normal owner.
     local order=self.UserOrders[id]
@@ -309,247 +328,94 @@ function RTS:FinishFleetService(ship,s,now)
     else self:AssignAIStrategicOrder(ship,self:GetFactionKey(ship),true) end
 end
 
--- A station's far side is a rally/service point, not its model center.
--- Unit vector FROM the ship TOWARD the station. The pad must sit on the ship's
--- own side of the hull, i.e. station - approach*separation; adding the approach
--- instead places it beyond the station and routes the rearming ship through the
--- hull, which is the rearm-collision bug.
-function RTS:GetServiceApproach(ship,station,threat)
-    local toStation=station.Position-ship.Position
-    local length=math.sqrt(toStation.x*toStation.x+toStation.z*toStation.z)
-    local ax,az=0,-1
-    if length>.001 then ax,az=toStation.x/length,toStation.z/length end
-    -- A threatened pad belongs opposite the attacker's actual bearing, not
-    -- merely on whichever half of the station the returning ship occupies.
-    if alive(threat) then
-        local toThreat=threat.Position-station.Position
-        local threatLen=math.sqrt(toThreat.x*toThreat.x+toThreat.z*toThreat.z)
-        if threatLen>.001 then
-            ax,az=toThreat.x/threatLen,toThreat.z/threatLen
-        end
-    end
-    -- The pad sits behind the station, opposite this side. Near a map edge that point
-    -- falls outside the arena, and the clamp then parks every hull on the boundary, so
-    -- take the other side when its pad is inside the arena.
-    local c=config(self)
-    local radius=(station.Class.Model and station.Class.Model.Radius or 500)
-        +(ship.Class.Model and ship.Class.Model.Radius or 50)+(self:GetServiceGeometry(station))
-    local function padInside(x,z)
-        local pad=vec(station.Position.x-x*radius,station.Position.y,station.Position.z-z*radius)
-        local bounded=self:ClampCommandPoint(pad,0)
-        return bounded~=nil and bounded:getDistance(pad)<=.01
-    end
-    if not padInside(ax,az) and padInside(-ax,-az) then ax,az=-ax,-az end
-    return ax,az
+-- Countermeasures and afterburner fuel are restocked for free during a visit, at a
+-- rate that fills an empty reserve within MinimumRecoverySeconds.
+local function restockedAmount(state,key,left,max,dt,seconds,whole)
+    if type(left)~='number' or type(max)~='number' or max<=0 or left>=max then return 0 end
+    local credit=(state[key] or 0)+max*dt/math.max(1,seconds)
+    local amount=credit
+    if whole then amount=math.floor(credit) end
+    state[key]=credit-amount
+    return math.min(amount,max-left)
 end
 
-function RTS:GetFleetServicePoint(ship,station,threat,approachX,approachZ)
-    local c=config(self)
-    local shipRadius=ship.Class.Model and ship.Class.Model.Radius or 50
-    local stationRadius=station.Class.Model and station.Class.Model.Radius or 500
-    local standOff,arrivalRadius=self:GetServiceGeometry(station)
-    local separation=stationRadius+shipRadius+standOff
-    if approachX==nil then approachX,approachZ=self:GetServiceApproach(ship,station,threat) end
-    local kind=self:GetFactionKey(ship); local record=self.FleetServices and self.FleetServices[ship:getSignature()]
-    if record and record.padAnchorPosition and record.padAnchorPosition:getDistance(station.Position)>arrivalRadius*.5 then
-        record.padPoint=nil; record.arrived=false; record.holdSince=nil
-    end
-    if record and record.padPoint and record.padStation==station:getSignature() then return record.padPoint end
-    local slot=(ship:getSignature()%5)-2; local widest=shipRadius
-    if record then
-        if not record.padSlot or record.faction~=kind then reservePad(self,ship,record) end
-        slot=math.floor(record.padSlot/2)*(record.padSlot%2==0 and -1 or 1)
-        for _,other in pairs(self.FleetServices) do
-            if other.faction==kind then widest=math.max(widest,other.padRadius or 0) end
-        end
-    end
-    -- Signature modulo slots alias unrelated arrivals. Reserve distinct pads
-    -- and allow the largest booked hull enough lateral clearance to park.
-    local spread=slot*math.max(180,widest*2.4)
-    local point=vec(station.Position.x-approachX*separation-approachZ*spread,station.Position.y,
-        station.Position.z-approachZ*separation+approachX*spread)
-    if not record then return self:ClampCommandPoint(point,self:GetShipFormationRadius(ship)*1.05) end
-    local function reserve(candidate)
-        candidate=self:ClampShipDestination(ship,candidate)
-        if not candidate then return nil end
-        for _,other in pairs(self.FleetServices) do
-            if other~=record and other.faction==kind and other.padPoint
-                and candidate:getDistance(other.padPoint)<shipRadius+(other.padRadius or 50)+120 then return nil end
-        end
-        record.padPoint=copyVec(candidate); record.padStation=station:getSignature(); record.padAnchorPosition=copyVec(station.Position)
-        return record.padPoint
-    end
-    local reserved=reserve(point)
-    if reserved then return reserved end
-    -- Edge clamping can compress a lane onto an existing hull. Find a clear
-    -- point around the station instead and latch it for the whole visit.
-    for ring=1,3 do
-        local radius=separation+(ring-1)*math.max(400,shipRadius*2.4)
-        for i=0,15 do
-            local angle=i*math.pi/8; local ca,sa=math.cos(angle),math.sin(angle)
-            reserved=reserve(station.Position+vec((-approachX*ca+approachZ*sa)*radius,0,(-approachZ*ca-approachX*sa)*radius))
-            if reserved then return reserved end
-        end
-    end
-    return nil
+local function restockConsumables(ship,state,dt,seconds)
+    local class=ship.Class
+    if not class then return end
+    local countermeasures=restockedAmount(state,'countermeasureCredit',ship.CountermeasuresLeft,class.CountermeasuresMax,dt,seconds,true)
+    if countermeasures>0 then ship.CountermeasuresLeft=ship.CountermeasuresLeft+countermeasures end
+    local fuel=restockedAmount(state,'afterburnerCredit',ship.AfterburnerFuelLeft,class.AfterburnerFuelMax,dt,seconds,false)
+    if fuel>0 then ship.AfterburnerFuelLeft=ship.AfterburnerFuelLeft+fuel end
 end
 
-function RTS:MoveFleetServiceShip(ship,s,point,now,anchor)
-    if point then point=self:ClampShipDestination(ship,point) end
-    if not point then self:SetFleetServicePhase(ship,s,'NO_SAFE_ROUTE',now); return false end
-    local slack=math.max(300,self:GetShipFormationRadius(ship)*1.5)
-    local drift=not s.destination or s.destinationAnchor~=anchor or point:getDistance(s.destination)>slack
-    local intact=false
-    local entry=self.MoveWaypoints[ship:getSignature()]
-    for i=1,#ship.Orders do
-        local order=ship.Orders[i]
-        if order:isValid() and order:getType()==ORDER_WAYPOINTS_ONCE and entry
-            and objectValid(order.Target) and order.Target:getSignature()==entry.waypoint:getSignature() then intact=true end
+-- The visit used up its time budget while others wait: the ship goes back to the queue,
+-- automatic and ranked lower for each turn it has already had.
+local function rotateFleetVisit(self,ship,s,now)
+    local request=s.request
+    self:EmitAIEvent('FLEET_SERVICE_INTERRUPTED',{ship=ship:getSignature(),faction=self:GetFactionKey(ship),
+        phase=s.phase,reason='VISIT_LIMIT',spent=s.spent,hull=hull(ship)},now)
+    self:CancelFleetServiceForShip(ship,s.pendingOrder)
+    if request then
+        request.manual=false
+        request.rotations=(request.rotations or 0)+1
+        self:RestoreFleetServiceRequest(ship,request)
     end
-    if not drift and intact then return true end
-    local waypoint=self:ConfigureMoveWaypoints(ship,point)
-    if not objectValid(waypoint) then
-        self:SetFleetServicePhase(ship,s,'ORDER_FAILED',now); return false
-    end
-    ship:clearOrders()
-    if ship:giveOrder(ORDER_WAYPOINTS_ONCE,waypoint,nil,servicePriority(self,ship))~=true then
-        self:SetFleetServicePhase(ship,s,'ORDER_FAILED',now); return false
-    end
-    s.destination=copyVec(point); s.destinationAnchor=anchor; s.nextMove=now+8
-    self:SetShipCommandDiscipline(ship,false); self:SetShipTurretLock(ship,true)
-    return true
 end
 
 function RTS:ServiceFleetShip(ship,s,station,now,slots,threat)
-    local c=config(self); local dt=math.min(c.TickSeconds*2,math.max(0,now-math.max(s.lastUpdate,s.quietAt+c.QuietSeconds)))
+    local c=config(self); local dt=math.min(c.TickSeconds*2,math.max(0,now-s.lastUpdate))
     local readyHull=s.manual and 1 or c.ReadyHull
     s.lastUpdate=now
-    local shields=ship.Shields and ship.Shields.CombinedLeft or 0
-    local subsystemHull=0
-    for i=1,#ship do if ship[i]:isValid() then subsystemHull=subsystemHull+ship[i].HitpointsLeft end end
-    if ship.HitpointsLeft<s.lastHull-.01 or shields<(s.lastShields or shields)-.01
-        or subsystemHull<(s.lastSubsystemHull or subsystemHull)-.01 then s.quietAt=now end
-    s.lastSubsystemHull=subsystemHull
-    s.lastShields=shields
+    local hitNow=ship.HitpointsLeft<s.lastHull-.01
     s.lastHull=ship.HitpointsLeft
-    if not alive(station) then
-        self:SetFleetServicePhase(ship,s,'STATION_LOST',now)
-        -- Losing the base must not turn a withdrawal into a dead-target attack.
-        if alive(threat) then
-            local d=ship.Position-threat.Position; local length=math.max(1,math.sqrt(d.x*d.x+d.z*d.z))
-            self:MoveFleetServiceShip(ship,s,self:ClampCommandPoint(ship.Position+vec(d.x/length*3000,0,d.z/length*3000),self:GetShipFormationRadius(ship)*1.05),now,-threat:getSignature())
-        end
+    if not self:IsServiceAnchorFor(ship,station) then
+        self:SetFleetServicePhase(ship,s,'TENDER_LOST',now)
         return 0
-    end
-    -- Latch which side of the station the pad is on when the run starts. The
-    -- threat bearing is recomputed from a live ship every tick, so without a
-    -- latch the pad teleports by twice the separation each time the threat
-    -- changes side, and MoveFleetServiceShip sees that as drift and re-orders
-    -- the ship mid-approach.
-    if s.padApproachX==nil then
-        s.padApproachX,s.padApproachZ=self:GetServiceApproach(ship,station,threat)
     end
     local focused=self:IsFleetFocusedByHostiles(ship,now)
-    if focused and alive(threat) then
-        local approachX,approachZ=self:GetServiceApproach(ship,station,threat)
-        if s.padApproachX*approachX+s.padApproachZ*approachZ<.999 then
-            -- Rebook the visitor on the station's newly safe side when its
-            -- current attacker changes bearing.
-            s.padApproachX,s.padApproachZ=approachX,approachZ
-            s.padPoint=nil; s.padStation=nil; s.arrived=false; s.holdSince=nil
-        end
-    end
-    local point=self:GetFleetServicePoint(ship,station,threat,s.padApproachX,s.padApproachZ)
-    local _,arrivalRadius=self:GetServiceGeometry(station)
-    if not point or ship.Position:getDistance(point)>arrivalRadius then
+    if not self:IsTenderAlongside(station,ship) then
         s.arrived=false
-        if not self.Paused then dampSpin(ship) end
-        self:SetFleetServicePhase(ship,s,'RETURNING',now)
-        self:MoveFleetServiceShip(ship,s,point,now,station and station:getSignature())
+        self:SetFleetServicePhase(ship,s,'TENDER_EN_ROUTE',now)
         return 0
     end
-    local priority=servicePriority(self,ship)
-    if not s.arrived then
-        -- Physically at the service point (checked above). Hold station there
-        -- for the duration of the repair instead of continuing to track a
-        -- travel goal, so the hull cannot drift back into the station while
-        -- it is being worked on.
-        --
-        -- ORDER_STAY_STILL is not a brake: the engine's ai_still() only calls
-        -- turn_towards_point and never applies longitudinal thrust, and there
-        -- is no drag in space, so a hull arriving at cruise coasts at cruise
-        -- forever and sails straight back out of the arrival radius. Bleed the
-        -- linear velocity off explicitly, and keep bleeding it for a few ticks
-        -- so the ship settles instead of oscillating around the pad.
+    local arrivedNow=not s.arrived
+    if arrivedNow then
         s.arrived=true; s.holdSince=now; dt=0
-        if not s.manual then s.quietAt=now end
-        ship:clearOrders()
-        local phys=ship.Physics
-        if phys~=nil and not focused then phys.Velocity=vec(0,0,0); phys.RotationalVelocity=vec(0,0,0) end
-        if ship:giveOrder(ORDER_STAY_STILL,nil,nil,priority)~=true then
-            s.arrived=false; s.holdSince=nil; self:SetFleetServicePhase(ship,s,'ORDER_FAILED',now); return 0
-        end
-    elseif not self.Paused and not focused then
-        -- Keep bleeding speed while parked. l_Vector has no scale(), so scale
-        -- the components explicitly; Physics.Velocity is the writable property
-        -- (phys_info.vel is not exposed to Lua at all).
-        local phys=ship.Physics
-        if phys~=nil then
-            local v=phys.Velocity
-            if v~=nil then phys.Velocity=vec(v.x*.35,v.y*.35,v.z*.35) end
-        end
     end
-    -- A hull being worked on must not be diverted by a stray native order. The
-    -- hold is a native order the engine (or anything else touching the ship)
-    -- can drop, so re-install it whenever the order list has been taken over.
-    --
-    -- The old guard was `not atDestination and preempted`. atDestination was
-    -- recomputed from the identical test the enclosing arrival check already
-    -- made, so it was always true here and the condition was always false: the
-    -- re-install was unreachable dead code, and a ship that got an ORDER_ATTACK
-    -- while on the pad simply stopped being serviced in place. Position is
-    -- irrelevant to this decision - the ship has already arrived, by
-    -- construction, at this point in the function.
-    local holdIntact=false
-    local orders=ship.Orders
-    for i=1,#orders do
-        local o=orders[i]
-        if o~=nil then
-            local valid,kind=pcall(function() return o:isValid() and o:getType() or nil end)
-            if valid and kind==ORDER_STAY_STILL then holdIntact=true end
-        end
+    -- Support-ship rule: a requester that is hit while its hull is below AbortHull
+    -- breaks off the service.
+    if not s.pilot and hitNow and hull(ship)<(c.AbortHull or .30) then
+        InterruptFleetService(self,ship,s,now,'HIT_BELOW_ABORT_HULL',threat)
+        return 0
     end
-    if not holdIntact then
-        s.holdSince=now
-        ship:clearOrders()
-        if ship:giveOrder(ORDER_STAY_STILL,nil,nil,priority)~=true then
-            self:SetFleetServicePhase(ship,s,'ORDER_FAILED',now); return 0
-        end
-    end
-    -- Only dampen spin while ship is physically moving to/from service point
-    if not self.Paused and not focused and s.phase=='RETURNING' then dampSpin(ship) end
+    if not s.pilot and not holdServiceShip(self,ship,s,focused,now,arrivedNow) then return 0 end
     -- Arrival is physical. Time spent travelling/queued never accumulates repair.
     local ammo,banks=self:GetFleetAmmo(ship)
-    local subsystemHealth,systems,totalSubsystemHull=self:GetFleetSubsystems(ship)
-    local serviceBlocked=focused or (not s.manual and alive(threat))
-    if now-s.started>=c.MinimumRecoverySeconds and hull(ship)>=readyHull-.0001 and ammo>=c.ReadyAmmo and subsystemHealth>=readyHull-.0001
-        and now-s.quietAt>=c.QuietSeconds and not serviceBlocked then self:FinishFleetService(ship,s,now); return 0 end
-    if now-s.quietAt<c.QuietSeconds or serviceBlocked then
-        -- Stay parked and quiet while hostiles focus the visitor. A ship that
-        -- remains under fire for the bound returns to combat and gets a retry
-        -- delay; manual SERVICE remains the player's decision.
-        if serviceBlocked then s.underFireSince=s.underFireSince or now else s.underFireSince=nil end
-        if not s.manual and serviceBlocked and now-s.underFireSince>=(c.MaxUnderFireSeconds or 240) then
-            self:SetFleetServicePhase(ship,s,'UNDER_FIRE',now)
-            InterruptFleetService(self,ship,s,now,'UNDER_FIRE_TIMEOUT',threat)
-            return 0
+    local observer
+    if s.pilot then
+        observer=self:GetObserver()
+        if not alive(observer) then self:SetFleetServicePhase(ship,s,'PILOT_PROXY_LOST',now); return 0 end
+        ammo,banks=1,{}
+        for _,list in ipairs({ship.PrimaryBanks,observer.SecondaryBanks}) do
+            for i=1,#list do
+                local bank=list[i]
+                if bank.AmmoMax>0 then banks[#banks+1]=bank; ammo=math.min(ammo,bank.AmmoLeft/bank.AmmoMax) end
+            end
         end
-        self:SetFleetServicePhase(ship,s,'UNDER_FIRE',now); return 0
     end
-    s.underFireSince=nil
+    local subsystemHealth,systems,totalSubsystemHull=self:GetFleetSubsystems(ship)
+    if now-s.started>=c.MinimumRecoverySeconds and hull(ship)>=readyHull-.0001 and ammo>=c.ReadyAmmo and subsystemHealth>=readyHull-.0001
+        then self:FinishFleetService(ship,s,now); return 0 end
     local role=self:GetShipRole(ship)
     local weight=(role=='capital' or role=='heavy' or role=='juggernaut') and math.min(2,c.Slots) or 1
     if slots<weight then self:SetFleetServicePhase(ship,s,'QUEUED',now); return 0 end
+    -- Dockable pairs are serviced only while docked: nothing is repaired or rearmed
+    -- on the approach, and the visit keeps its slot until the dock completes.
+    if not s.pilot and self:IsDockedServiceRequired(station,ship) and not station:isDocked(ship) then
+        self:SetFleetServicePhase(ship,s,'DOCKING',now)
+        return weight
+    end
+    s.workSeconds=(s.workSeconds or 0)+dt
     local value=math.max(1,self:GetStrategicUnitValue(ship,self:GetFactionKey(ship)))
     local budget=self:GetFactionCP(self:GetFactionKey(ship)); local spent=0; local budgetBlocked=false
     local missing=math.max(0,readyHull*ship.HitpointsMax-ship.HitpointsLeft)
@@ -583,12 +449,17 @@ function RTS:ServiceFleetShip(ship,s,station,now,slots,threat)
             end
         end
     end
+    restockConsumables(ship,s,dt,c.MinimumRecoverySeconds)
+    if s.pilot then ship.SecondaryBanks=observer.SecondaryBanks end
     s.spent=s.spent+spent; s.hullRepaired=(s.hullRepaired or 0)+heal; s.lastHull=ship.HitpointsLeft
-    s.lastSubsystemHull=subsystemHull+systemRepair
     self:SetFleetServicePhase(ship,s,(budgetBlocked or self:GetFactionCP(self:GetFactionKey(ship))<=.001) and 'WAIT_CP' or 'REPAIR_REARM',now)
     if spent>0 then
         self:EmitAIEvent('FLEET_SERVICE_WORK',{ship=ship:getSignature(),faction=self:GetFactionKey(ship),
             healed=heal,subsystemRepair=systemRepair,spent=spent,totalSpent=s.spent,hull=hull(ship),ammo=self:GetFleetAmmo(ship)},now)
+    end
+    if not s.pilot and s.workSeconds>=(c.VisitSeconds or math.huge) and self:HasWaitingServiceRequest(station,ship) then
+        rotateFleetVisit(self,ship,s,now)
+        return 0
     end
     return weight
 end
@@ -668,8 +539,6 @@ local assaultHold={}
         -- Keep the pad latched, but danger must describe the visitor's current
         -- location; a living attacker elsewhere cannot hold a ready crew here.
         local rec=self.FleetServices[id]
-        local baseAttacked=self:IsBaseUnderAttack(self:GetFactionKey(ship),now)
-        if rec and baseAttacked and self.PossessedSignature~=id and ReleaseForBaseDefence(self,ship,rec,now) then rec=nil end
         local hp=hull(ship)
         -- Outmatched recovery requires hull below ReturnHull. Healthy focus
         -- cannot use a strength result; ammo/subsystem admission still samples
@@ -686,7 +555,6 @@ local assaultHold={}
         if self.PossessedSignature~=id and not rec then
             local ammo=self:GetFleetAmmo(ship)
             local reason
-            local routine=false
             local pressured=alive(threat)
             local friend,enemy=0,0
             if pressured then friend,enemy=self:AILocalStrength(ship,ship.Position,c.DangerRadius,false,threat) end
@@ -733,7 +601,7 @@ local assaultHold={}
             local retryReady=now>=(self.FleetServiceCooldown[id] or 0)
             -- Explicit commands own even a critically damaged hull. Automatic
             -- recovery is for unassigned ships; the player chooses SERVICE.
-            if not order and hp<=c.CriticalHull and pressured then reason='SELF_PRESERVATION'
+            if retryReady and not order and hp<=c.CriticalHull and pressured then reason='SELF_PRESERVATION'
         elseif retryReady and not order and focused and outmatched and not assaultHold[ship:getSignature()]
             and hp<c.ReturnHull and enemy>math.max(1,friend)*c.AvoidFightRatio then reason='AVOID_OVERWHELMING_FIGHT'
         elseif retryReady and not order and focused and outmatched and not assaultHold[ship:getSignature()]
@@ -765,18 +633,9 @@ local assaultHold={}
                 if hp<(holding and c.AssaultHullFloor or c.ReturnHull) then reason='HULL_LOW'
                 elseif self:GetFleetSubsystems(ship)<c.ReturnHull then reason='SYSTEMS_DAMAGED'
                 elseif ammoLow and not keepsFighting then reason='AMMO_LOW' end
-                routine=reason~=nil
             end
             if reason and not threat then threat=localThreat(ship); threats[id]=threat end
-            -- Closest anchor that is also safe. A routine visit with no safe anchor waits
-            -- (defending the base outranks it) unless the hull is critical.
-            local anchor,safe
-            if reason then anchor,safe=self:GetSaferServiceAnchor(ship,localThreat,baseAttacked) end
-            if reason and routine and not safe and hp>c.CriticalHull then reason=nil end
-            if reason and self:BeginFleetService(ship,reason,now,false,anchor) then
-                local started=self.FleetServices[id]
-                if started then started.threatSignature=threat and threat:getSignature() or nil end
-            end
+            if reason then self:RequestFleetService(ship,reason,now,false) end
         end
     end
     self:UpdateFieldSupport(now,localThreat)
@@ -794,12 +653,18 @@ local assaultHold={}
     local slots={}
     for _,ship in ipairs(ships) do
         local id=ship:getSignature(); local s=self.FleetServices[id]
-        if s and self.PossessedSignature~=id then
-            local kind=self:GetFactionKey(ship)
+        if s and (self.PossessedSignature~=id or s.pilot) then
+            if not threats[id] then threats[id]=localThreat(ship) end
             local anchor=self:GetFleetServiceAnchor(ship,s)
-            local key=anchor and anchor:getSignature() or kind
-            if slots[key]==nil then slots[key]=anchor and self:IsFieldTender(anchor) and self.Config.FieldSupport.Slots or c.Slots end
-            slots[key]=slots[key]-self:ServiceFleetShip(ship,s,anchor,now,slots[key],threats[id])
+            if not anchor then
+                local request=s.request
+                self:CancelFleetServiceForShip(ship,s.pendingOrder)
+                if request then self:RestoreFleetServiceRequest(ship,request) end
+            else
+                local key=anchor:getSignature()
+                if slots[key]==nil then slots[key]=self.Config.FieldSupport.Slots end
+                slots[key]=slots[key]-self:ServiceFleetShip(ship,s,anchor,now,slots[key],threats[id])
+            end
         end
     end
     for id in pairs(self.FleetServices) do if not present[id] then self.FleetServices[id]=nil; self.SurvivalDangerSince[id]=nil; self.FleetServiceCooldown[id]=nil end end
@@ -825,11 +690,9 @@ end
 function RTS:ServiceSelected()
     local count=0; local now=mn.getMissionTime()
     for _,ship in ipairs(self:GetSelectedFriendlyShips()) do
-        if self:BeginFleetService(ship,'STATION_SERVICE',now,true) then
-            self:SetUserOrder(ship,{kind='service'}); count=count+1
-        end
+        if self:RequestFleetService(ship,'PLAYER_SERVICE',now,true) then count=count+1 end
     end
-    self:SetStatus(count>0 and ('Returning '..count..' ships for paid station repair/rearm') or 'No selected ships can receive station service',3)
+    self:SetStatus(count>0 and ('Support requested for '..count..' ships; tenders will come to them') or 'No selected ships can request tender service',3)
 end
 
 return R

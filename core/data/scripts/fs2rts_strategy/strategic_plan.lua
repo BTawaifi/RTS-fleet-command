@@ -16,7 +16,7 @@ function RTS:UpdateFactionStrategicPlan(kind,now,force)
     local servicingCount=0; local playerControlledCount=0
     local ownedCount=0; local plannedCount=0
     self:EachShip(function(ship)
-        if shipAlive(ship) and self:GetFactionKey(ship)==kind and ship:getSignature()~=station:getSignature() and ship.Name~=self.Config.ObserverShip and not self:IsStaticDefense(ship) then
+        if shipAlive(ship) and self:GetFactionKey(ship)==kind and ship:getSignature()~=station:getSignature() and ship.Name~=self.Config.ObserverShip and not self:IsStaticDefense(ship) and not self:IsFieldTender(ship) then
             local sig=ship:getSignature()
             -- Ships in fleet service hold no strategic order by design, so they
             -- are counted apart from genuinely unordered ships. Both are tallied
@@ -556,7 +556,14 @@ function RTS:UpdateFactionStrategicPlan(kind,now,force)
             g.target=bomberAnchor.units[1]; g.mission="ESCORT"; g.escortBomber=true
         end
         if g.target==nil and isScreen(g) and dv<reserve and (g.screen or not g.committed) then g.target=station; dv=dv+g.value end
-        if g.target==nil and not self:CanDamageBase(g.units[1]) then g.target=station; g.mission="SCREEN" end
+        if g.target==nil and not self:CanDamageBase(g.units[1]) then
+            -- Idle fighters beyond the home reserve go after the enemy command station
+            -- (chip damage, CanDamageCommandStation) instead of parking on their own base.
+            if g.role=="fighter" and not emergency and shipValid(primary) and self:IsCommandStation(primary)
+                and canAutoEngage(self,g.units[1],primary) then
+                g.target=primary; g.mission="PRIMARY"
+            else g.target=station; g.mission="SCREEN" end
+        end
         local target=g.target or primary or station
         local mission=g.mission or ((g.target~=nil or not shipValid(primary)) and "SCREEN" or "PRIMARY")
         local releasedDefense=g.defenseRetention and not g.defenseRetention.retained and not emergency
@@ -661,7 +668,7 @@ function RTS:UpdateFactionStrategicPlan(kind,now,force)
         end
         target,mission=self:ApplyAIOperationOrder(g,target,mission,context,station,now,coverage)
         target,mission=self:ApplyAssaultObjectiveLock(g,target,mission,context)
-        if self:IsCommandStation(target) and canAutoEngage(self,lead,target) and not self:CanDamageBase(lead) then
+        if self:IsCommandStation(target) and canAutoEngage(self,lead,target) and not self:CanDamageCommandStation(lead,target) then
             target=station; mission="SCREEN"; context.locked=true; context.reason="UNIT_CANNOT_DAMAGE_BASE"
         end
         mission=self:CommitAIGroup(g,target,mission,station,context,now,force)

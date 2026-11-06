@@ -38,7 +38,10 @@ function RTS:DrawBuildPanel(sw,sh)
         self.BuildButtonRects={}; self.BuildNavRects={}; self.PanelTabRects={}; self.StationButtonRects={}; self.AutoModeRect=nil
         -- Show the outcome the battle already resolved to. The generic AFTERMATH
         -- card reads as a loss, so it is only the title when no result is set.
-        local outcome=self.AftermathActive and (self.GameStatus=='VICTORY' and 'VICTORY' or self.GameStatus=='DRAW' and 'DRAW' or self.GameStatus=='DEFEAT' and 'DEFEAT') or nil
+        -- ResumePostBattle resets GameStatus to ACTIVE, so the resolved result is read from
+        -- AftermathResultStatus, which survives it.
+        local result=self.AftermathActive and (self.AftermathResultStatus or self.GameStatus) or nil
+        local outcome=(result=='VICTORY' or result=='DRAW' or result=='DEFEAT') and result or nil
         self:DrawTextLine(outcome or (self.AftermathActive and 'AFTERMATH' or 'YOUR STATION IS LOST'),x1+pad,y1+pad,x2-x1-2*pad)
         gr.setColor(210,225,235,255)
         local message

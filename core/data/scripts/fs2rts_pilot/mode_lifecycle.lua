@@ -27,6 +27,9 @@ function RTS:StartPilotMode(ship)
     if self.RecordPilotTime then self:RecordPilotTime(ship,mn.getMissionTime(),true) end
     self.PilotShieldMirrorSnapshot=nil
     self.PilotWeaponEnergyMirrorSnapshot=nil
+    self.PilotSupportNotice=nil
+    self:StartPilotFeedback(ship)
+    if self.CancelFleetServiceRequestForShip then self:CancelFleetServiceRequestForShip(ship) end
     if self.NewUnitPopup then self.NewUnitPopup.expiresAt=nil end
     -- Possession supersedes service without restoring its parked order now.
     -- Otherwise service keeps consuming slots and CP during direct control.
@@ -103,6 +106,7 @@ function RTS:StartPilotMode(ship)
     end
     self:SetPilotWeaponsHUD(self.PilotTurretGroups~=nil and #self.PilotTurretGroups>0)
     self:SetPilotWeaponCycleHooks(true)
+    self:SetPilotSupportHook(true)
     self:UpdatePilotDirectives()
     self:SetStatus("PILOT: " .. ship.Name .. turretHint
         .. (nativeWingLabel and (" | "..nativeWingLabel) or "")
@@ -133,6 +137,7 @@ function RTS:ExitPilotMode(message, lost)
     self:UpdatePilotDirectives(true); self.PilotAIObjective=nil; self.PilotSuggestedTarget=nil; self.PilotSuggestedAt=nil; self.PilotCommWarningUntil=nil
     self:RestorePilotCommOrders()
     self:SetPilotWeaponCycleHooks(false)
+    self:SetPilotSupportHook(false)
     local wingRestored,wingError=self:LeavePilotNativeWing()
     local restoreScale=self.PilotDeathRestoreTimeScale
     local restoreLastScale=self.PilotDeathRestoreLastNonZeroTimeScale
@@ -145,6 +150,19 @@ function RTS:ExitPilotMode(message, lost)
     local oldSignature=self.PossessedSignature
     local ship=self:GetPossessedShip()
     local observer=self:GetObserver()
+    local service=self.FleetServices and self.FleetServices[oldSignature]
+    local request=self.FleetServiceRequests and self.FleetServiceRequests[oldSignature]
+    if request and request.pilot then request.pilot=false; request.reason='PLAYER_SERVICE' end
+    if service and service.pilot then
+        if lost then
+            self:StopTenderForService(service.serviceAnchor,oldSignature)
+            self.FleetServices[oldSignature]=nil
+            service=nil
+        else
+            service.pilot=false; service.reason='PLAYER_SERVICE'; service.pendingOrder=self.PilotPreviousUserOrder
+            if service.request then service.request.pilot=false; service.request.reason='PLAYER_SERVICE' end
+        end
+    end
     -- Native fire can run after the last Lua mirror and before this exit.
     if shipValid(ship) and shipValid(observer) then ship.SecondaryBanks=observer.SecondaryBanks end
     -- The observer is the player ship, so its afterburner loop outlives possession.
@@ -163,6 +181,8 @@ function RTS:ExitPilotMode(message, lost)
     self:OnPilotCommMenuClosed()
     self.PilotShieldMirrorSnapshot=nil
     self.PilotWeaponEnergyMirrorSnapshot=nil
+    self.PilotSupportNotice=nil
+    self:StopPilotFeedback()
     mn.runSEXP("(player-use-ai)")
     self:SetRTSInputMode(); self:RestoreObserverClass(); self:RestoreObserverHome(); self:DisarmObserverWeapons()
     if shipValid(observer) and self.PilotProxyRecharge then
@@ -175,9 +195,15 @@ function RTS:ExitPilotMode(message, lost)
     if lost then
         self.Selected={}; self.PrimarySelectionSignature=nil; self.UserOrders[oldSignature]=nil; self.PolicyApplied[oldSignature]=nil
     elseif shipValid(ship) then
-        self.Selected={oldSignature}; self.PrimarySelectionSignature=oldSignature; self.UserOrders[oldSignature]=self.PilotPreviousUserOrder; self.PolicyApplied[oldSignature]=nil
-        if self.PilotPreviousUserOrder~=nil then self:ReissueUserOrder(ship,self.PilotPreviousUserOrder)
-        else self:ReturnToDefaultControl(ship) end
+        self.Selected={oldSignature}; self.PrimarySelectionSignature=oldSignature; self.PolicyApplied[oldSignature]=nil
+        if service then
+            self.UserOrders[oldSignature]={kind='service'}
+            self:SetShipTurretLock(ship,true)
+        else
+            self.UserOrders[oldSignature]=self.PilotPreviousUserOrder
+            if self.PilotPreviousUserOrder~=nil then self:ReissueUserOrder(ship,self.PilotPreviousUserOrder)
+            else self:ReturnToDefaultControl(ship) end
+        end
     end
     self.PendingPilotEject=false; self.PendingPilotEjectRemaining=nil; self.PendingPilotEjectPosition=nil; self.PendingPilotEjectOrientation=nil; self.PendingPilotEjectRadius=nil; self.PilotPreviousUserOrder=nil
     if message then self:SetStatus(message..(not wingRestored and (" | "..tostring(wingError)) or ""),4)

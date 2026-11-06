@@ -107,7 +107,7 @@ function RTS:GetScreenGuardStation(ship,target,options)
 end
 
 function RTS:IssueStrategicOrder(ship,target,label,mission,now,force,options)
-    if not shipAlive(ship) or not shipAlive(target) or (self.IsShipWithdrawing and self:IsShipWithdrawing(ship)) then return false end
+    if not shipAlive(ship) or not shipAlive(target) or self:IsFieldTender(ship) or (self.IsShipWithdrawing and self:IsShipWithdrawing(ship)) then return false end
     if self.FleetServices and self.FleetServices[ship:getSignature()] then return false end
     local sig=ship:getSignature(); local tsig=target:getSignature(); local previous=self.AIOrderState[sig]; local kind=self:GetFactionKey(ship)
     if self.FleetProtection and self.FleetProtection[sig] and previous and previous.protectionHistory then return false end
@@ -115,7 +115,9 @@ function RTS:IssueStrategicOrder(ship,target,label,mission,now,force,options)
     local guardStation=enemies and mission=="SCREEN" and self:GetScreenGuardStation(ship,target,options) or nil
     if guardStation then target=guardStation; tsig=target:getSignature(); enemies=false end
     -- Fighter chip damage permits player pressure, not a committed AI siege force.
-    if enemies and self:IsCommandStation(target) and not self:CanDamageBase(ship) then
+    -- The one exception is a turret attack, ordered for screening fighters escorting a capital strike.
+    local turretStrike=options and objectValid(options.subsystem) and options.subsystem:isTurret()
+    if enemies and self:IsCommandStation(target) and not self:CanDamageCommandStation(ship,target) and not turretStrike then
         self:RecordAIOrderTelemetry(kind,mission,"rejected",false)
         return false
     end

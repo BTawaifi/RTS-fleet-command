@@ -44,6 +44,13 @@ function RTS:SetUserOrder(ship, order)
         if not self:CanDamageCommandStation(ship,target) then return false end
     end
     local sig = ship:getSignature()
+    if order.kind~='service' then
+        if (self.FleetServiceRequests and self.FleetServiceRequests[sig]) or (self.FleetServices and self.FleetServices[sig]) then
+            self.FleetServiceCooldown=self.FleetServiceCooldown or {}
+            self.FleetServiceCooldown[sig]=mn.getMissionTime()+(self.Config.Station.FleetService.RetrySeconds or 30)
+        end
+        if self.CancelFleetServiceRequestForShip then self:CancelFleetServiceRequestForShip(ship) end
+    end
     self.UserOrders[sig] = order
     if self.FleetProtection then self.FleetProtection[sig]=nil end
     self:SetShipCommandDiscipline(ship,order.kind=='move' or order.kind=='hold')
@@ -85,6 +92,7 @@ end
 function RTS:ClearUserOrder(ship)
     if not shipValid(ship) then return end
     local sig = ship:getSignature()
+    if self.CancelFleetServiceRequestForShip then self:CancelFleetServiceRequestForShip(ship) end
     self.UserOrders[sig] = nil
     self:SetShipCommandDiscipline(ship,false)
     self:DropPursuit(sig)

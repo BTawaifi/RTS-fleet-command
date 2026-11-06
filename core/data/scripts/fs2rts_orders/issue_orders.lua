@@ -60,7 +60,8 @@ function RTS:UpdateMoveFacings()
     end
 end
 
-function RTS:IssueAttack(target)
+-- subsystemIndex (optional) orders the attack on one live subsystem of the target.
+function RTS:IssueAttack(target,subsystemIndex)
     local ships={}
     local skippedNonStrike=false
     for _,ship in ipairs(self:GetSelectedFriendlyShips()) do
@@ -79,15 +80,19 @@ function RTS:IssueAttack(target)
             if shipAlive(member) and self:IsPlayerEnemy(member) then wingMembers=wingMembers+1 end
         end
     end
-    local orderKind=wingMembers>1 and "attack_wing" or "attack"
+    local subsystem=subsystemIndex and target[subsystemIndex]
+    if subsystem and not (subsystem:isValid() and subsystem.HitpointsLeft>0) then subsystemIndex=nil; subsystem=nil end
+    local orderKind=(wingMembers>1 and not subsystem) and "attack_wing" or "attack"
     local formation=#ships>1 and {id=self:GetSelectedFormation(),members={}} or nil
     if formation then for _,ship in ipairs(ships) do formation.members[#formation.members+1]=ship:getSignature() end end
     for _, ship in ipairs(ships) do
-        self:SetUserOrder(ship, { kind = orderKind, targetSignature = targetSig, targetWing = orderKind=="attack_wing" and wing.id or nil,formation=formation })
+        self:SetUserOrder(ship, { kind = orderKind, targetSignature = targetSig, targetWing = orderKind=="attack_wing" and wing.id or nil,formation=formation,
+            subsystemIndex=subsystem and subsystemIndex or nil })
         self:ReissueUserOrder(ship,self.UserOrders[ship:getSignature()])
     end
     if formation then self:UpdateAttackFormations(mn.getMissionTime(),true) end
-    self:SetStatus((skippedNonStrike and "NON-STRIKE UNITS SKIPPED // " or "")..(orderKind=="attack_wing" and "Attack wing: " or "Attack: ") .. (wing and wing.label or target.Name), 2)
+    self:SetStatus((skippedNonStrike and "NON-STRIKE UNITS SKIPPED // " or "")..(orderKind=="attack_wing" and "Attack wing: " or "Attack: ") .. (wing and wing.label or target.Name)
+        .. (subsystem and (" / "..(subsystem.Name or "subsystem")) or ""), 2)
 end
 
 -- Keep the selected shape during approach, then hand close combat to native

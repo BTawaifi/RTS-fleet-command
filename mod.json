@@ -18,8 +18,8 @@
   "screenshots": null,
   "attachments": [],
   "first_release": "2026-09-23",
-  "last_update": "2026-10-31",
-  "cmdline": "-window -render_res 1280x720 -nomovies -no_unfocused_pause -campaign FS2_RTS_Escalation -start_mission FS2_RTS_Escalation",
+  "last_update": "2026-11-06",
+  "cmdline": "-nomovies -no_unfocused_pause -campaign FS2_RTS_Escalation -start_mission FS2_RTS_Escalation",
   "mod_flag": [
     "RTS-fleet-command",
     "MVPS"
@@ -48,9 +48,9 @@
           "dest": "",
           "checksum": [
             "sha256",
-            "59c30408dc3743a249f252ede6bd8f740d33c32d91fc3fa0609234e564db2f56"
+            "7879d296a0d6d8dd34a78b807b7e12b11e5445fd3f9d2fb9f5a56b4b207ac1c5"
           ],
-          "filesize": 12998839
+          "filesize": 12372522
         }
       ],
       "filelist": [
@@ -60,7 +60,7 @@
           "orig_name": "core.vp",
           "checksum": [
             "sha256",
-            "7990c105e3cb3a73c157307a58fd3793a5519405b151c1312eadb0e93b802452"
+            "433ea0a4454c2f9e0841b45c10f1ca32bdbe38e941492a6c7071227a79187717"
           ]
         }
       ],

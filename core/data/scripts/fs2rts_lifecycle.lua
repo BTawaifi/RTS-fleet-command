@@ -153,11 +153,13 @@ end
 function RTS:EnterGlobalAftermath()
     if self.AftermathActive then return end
     self.AftermathActive=true; self.AftermathStationCount=#self:GetLivingFactionKeys()
+    if self.ClearFleetServiceRequests then self:ClearFleetServiceRequests() end
     for _,sig in ipairs(sortedNumericKeys(self.FleetServices or {})) do
         local ship=self:FindShipBySignature(sig); local service=self.FleetServices[sig]
+        if self.StopTenderForService then self:StopTenderForService(service.serviceAnchor,sig) end
         if shipValid(ship) then self:CancelFleetServiceForShip(ship,service.pendingOrder) end
     end
-    self.FleetServices={}; self.PendingStrikes={}
+    self.FleetServices={}; self.FleetServiceRequests={}; self.PendingStrikes={}
     for _,job in ipairs(self.PendingSentries or {}) do
         self:EmitAIEvent('SENTRY_BUILD',{action='BUILD_CANCELLED',faction=job.kind,class=job.option.class,
             jobId=job.id,cost=job.cost,refundedCP=0,reason='GLOBAL_RESULT'},mn.getMissionTime())
@@ -542,6 +544,7 @@ function RTS:OnGameplayStart()
     self:InitializeSetupHold()
     self:RegisterCrewProjectileEvidence()
     self:DisarmObserverWeapons()
+    if shipValid(observer) then self:StopPilotAfterburner(observer) end
     self:StartIntroCinematic()
     self:CreateSetupBackdrop()
     self:SetMissionFocusPolicy(self:ShouldDisableUnfocusedPause())
@@ -647,7 +650,7 @@ function RTS:ReleaseObjectHandles()
     end
     -- Signature-keyed tables holding handles or per-hull state.
     for _,name in ipairs({
-        "UserOrders","PolicyApplied","AIOrderState","FleetServices","FleetServiceCooldown","MoveTurretLocks","CommandDiscipline",
+        "UserOrders","PolicyApplied","AIOrderState","FleetServices","FleetServiceRequests","FieldTenderSeek","FieldTenderDock","FleetServiceCooldown","FieldServiceReadyAt","MoveTurretLocks","CommandDiscipline",
         "SurvivalDangerSince","StaticDefenseSignatures","SentryCosts","SentryHullBoosted",
         "SentryNames","SentryHulls","DefenseRateBoosted","MjolnirRangeLocks","SurgedShips",
         "EngageTargets","Selected","ControlGroups","AIStats","AIEconomyFlow","SurvivorTargets",
@@ -693,6 +696,7 @@ function RTS:OnFrame()
 
     if self.PossessedSignature ~= nil then
         self:UpdatePilotMode(dt)
+        self:UpdatePilotFeedback()
     elseif self.BattleCamActive then
         self:SetRTSInputMode()
         self:DisarmObserverWeapons()
@@ -792,8 +796,10 @@ function RTS:OnShipDeath(ship,killer)
     self.BountyProcessed[deadSignature]=true
     if self.RecordUnitFate then self:RecordUnitFate(ship,'LOST','DESTROYED') end
     if self.ClearFleetLifeReferences then self:ClearFleetLifeReferences(ship) end
+    if self.CancelFleetServiceRequestForShip then self:CancelFleetServiceRequestForShip(ship) end
     if self.FleetServices then self.FleetServices[deadSignature]=nil end
     if self.FleetServiceCooldown then self.FleetServiceCooldown[deadSignature]=nil end
+    if self.FieldServiceReadyAt then self.FieldServiceReadyAt[deadSignature]=nil end
     if self.SurvivalDangerSince then self.SurvivalDangerSince[deadSignature]=nil end
     if self:IsCommandStation(ship) then self.DyingStations=self.DyingStations or {}; self.DyingStations[deadSignature]=true end
     if self.StaticDefenseSignatures then self.StaticDefenseSignatures[deadSignature]=nil end

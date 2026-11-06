@@ -696,7 +696,7 @@ function R:FocusHistoryShip(id,service)
     if not alive(ship) then return false end
     self.Selected={r.signature}; self.PrimarySelectionSignature=r.signature
     self:FocusOnSelection()
-    if service then return self:BeginFleetService(ship,'PLAYER_SERVICE',mn.getMissionTime(),true) end
+    if service then return self:RequestFleetService(ship,'PLAYER_SERVICE',mn.getMissionTime(),true) end
     return true
 end
 

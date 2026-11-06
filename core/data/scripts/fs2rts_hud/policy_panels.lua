@@ -20,7 +20,7 @@ function RTS:DrawBuildTooltip(sw,sh,panel)
     -- whatever room the window leaves.
     local lines={}
     if option.role=='support' then
-        for _,line in ipairs(self:WrapTextLinesToWidth('Select a friendly ship before buying to call the tender to it. Right-click a ship with the tender selected to supply it; right-click the tender with ships selected to send them for repair and rearm (CP).',descW,3)) do lines[#lines+1]=line end
+        for _,line in ipairs(self:WrapTextLinesToWidth('Select a friendly ship before buying to call the tender to it. SERVICE or right-clicking a tender requests repair and rearm (CP); the tender travels to the ship.',descW,3)) do lines[#lines+1]=line end
     end
     for _,text in ipairs(self:GetBuildLoadoutLines(option.class)) do
         for _,line in ipairs(self:WrapTextLinesToWidth(text,descW,2)) do lines[#lines+1]=line end
@@ -123,12 +123,19 @@ function RTS:DrawPolicyPanel(sw, sh)
     if not policyEnabled then description="Default policies are disabled while Auto Mode is on." end
     gr.setColor(160,190,202,255)
     self:DrawCenteredWrappedTextToWidth(description,x1+m.pad(20),x2-m.pad(20),by+buttonH+m.pad(10),(x2-x1)-2*m.pad(20),lh,2)
-    local onPolicy,onOrders=0,0
-    self:EachShip(function(ship)
-        if self:IsMovableFriendly(ship) then
-            if self.UserOrders[ship:getSignature()]~=nil then onOrders=onOrders+1 else onPolicy=onPolicy+1 end
-        end
-    end)
+    -- The policy/orders split is recounted twice a second, not every frame.
+    local now=self:UINow()
+    local counts=self.PolicySplitCache
+    if not counts or now>=counts.at or now<counts.at-1 then
+        counts={at=now+.5,onPolicy=0,onOrders=0}
+        self:EachShip(function(ship)
+            if self:IsMovableFriendly(ship) then
+                if self.UserOrders[ship:getSignature()]~=nil then counts.onOrders=counts.onOrders+1 else counts.onPolicy=counts.onPolicy+1 end
+            end
+        end)
+        self.PolicySplitCache=counts
+    end
+    local onPolicy,onOrders=counts.onPolicy,counts.onOrders
     local split=self.AutoPlayerMode and ("Auto Mode: "..onPolicy.." | your orders: "..onOrders)
         or ("Following policy: "..onPolicy.." | your orders: "..onOrders)
     gr.setColor(255,220,110,255); self:DrawCenteredTextClipped(split,x1+m.pad(10),x2-m.pad(10),y2-lh-m.pad(8))

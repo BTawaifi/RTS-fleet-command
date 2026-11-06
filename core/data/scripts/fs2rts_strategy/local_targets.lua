@@ -72,13 +72,19 @@ function RTS:SelectFactionPrimaryTarget(kind)
 end
 
 function RTS:AssignAIStrategicOrder(ship,kind,force)
-    if not shipValid(ship) or self:IsStaticDefense(ship) or (self.IsShipWithdrawing and self:IsShipWithdrawing(ship)) then return end
+    if not shipValid(ship) or self:IsStaticDefense(ship) or self:IsFieldTender(ship) or (self.IsShipWithdrawing and self:IsShipWithdrawing(ship)) then return end
     local station=self:GetFactionCommandShip(kind); if not shipValid(station) or ship:getSignature()==station:getSignature() then return end
     local sig=ship:getSignature()
     if self.FleetProtection and self.FleetProtection[sig] then return end
     if kind=="BLUE" then if not self.AutoPlayerMode or self.PossessedSignature==sig or self.UserOrders[sig]~=nil then return end end
     local primary=self:GetStablePrimaryTarget(kind); if not shipValid(primary) then return end
-    if not self:CanDamageBase(ship) then self:IssueStrategicOrder(ship,station,"AI SCREEN: DEFEND "..station.Name,"SCREEN",mn.getMissionTime(),force)
+    local now=mn.getMissionTime()
+    if self:GetShipRole(ship)=='fighter' and self:IsCommandStation(primary) and not self:IsBaseUnderAttack(kind,now)
+        and canAutoEngage(self,ship,primary) then
+        -- A fighter with no base to defend goes after the enemy command station; the home
+        -- station is only pinned while it is under attack.
+        self:IssueStrategicOrder(ship,primary,"AI PRIMARY: FIGHTER BASE STRIKE "..primary.Name,"PRIMARY",now,force)
+    elseif not self:CanDamageBase(ship) then self:IssueStrategicOrder(ship,station,"AI SCREEN: DEFEND "..station.Name,"SCREEN",now,force)
     else self:IssueStrategicOrder(ship,primary,"AI PRIMARY: COMMITTED STRIKE ON "..primary.Name,"PRIMARY",mn.getMissionTime(),force) end
 end
 

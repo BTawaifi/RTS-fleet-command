@@ -165,6 +165,12 @@ function RTS:DrawPilotHUD(sw, sh)
         add(string.format('RETURNING TO RTS IN %.1fs',math.max(0,self.PendingPilotEjectRemaining or 0)),yellow)
     else
         add('PILOT: '..ship.Name,cyan)
+        local support=self.FleetServices and self.FleetServices[ship:getSignature()]
+        local request=self.FleetServiceRequests and self.FleetServiceRequests[ship:getSignature()]
+        if support and support.pilot then add('TENDER: '..support.phase:gsub('_',' '),cyan)
+        elseif request then add(request.assignedTender and 'TENDER EN ROUTE' or 'WAITING FOR TENDER',cyan) end
+        if self.PilotSupportNotice and self:UINow()<=self.PilotSupportNotice.untilTime then add(self.PilotSupportNotice.text,yellow) end
+        if self.ShowHotkeyHints~=false and self.PilotSupportHookActive then hint(self:GetPilotBindingLabel('REARM_MESSAGE')..' REQUEST / CANCEL TENDER') end
         for _,line in ipairs(self:GetShipHistoryLines(ship)) do add(line,yellow) end
         local notice=self.FleetRecoveryNotice
         if notice and self:UINow()<=notice.untilTime then

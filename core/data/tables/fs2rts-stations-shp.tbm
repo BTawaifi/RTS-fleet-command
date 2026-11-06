@@ -81,17 +81,17 @@ $Subsystem: Turret07, 4, 2.0
 $Subsystem: Turret08, 4, 2.0
     $Default PBanks: ( "Standard Flak" )
 $Subsystem: Turret09, 1, 2.0
-    $Default PBanks: ( "RTS Station AAAf" "RTS Sentry Interceptor" )
+    $Default PBanks: ( "RTS Station AAAf" "RTS Station Interceptor" )
 $Subsystem: Turret10, 1, 2.0
-    $Default PBanks: ( "RTS Station AAAf" "RTS Sentry Interceptor" )
+    $Default PBanks: ( "RTS Station AAAf" "RTS Station Interceptor" )
 $Subsystem: Turret11, 1, 2.0
-    $Default PBanks: ( "RTS Station AAAf" )
+    $Default PBanks: ( "RTS Station AAAf" "RTS Station Interceptor" )
 $Subsystem: Turret12, 1, 2.0
-    $Default PBanks: ( "RTS Station AAAf" )
+    $Default PBanks: ( "RTS Station AAAf" "RTS Station Interceptor" )
 $Subsystem: Turret13, 1, 3.0
-    $Default PBanks: ( "RTS Station AAAf" )
+    $Default PBanks: ( "RTS Station AAAf" "RTS Station Interceptor" )
 $Subsystem: Turret14, 1, 3.0
-    $Default PBanks: ( "RTS Station AAAf" )
+    $Default PBanks: ( "RTS Station AAAf" "RTS Station Interceptor" )
 $Subsystem: Turret15, 0.125, 0.5
     $Default PBanks: ( "Terran Huge Turret" )
 $Subsystem: Turret16, 0.125, 0.5
@@ -189,9 +189,9 @@ $Subsystem: turret01, 5, 2.0
 $Subsystem: turret02, 5, 2.0
     $Default PBanks: ( "Shivan Megafunk Turret" )
 $Subsystem: turret03, 1, 2.0
-    $Default PBanks: ( "RTS Station SAAA" "RTS Sentry Interceptor" )
+    $Default PBanks: ( "RTS Station SAAA" "RTS Station Interceptor" )
 $Subsystem: turret04, 1, 2.0
-    $Default PBanks: ( "RTS Station SAAA" "RTS Sentry Interceptor" )
+    $Default PBanks: ( "RTS Station SAAA" "RTS Station Interceptor" )
 $Subsystem: turret05, 8, 3.0
     $Default PBanks: ( "RTS Station LRed" )
 $Subsystem: turret06, 8, 3.0
@@ -201,13 +201,13 @@ $Subsystem: turret07, 8, 3.0
 $Subsystem: turret08, 8, 3.0
     $Default PBanks: ( "RTS Station LRed" )
 $Subsystem: turret09, 1, 2.0
-    $Default PBanks: ( "RTS Station SAAA" )
+    $Default PBanks: ( "RTS Station SAAA" "RTS Station Interceptor" )
 $Subsystem: turret10, 1, 2.0
-    $Default PBanks: ( "RTS Station SAAA" )
+    $Default PBanks: ( "RTS Station SAAA" "RTS Station Interceptor" )
 $Subsystem: turret11, 1, 2.0
-    $Default PBanks: ( "RTS Station SAAA" )
+    $Default PBanks: ( "RTS Station SAAA" "RTS Station Interceptor" )
 $Subsystem: turret12, 1, 2.0
-    $Default PBanks: ( "RTS Station SAAA" )
+    $Default PBanks: ( "RTS Station SAAA" "RTS Station Interceptor" )
 $Subsystem: turret13, 1, 2.0
     $Default PBanks: ( "RTS Station SAAA" )
 $Subsystem: turret14, 1, 2.0
@@ -253,9 +253,9 @@ $Shield Armor Type: RTS Command Hull
 ; battery like Red and Gold. Dedicated station variants limit both acquisition
 ; and active ray length to 6 km. RTS:EnableFullArsenal frees them at runtime.
 $Subsystem: turret01, 1, 2.0
-    $Default PBanks: ( "RTS Station AAAf" "RTS Sentry Interceptor" )
+    $Default PBanks: ( "RTS Station AAAf" "RTS Station Interceptor" )
 $Subsystem: turret02, 1, 2.0
-    $Default PBanks: ( "RTS Station AAAf" "RTS Sentry Interceptor" )
+    $Default PBanks: ( "RTS Station AAAf" "RTS Station Interceptor" )
 $Subsystem: turret03, 1, 2.0
     $Default PBanks: ( "RTS Station LTerSlash" )
 $Subsystem: turret04, 1, 2.0
